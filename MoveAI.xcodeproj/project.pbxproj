@@ -1,0 +1,577 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXContainerItemProxy section */
+		AF723BCD2E9B26250099E5D7 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AF723BB72E9B26240099E5D7 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AF723BBE2E9B26240099E5D7;
+			remoteInfo = MoveAI;
+		};
+		AF723BD72E9B26250099E5D7 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AF723BB72E9B26240099E5D7 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AF723BBE2E9B26240099E5D7;
+			remoteInfo = MoveAI;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		AF723BBF2E9B26240099E5D7 /* MoveAI.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MoveAI.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AF723BCC2E9B26250099E5D7 /* MoveAITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MoveAITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		AF723BD62E9B26250099E5D7 /* MoveAIUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MoveAIUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		AF723BC12E9B26240099E5D7 /* MoveAI */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = MoveAI;
+			sourceTree = "<group>";
+		};
+		AF723BCF2E9B26250099E5D7 /* MoveAITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = MoveAITests;
+			sourceTree = "<group>";
+		};
+		AF723BD92E9B26250099E5D7 /* MoveAIUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = MoveAIUITests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		AF723BBC2E9B26240099E5D7 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AF723BC92E9B26250099E5D7 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AF723BD32E9B26250099E5D7 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		AF723BB62E9B26240099E5D7 = {
+			isa = PBXGroup;
+			children = (
+				AF723BC12E9B26240099E5D7 /* MoveAI */,
+				AF723BCF2E9B26250099E5D7 /* MoveAITests */,
+				AF723BD92E9B26250099E5D7 /* MoveAIUITests */,
+				AF723BC02E9B26240099E5D7 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		AF723BC02E9B26240099E5D7 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				AF723BBF2E9B26240099E5D7 /* MoveAI.app */,
+				AF723BCC2E9B26250099E5D7 /* MoveAITests.xctest */,
+				AF723BD62E9B26250099E5D7 /* MoveAIUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		AF723BBE2E9B26240099E5D7 /* MoveAI */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AF723BE02E9B26250099E5D7 /* Build configuration list for PBXNativeTarget "MoveAI" */;
+			buildPhases = (
+				AF723BBB2E9B26240099E5D7 /* Sources */,
+				AF723BBC2E9B26240099E5D7 /* Frameworks */,
+				AF723BBD2E9B26240099E5D7 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				AF723BC12E9B26240099E5D7 /* MoveAI */,
+			);
+			name = MoveAI;
+			packageProductDependencies = (
+			);
+			productName = MoveAI;
+			productReference = AF723BBF2E9B26240099E5D7 /* MoveAI.app */;
+			productType = "com.apple.product-type.application";
+		};
+		AF723BCB2E9B26250099E5D7 /* MoveAITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AF723BE32E9B26250099E5D7 /* Build configuration list for PBXNativeTarget "MoveAITests" */;
+			buildPhases = (
+				AF723BC82E9B26250099E5D7 /* Sources */,
+				AF723BC92E9B26250099E5D7 /* Frameworks */,
+				AF723BCA2E9B26250099E5D7 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				AF723BCE2E9B26250099E5D7 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				AF723BCF2E9B26250099E5D7 /* MoveAITests */,
+			);
+			name = MoveAITests;
+			packageProductDependencies = (
+			);
+			productName = MoveAITests;
+			productReference = AF723BCC2E9B26250099E5D7 /* MoveAITests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		AF723BD52E9B26250099E5D7 /* MoveAIUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AF723BE62E9B26250099E5D7 /* Build configuration list for PBXNativeTarget "MoveAIUITests" */;
+			buildPhases = (
+				AF723BD22E9B26250099E5D7 /* Sources */,
+				AF723BD32E9B26250099E5D7 /* Frameworks */,
+				AF723BD42E9B26250099E5D7 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				AF723BD82E9B26250099E5D7 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				AF723BD92E9B26250099E5D7 /* MoveAIUITests */,
+			);
+			name = MoveAIUITests;
+			packageProductDependencies = (
+			);
+			productName = MoveAIUITests;
+			productReference = AF723BD62E9B26250099E5D7 /* MoveAIUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		AF723BB72E9B26240099E5D7 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1640;
+				LastUpgradeCheck = 1640;
+				TargetAttributes = {
+					AF723BBE2E9B26240099E5D7 = {
+						CreatedOnToolsVersion = 16.4;
+					};
+					AF723BCB2E9B26250099E5D7 = {
+						CreatedOnToolsVersion = 16.4;
+						TestTargetID = AF723BBE2E9B26240099E5D7;
+					};
+					AF723BD52E9B26250099E5D7 = {
+						CreatedOnToolsVersion = 16.4;
+						TestTargetID = AF723BBE2E9B26240099E5D7;
+					};
+				};
+			};
+			buildConfigurationList = AF723BBA2E9B26240099E5D7 /* Build configuration list for PBXProject "MoveAI" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = AF723BB62E9B26240099E5D7;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = AF723BC02E9B26240099E5D7 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				AF723BBE2E9B26240099E5D7 /* MoveAI */,
+				AF723BCB2E9B26250099E5D7 /* MoveAITests */,
+				AF723BD52E9B26250099E5D7 /* MoveAIUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		AF723BBD2E9B26240099E5D7 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AF723BCA2E9B26250099E5D7 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AF723BD42E9B26250099E5D7 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		AF723BBB2E9B26240099E5D7 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AF723BC82E9B26250099E5D7 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AF723BD22E9B26250099E5D7 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		AF723BCE2E9B26250099E5D7 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AF723BBE2E9B26240099E5D7 /* MoveAI */;
+			targetProxy = AF723BCD2E9B26250099E5D7 /* PBXContainerItemProxy */;
+		};
+		AF723BD82E9B26250099E5D7 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AF723BBE2E9B26240099E5D7 /* MoveAI */;
+			targetProxy = AF723BD72E9B26250099E5D7 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		AF723BDE2E9B26250099E5D7 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = X3GG9GZ4JL;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		AF723BDF2E9B26250099E5D7 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = X3GG9GZ4JL;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		AF723BE12E9B26250099E5D7 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = MoveAI/MoveAI.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = X3GG9GZ4JL;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "MoveAI needs camera access to record videos of your movements for form analysis and coaching.";
+				INFOPLIST_KEY_NSHealthClinicalHealthRecordsShareUsageDescription = "MoveAI may update your health data with workout information and movement analysis results.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "MoveAI needs access to your health data to automatically import your height, weight, and age for personalized movement analysis.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "MoveAI needs microphone access to record audio commentary with your movement videos.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "MoveAI needs access to your photo library to import existing videos for movement analysis.";
+				INFOPLIST_KEY_NSUserTrackingUsageDescription = "MoveAI uses tracking to provide personalized movement recommendations and improve your coaching experience.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.thrivecopilot.MoveAI;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		AF723BE22E9B26250099E5D7 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = MoveAI/MoveAI.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = X3GG9GZ4JL;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "MoveAI needs camera access to record videos of your movements for form analysis and coaching.";
+				INFOPLIST_KEY_NSHealthClinicalHealthRecordsShareUsageDescription = "MoveAI may update your health data with workout information and movement analysis results.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "MoveAI needs access to your health data to automatically import your height, weight, and age for personalized movement analysis.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "MoveAI needs microphone access to record audio commentary with your movement videos.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "MoveAI needs access to your photo library to import existing videos for movement analysis.";
+				INFOPLIST_KEY_NSUserTrackingUsageDescription = "MoveAI uses tracking to provide personalized movement recommendations and improve your coaching experience.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.thrivecopilot.MoveAI;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		AF723BE42E9B26250099E5D7 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = X3GG9GZ4JL;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.thrivecopilot.MoveAITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MoveAI.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MoveAI";
+			};
+			name = Debug;
+		};
+		AF723BE52E9B26250099E5D7 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = X3GG9GZ4JL;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.thrivecopilot.MoveAITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MoveAI.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MoveAI";
+			};
+			name = Release;
+		};
+		AF723BE72E9B26250099E5D7 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = X3GG9GZ4JL;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.thrivecopilot.MoveAIUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = MoveAI;
+			};
+			name = Debug;
+		};
+		AF723BE82E9B26250099E5D7 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = X3GG9GZ4JL;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.thrivecopilot.MoveAIUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = MoveAI;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		AF723BBA2E9B26240099E5D7 /* Build configuration list for PBXProject "MoveAI" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AF723BDE2E9B26250099E5D7 /* Debug */,
+				AF723BDF2E9B26250099E5D7 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AF723BE02E9B26250099E5D7 /* Build configuration list for PBXNativeTarget "MoveAI" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AF723BE12E9B26250099E5D7 /* Debug */,
+				AF723BE22E9B26250099E5D7 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AF723BE32E9B26250099E5D7 /* Build configuration list for PBXNativeTarget "MoveAITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AF723BE42E9B26250099E5D7 /* Debug */,
+				AF723BE52E9B26250099E5D7 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AF723BE62E9B26250099E5D7 /* Build configuration list for PBXNativeTarget "MoveAIUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AF723BE72E9B26250099E5D7 /* Debug */,
+				AF723BE82E9B26250099E5D7 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = AF723BB72E9B26240099E5D7 /* Project object */;
+}
