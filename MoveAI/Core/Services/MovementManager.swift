@@ -11,18 +11,18 @@ import SwiftUI
 @MainActor
 class MovementManager: ObservableObject {
     @Published var movements: [Movement] = []
-    @Published var userGoals: [MovementGoal] = []
+    // Goals functionality removed - focusing on core movement tracking
     @Published var selectedMovement: Movement?
     @Published var isLoading: Bool = false
     @Published var errorMessage: String?
     
     private let userDefaults = UserDefaults.standard
     private let movementsKey = "savedMovements"
-    private let goalsKey = "userGoals"
+    // Goals functionality removed
     
     init() {
         loadMovements()
-        loadUserGoals()
+        // Goals functionality removed
         setupDefaultMovements()
     }
     
@@ -60,39 +60,7 @@ class MovementManager: ObservableObject {
     
     // MARK: - Goal Management
     
-    func loadUserGoals() {
-        if let data = userDefaults.data(forKey: goalsKey),
-           let savedGoals = try? JSONDecoder().decode([MovementGoal].self, from: data) {
-            userGoals = savedGoals
-        }
-    }
-    
-    func saveUserGoals() {
-        if let data = try? JSONEncoder().encode(userGoals) {
-            userDefaults.set(data, forKey: goalsKey)
-        }
-    }
-    
-    func addGoal(_ goal: MovementGoal) {
-        userGoals.append(goal)
-        saveUserGoals()
-    }
-    
-    func updateGoal(_ goal: MovementGoal) {
-        if let index = userGoals.firstIndex(where: { $0.id == goal.id }) {
-            userGoals[index] = goal
-            saveUserGoals()
-        }
-    }
-    
-    func deleteGoal(_ goal: MovementGoal) {
-        userGoals.removeAll { $0.id == goal.id }
-        saveUserGoals()
-    }
-    
-    func getGoalsForMovement(_ movementId: UUID) -> [MovementGoal] {
-        return userGoals.filter { $0.movementId == movementId && $0.isActive }
-    }
+    // Goals functionality removed - focusing on core movement tracking
     
     // MARK: - Search and Filtering
     

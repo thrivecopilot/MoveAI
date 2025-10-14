@@ -230,20 +230,11 @@ struct StateView: View {
             
             Section("Movement Manager") {
                 StateRow(label: "Movements Count", value: "\(movementManager.movements.count)")
-                StateRow(label: "User Goals Count", value: "\(movementManager.userGoals.count)")
                 StateRow(label: "Is Loading", value: movementManager.isLoading ? "Yes" : "No")
             }
             
             Section("User Profile") {
-                if let user = appState.currentUser {
-                    StateRow(label: "User ID", value: user.id.uuidString.prefix(8) + "...")
-                    StateRow(label: "Height", value: "\(user.height) cm")
-                    StateRow(label: "Weight", value: "\(user.weight) kg")
-                    StateRow(label: "Age", value: "\(user.age)")
-                    StateRow(label: "Experience", value: user.experienceLevel.rawValue)
-                } else {
-                    StateRow(label: "User Profile", value: "Not Set")
-                }
+                StateRow(label: "User", value: "Profile data managed via @AppStorage")
             }
         }
         .debugOnAppear("StateView")

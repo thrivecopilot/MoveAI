@@ -14,7 +14,7 @@ struct OnboardingFlowView: View {
     @State private var currentStep = 0
     @State private var appleAuthManager = AppleAuthManager()
     @State private var healthManager = HealthManager()
-    @State private var userProfile = UserProfile()
+    // User profile data is now managed via @AppStorage in individual views
     
     // Define onboarding steps
     private let steps = ["Welcome", "Apple Sign In", "Health Permissions", "Personal Info"]
@@ -58,7 +58,6 @@ struct OnboardingFlowView: View {
                     .tag(2)
                     
                     PersonalInfoStepView(
-                        userProfile: $userProfile,
                         onComplete: {
                             // Onboarding complete - ContentView will handle navigation
                             // No need to call moveToNextStep() as this is the final step

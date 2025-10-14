@@ -8,7 +8,6 @@
 import SwiftUI
 
 struct PersonalInfoStepView: View {
-    @Binding var userProfile: UserProfile
     let onComplete: () -> Void
     
     @AppStorage("userHeight") private var userHeight: Double = 0
@@ -177,14 +176,9 @@ struct PersonalInfoStepView: View {
         // Convert feet and inches to centimeters
         let totalInches = Double(heightFeet * 12 + heightInches)
         let heightInCm = totalInches * 2.54
-        userProfile.height = heightInCm
         
         // Convert pounds to kilograms
         let weightInKg = weightPounds * 0.453592
-        userProfile.weight = weightInKg
-        
-        // Set age
-        userProfile.age = age
         
         // Save to AppStorage for persistence
         userHeight = heightInCm
@@ -195,7 +189,6 @@ struct PersonalInfoStepView: View {
 
 #Preview {
     PersonalInfoStepView(
-        userProfile: .constant(UserProfile()),
         onComplete: {}
     )
 }

@@ -17,7 +17,9 @@ struct MovementMasteryHomeView: View {
     @State private var selectedMovement: MovementType?
     @State private var showingCamera = false
     @StateObject private var sessionManager = SessionManager()
+    @StateObject private var cameraService = CameraService()
     @State private var showingSessionHistory = false
+    @State private var cameraView: CameraCaptureView?
     
     var body: some View {
         NavigationStack {
@@ -43,21 +45,16 @@ struct MovementMasteryHomeView: View {
             .navigationBarTitleDisplayMode(.large)
         }
         .sheet(isPresented: $showingCamera) {
-            if let selectedMovement = selectedMovement {
-                CameraCaptureView(
-                    movementType: selectedMovement,
-                    cameraService: CameraService()
-                ) { recordedMovement in
-                    // Create a session from the recorded movement
-                    let session = Session(
-                        movementType: recordedMovement.movementType,
-                        videoURL: recordedMovement.videoURL,
-                        timestamp: recordedMovement.timestamp
-                    )
-                    
-                    // Add to session manager
-                    sessionManager.addSession(session)
-                }
+            if let cameraView = cameraView {
+                cameraView
+            }
+        }
+        .onChange(of: showingCamera) { isShowing in
+            print("🏠 MovementMasteryHomeView: showingCamera changed to: \(isShowing)")
+            if !isShowing {
+                print("🏠 MovementMasteryHomeView: Camera sheet dismissed, resetting selectedMovement")
+                selectedMovement = nil
+                cameraView = nil
             }
         }
     }
@@ -120,7 +117,25 @@ struct MovementMasteryHomeView: View {
                     )
                 ],
                 onMovementSelected: { movementType in
+                    print("🏠 MovementMasteryHomeView: Movement selected: \(movementType.displayName)")
                     selectedMovement = movementType
+                    
+                    // Create camera view
+                    cameraView = CameraCaptureView(
+                        movementType: movementType,
+                        cameraService: cameraService
+                    ) { recordedMovement in
+                        // Create a session from the recorded movement
+                        let session = Session(
+                            movementType: recordedMovement.movementType,
+                            videoURL: recordedMovement.videoURL,
+                            timestamp: recordedMovement.timestamp
+                        )
+                        
+                        // Add to session manager
+                        sessionManager.addSession(session)
+                    }
+                    
                     showingCamera = true
                 }
             )

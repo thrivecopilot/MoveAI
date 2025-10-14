@@ -11,7 +11,7 @@ import SwiftUI
 @MainActor
 class AppStateManager: ObservableObject {
     @Published var isOnboardingCompleted: Bool = false
-    @Published var currentUser: UserProfile?
+    // User profile data is now managed via @AppStorage in individual views
     @Published var isLoading: Bool = false
     @Published var errorMessage: String?
     
@@ -41,20 +41,9 @@ class AppStateManager: ObservableObject {
         userDefaults.set(true, forKey: onboardingKey)
     }
     
-    func setCurrentUser(_ user: UserProfile) {
-        currentUser = user
-        saveUserProfile(user)
-        DebugManager.shared.log("Current user set: \(user.name)", category: "AppState")
-    }
-    
-    func updateUserProfile(_ user: UserProfile) {
-        currentUser = user
-        saveUserProfile(user)
-        DebugManager.shared.log("User profile updated: \(user.name)", category: "AppState")
-    }
+    // User profile management is now handled via @AppStorage
     
     func logout() {
-        currentUser = nil
         isOnboardingCompleted = false
         userDefaults.removeObject(forKey: onboardingKey)
         userDefaults.removeObject(forKey: premiumKey)
@@ -96,16 +85,7 @@ class AppStateManager: ObservableObject {
         showAds = !isPremiumUser
         
         // Load user profile if exists
-        if let userData = userDefaults.data(forKey: "currentUser"),
-           let user = try? JSONDecoder().decode(UserProfile.self, from: userData) {
-            currentUser = user
-        }
-    }
-    
-    private func saveUserProfile(_ user: UserProfile) {
-        if let userData = try? JSONEncoder().encode(user) {
-            userDefaults.set(userData, forKey: "currentUser")
-        }
+        // User profile persistence is now handled via @AppStorage
     }
 }
 

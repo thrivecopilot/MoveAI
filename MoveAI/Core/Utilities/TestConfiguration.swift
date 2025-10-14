@@ -26,12 +26,12 @@ struct TestConfiguration {
     
     // MARK: - Test Data
     
-    var mockUserProfile: UserProfile {
-        return UserProfile(
+    // Mock user profile data - now handled via @AppStorage
+    var mockUserProfile: (height: Double, weight: Double, age: Int) {
+        return (
             height: 180.0,
             weight: 80.0,
-            age: 25,
-            experienceLevel: .intermediate
+            age: 25
         )
     }
     
@@ -91,7 +91,7 @@ extension AppStateManager {
     func setupForTesting() {
         if TestConfiguration.shared.isUITesting {
             isOnboardingCompleted = false
-            currentUser = nil
+            // User profile data now managed via @AppStorage
             isLoading = false
             errorMessage = nil
             selectedTab = .home

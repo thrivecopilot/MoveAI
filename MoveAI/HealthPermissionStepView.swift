@@ -195,23 +195,25 @@ struct HealthPermissionStepView: View {
     
     private func syncHealthData() {
         Task {
-            // Use static method to sync with HealthKit
-            if let syncedProfile = await UserProfile.fromHealthKit(HKHealthStore()) {
+            // Use HealthService to sync with HealthKit
+            let healthService = HealthService()
+            do {
+                let profile = try await healthService.fetchProfile()
                 await MainActor.run {
                     // Update AppStorage with synced data
-                    if syncedProfile.height > 0 {
-                        userHeight = syncedProfile.height
+                    if profile.heightFeet > 0 {
+                        userHeight = Double(profile.heightFeet * 12 + profile.heightInches)
                     }
-                    if syncedProfile.weight > 0 {
-                        userWeight = syncedProfile.weight
+                    if profile.weightLbs > 0 {
+                        userWeight = Double(profile.weightLbs)
                     }
-                    if syncedProfile.age > 0 {
-                        userAge = syncedProfile.age
+                    if profile.age > 0 {
+                        userAge = profile.age
                     }
                     
                     hasSyncedData = true
                 }
-            } else {
+            } catch {
                 await MainActor.run {
                     // Even if no data was synced, we still have permissions
                     hasSyncedData = true
