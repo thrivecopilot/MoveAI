@@ -15,11 +15,16 @@ class PoseAnalysisService: ObservableObject {
     // MARK: - Pose Detection
     
     func analyzeFrame(_ pixelBuffer: CVPixelBuffer) {
-        guard !isAnalyzing else { return }
+        guard !isAnalyzing else { 
+            print("⚠️ PoseAnalysisService: Skipping frame - already analyzing")
+            return 
+        }
         
         isAnalyzing = true
         frameCount += 1
         let currentFrameCount = frameCount
+        
+        print("🔍 PoseAnalysisService: Starting analysis for frame \(currentFrameCount)")
         
         visionQueue.async { [weak self] in
             Task { @MainActor in
@@ -29,40 +34,68 @@ class PoseAnalysisService: ObservableObject {
     }
     
     private func performPoseDetection(on pixelBuffer: CVPixelBuffer, frameIndex: Int) async {
+        print("🔍 PoseAnalysisService: Creating pose detection request for frame \(frameIndex)")
+        
         let request = VNDetectHumanBodyPoseRequest { [weak self] request, error in
             DispatchQueue.main.async {
                 guard let self = self else { return }
                 self.isAnalyzing = false
                 
                 if let error = error {
-                    print("❌ PoseAnalysisService: Pose detection failed - \(error.localizedDescription)")
+                    print("❌ PoseAnalysisService: Pose detection failed for frame \(frameIndex) - \(error.localizedDescription)")
                     return
                 }
                 
-                guard let observations = request.results as? [VNHumanBodyPoseObservation],
-                      let observation = observations.first else {
+                guard let observations = request.results as? [VNHumanBodyPoseObservation] else {
+                    print("⚠️ PoseAnalysisService: No observations returned for frame \(frameIndex)")
+                    // Store empty frame to maintain sequence
+                    self.processPoseObservation(nil, frameIndex: frameIndex)
+                    return
+                }
+                
+                print("🔍 PoseAnalysisService: Found \(observations.count) pose observations in frame \(frameIndex)")
+                
+                if let observation = observations.first {
+                    self.processPoseObservation(observation, frameIndex: frameIndex)
+                } else {
                     print("⚠️ PoseAnalysisService: No pose detected in frame \(frameIndex)")
-                    return
+                    // Store empty frame to maintain sequence
+                    self.processPoseObservation(nil, frameIndex: frameIndex)
                 }
-                
-                self.processPoseObservation(observation, frameIndex: frameIndex)
             }
         }
+        
+        // Use default revision for better compatibility
         
         let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .up)
         
         do {
+            print("🔍 PoseAnalysisService: Performing pose detection for frame \(frameIndex)")
             try handler.perform([request])
         } catch {
             DispatchQueue.main.async {
                 self.isAnalyzing = false
-                print("❌ PoseAnalysisService: Failed to perform pose detection - \(error.localizedDescription)")
+                print("❌ PoseAnalysisService: Failed to perform pose detection for frame \(frameIndex) - \(error.localizedDescription)")
             }
         }
     }
     
-    private func processPoseObservation(_ observation: VNHumanBodyPoseObservation, frameIndex: Int) {
+    private func processPoseObservation(_ observation: VNHumanBodyPoseObservation?, frameIndex: Int) {
         var keypoints: [PoseKeypoint] = []
+        
+        // Handle case where no pose was detected
+        guard let observation = observation else {
+            print("⚠️ PoseAnalysisService: No pose data for frame \(frameIndex), storing empty frame")
+            let poseResult = PoseDetectionResult(keypoints: [], frameIndex: frameIndex)
+            currentPose = poseResult
+            poseHistory.append(poseResult)
+            
+            // Keep only last 1000 frames to prevent memory issues (supports ~33 seconds at 30fps)
+            if poseHistory.count > 1000 {
+                poseHistory.removeFirst(poseHistory.count - 1000)
+            }
+            return
+        }
         
         // Extract keypoints for each body joint using the correct Vision framework API
         let jointNames: [VNHumanBodyPoseObservation.JointName] = [
@@ -72,21 +105,27 @@ class PoseAnalysisService: ObservableObject {
             .leftKnee, .rightKnee, .leftAnkle, .rightAnkle
         ]
         
+        print("🔍 PoseAnalysisService: Processing \(jointNames.count) joints for frame \(frameIndex)")
+        
         for jointName in jointNames {
             do {
                 let point = try observation.recognizedPoint(jointName)
                 
-                // Only include keypoints with sufficient confidence
-                if point.confidence > 0.3 {
+                // Lower confidence threshold to catch more keypoints
+                if point.confidence > 0.1 {
+                    // Store raw Vision coordinates - we'll handle coordinate transformation in the overlay
                     let keypoint = PoseKeypoint(
                         name: String(describing: jointName),
                         position: CGPoint(x: point.location.x, y: point.location.y),
                         confidence: point.confidence
                     )
                     keypoints.append(keypoint)
+                    print("✅ PoseAnalysisService: Detected \(jointName) at (\(String(format: "%.3f", point.location.x)), \(String(format: "%.3f", point.location.y))) with confidence \(String(format: "%.2f", point.confidence))")
+                } else {
+                    print("⚠️ PoseAnalysisService: \(jointName) confidence too low: \(String(format: "%.2f", point.confidence))")
                 }
             } catch {
-                // Joint not detected, skip
+                print("❌ PoseAnalysisService: Failed to get \(jointName): \(error.localizedDescription)")
                 continue
             }
         }
@@ -95,12 +134,17 @@ class PoseAnalysisService: ObservableObject {
         currentPose = poseResult
         poseHistory.append(poseResult)
         
-        // Keep only last 100 frames to prevent memory issues
-        if poseHistory.count > 100 {
-            poseHistory.removeFirst(poseHistory.count - 100)
+        // Keep only last 1000 frames to prevent memory issues (supports ~33 seconds at 30fps)
+        if poseHistory.count > 1000 {
+            poseHistory.removeFirst(poseHistory.count - 1000)
         }
         
         print("✅ PoseAnalysisService: Detected \(keypoints.count) keypoints in frame \(frameIndex)")
+        
+        // Log keypoint details for debugging
+        for keypoint in keypoints {
+            print("  - \(keypoint.name): (\(String(format: "%.2f", keypoint.position.x)), \(String(format: "%.2f", keypoint.position.y))) conf: \(String(format: "%.2f", keypoint.confidence))")
+        }
     }
     
     // MARK: - Powerlifting-Specific Analysis

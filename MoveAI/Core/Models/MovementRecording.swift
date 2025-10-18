@@ -14,14 +14,16 @@ struct MovementRecording: Identifiable, Codable {
     let videoURL: URL
     let timestamp: Date
     let duration: TimeInterval
+    let poseData: [PoseDetectionResult]?
     var analysisResult: AnalysisResult?
     
-    init(movementType: MovementType, videoURL: URL, duration: TimeInterval) {
+    init(movementType: MovementType, videoURL: URL, duration: TimeInterval, poseData: [PoseDetectionResult]? = nil) {
         self.id = UUID()
         self.movementType = movementType
         self.videoURL = videoURL
         self.timestamp = Date()
         self.duration = duration
+        self.poseData = poseData
         self.analysisResult = nil
     }
 }

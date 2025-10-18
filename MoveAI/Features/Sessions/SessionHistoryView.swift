@@ -211,11 +211,21 @@ struct SessionDetailView: View {
     @Environment(\.dismiss) var dismiss
     @State private var notes: String = ""
     @State private var isEditingNotes = false
+    @State private var isVideoFullScreen = false
     
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
+                    // Video Player
+                    VideoPlayerView(
+                        videoURL: session.videoURL,
+                        poseData: session.poseData,
+                        onFullScreenToggle: {
+                            isVideoFullScreen = true
+                        }
+                    )
+                    
                     // Session Header
                     sessionHeader
                     
@@ -244,31 +254,46 @@ struct SessionDetailView: View {
         .onAppear {
             notes = session.notes ?? ""
         }
+        .sheet(isPresented: $isVideoFullScreen) {
+            FullScreenVideoView(
+                videoURL: session.videoURL,
+                poseData: session.poseData
+            )
+        }
     }
     
     private var sessionHeader: some View {
-        VStack(spacing: 16) {
-            Image(systemName: session.movementType.icon)
-                .font(.system(size: 60))
-                .foregroundColor(.accentColor)
-            
-            Text(session.displayName)
-                .font(.title2)
-                .fontWeight(.bold)
-            
-            Text(session.formattedDate)
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-            
-            if let score = session.score {
-                Text("\(Int(score))")
-                    .font(.system(size: 60, weight: .bold, design: .rounded))
-                    .foregroundColor(scoreColor(Int(score)))
+        VStack(spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(session.displayName)
+                        .font(.title3)
+                        .fontWeight(.bold)
+                    
+                    Text(session.formattedDate)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+                
+                if let score = session.score {
+                    VStack(alignment: .trailing, spacing: 4) {
+                        Text("Score")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text("\(Int(score))")
+                            .font(.title3)
+                            .fontWeight(.bold)
+                            .foregroundColor(scoreColor(Int(score)))
+                    }
+                }
             }
         }
-        .padding()
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
         .background(Color(.systemGray6))
-        .cornerRadius(16)
+        .cornerRadius(8)
     }
     
     private func analysisSection(_ analysisResult: AnalysisResult) -> some View {
@@ -359,6 +384,7 @@ struct SessionDetailView: View {
             videoURL: session.videoURL,
             timestamp: session.timestamp,
             analysisResult: session.analysisResult,
+            poseData: session.poseData,
             notes: notes.isEmpty ? nil : notes
         )
         sessionManager.updateSession(updatedSession)
@@ -371,6 +397,36 @@ struct SessionDetailView: View {
             return .orange
         } else {
             return .red
+        }
+    }
+}
+
+struct FullScreenVideoView: View {
+    let videoURL: URL
+    let poseData: [PoseDetectionResult]?
+    @Environment(\.dismiss) var dismiss
+    
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.black.ignoresSafeArea()
+                
+                VideoPlayerView(
+                    videoURL: videoURL,
+                    poseData: poseData,
+                    isFullScreenMode: true
+                )
+                .ignoresSafeArea(.all, edges: .all)
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                    .foregroundColor(.white)
+                }
+            }
         }
     }
 }

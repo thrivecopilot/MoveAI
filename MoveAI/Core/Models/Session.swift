@@ -13,6 +13,7 @@ struct Session: Identifiable, Codable {
     let videoURL: URL
     let timestamp: Date
     let analysisResult: AnalysisResult?
+    let poseData: [PoseDetectionResult]?
     let notes: String?
     
     init(
@@ -21,6 +22,7 @@ struct Session: Identifiable, Codable {
         videoURL: URL,
         timestamp: Date = Date(),
         analysisResult: AnalysisResult? = nil,
+        poseData: [PoseDetectionResult]? = nil,
         notes: String? = nil
     ) {
         self.id = id
@@ -28,6 +30,7 @@ struct Session: Identifiable, Codable {
         self.videoURL = videoURL
         self.timestamp = timestamp
         self.analysisResult = analysisResult
+        self.poseData = poseData
         self.notes = notes
     }
     

@@ -249,6 +249,8 @@ struct CameraCaptureView: View {
     }
     
     private func startRecording() {
+        // Clear previous pose data before starting new recording
+        cameraService.poseAnalysisService.reset()
         cameraService.startRecording(for: movementType)
     }
     
@@ -258,7 +260,8 @@ struct CameraCaptureView: View {
         let recording = MovementRecording(
             movementType: movementType,
             videoURL: videoURL,
-            duration: cameraService.recordingDuration
+            duration: cameraService.recordingDuration,
+            poseData: cameraService.poseAnalysisService.poseHistory
         )
         
         completedRecording = recording

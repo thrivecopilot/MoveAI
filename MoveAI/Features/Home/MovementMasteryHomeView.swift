@@ -31,13 +31,10 @@ struct MovementMasteryHomeView: View {
                     // Movement Categories
                     movementCategoriesSection
                     
-                    // Quick Stats (if we have health data)
-                    if userHeight > 0 || userWeight > 0 || userAge > 0 {
-                        quickStatsSection
+                    // Recent Activity (if we have sessions)
+                    if !sessionManager.sessions.isEmpty {
+                        recentActivitySection
                     }
-                    
-                    // Recent Activity
-                    recentActivitySection
                 }
                 .padding()
             }
@@ -67,7 +64,7 @@ struct MovementMasteryHomeView: View {
                         .font(.title2)
                         .fontWeight(.bold)
                     
-                    Text("Choose a movement to analyze and improve your form")
+                    Text("Start a new session or review your recent workouts")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
@@ -86,7 +83,7 @@ struct MovementMasteryHomeView: View {
     
     private var movementCategoriesSection: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Movement Categories")
+            Text("Start Session")
                 .font(.headline)
                 .padding(.horizontal, 4)
             
@@ -129,7 +126,8 @@ struct MovementMasteryHomeView: View {
                         let session = Session(
                             movementType: recordedMovement.movementType,
                             videoURL: recordedMovement.videoURL,
-                            timestamp: recordedMovement.timestamp
+                            timestamp: recordedMovement.timestamp,
+                            poseData: recordedMovement.poseData
                         )
                         
                         // Add to session manager
@@ -159,42 +157,6 @@ struct MovementMasteryHomeView: View {
         }
     }
     
-    private var quickStatsSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Your Profile")
-                .font(.headline)
-                .padding(.horizontal, 4)
-            
-            HStack(spacing: 16) {
-                if userHeight > 0 {
-                    StatCard(
-                        icon: "ruler",
-                        title: "Height",
-                        value: formatHeight(userHeight),
-                        color: .blue
-                    )
-                }
-                
-                if userWeight > 0 {
-                    StatCard(
-                        icon: "scalemass",
-                        title: "Weight",
-                        value: formatWeight(userWeight),
-                        color: .green
-                    )
-                }
-                
-                if userAge > 0 {
-                    StatCard(
-                        icon: "calendar",
-                        title: "Age",
-                        value: "\(userAge) years",
-                        color: .orange
-                    )
-                }
-            }
-        }
-    }
     
     private var recentActivitySection: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -221,24 +183,16 @@ struct MovementMasteryHomeView: View {
             } else {
                 VStack(spacing: 8) {
                     ForEach(sessionManager.recentSessions(limit: 3)) { session in
-                        RecentSessionCard(session: session)
+                        NavigationLink(destination: SessionDetailView(session: session, sessionManager: sessionManager)) {
+                            RecentSessionCard(session: session)
+                        }
+                        .buttonStyle(PlainButtonStyle())
                     }
                 }
             }
         }
     }
     
-    private func formatHeight(_ heightInCm: Double) -> String {
-        let totalInches = heightInCm / 2.54
-        let feet = Int(totalInches / 12)
-        let inches = Int(totalInches.truncatingRemainder(dividingBy: 12))
-        return "\(feet)'\(inches)\""
-    }
-    
-    private func formatWeight(_ weightInKg: Double) -> String {
-        let pounds = weightInKg * 2.20462
-        return "\(Int(pounds)) lbs"
-    }
 }
 
 struct MovementCategoryCard: View {

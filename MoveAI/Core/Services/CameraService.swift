@@ -22,7 +22,7 @@ class CameraService: NSObject, ObservableObject {
     
     // Pose analysis
     @Published var poseAnalysisService = PoseAnalysisService()
-    @Published var isPoseDetectionEnabled = false
+    @Published var isPoseDetectionEnabled = true
     @Published var errorMessage: String?
     
     private let captureSession = AVCaptureSession()
@@ -260,11 +260,18 @@ extension CameraService: AVCaptureFileOutputRecordingDelegate {
 
 extension CameraService: AVCaptureVideoDataOutputSampleBufferDelegate {
     nonisolated func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
-        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { 
+            print("❌ CameraService: Failed to get pixel buffer from sample buffer")
+            return 
+        }
         
         Task { @MainActor in
             // Only process frames when pose detection is enabled
-            guard isPoseDetectionEnabled else { return }
+            guard isPoseDetectionEnabled else { 
+                print("⚠️ CameraService: Pose detection disabled, skipping frame")
+                return 
+            }
+            print("📷 CameraService: Processing frame for pose detection")
             poseAnalysisService.analyzeFrame(pixelBuffer)
         }
     }

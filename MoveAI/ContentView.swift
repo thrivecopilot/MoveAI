@@ -15,8 +15,8 @@ struct ContentView: View {
     var body: some View {
                Group {
                    if isSignedIn && hasHealthPermissions {
-                       // User completed onboarding - show movement mastery home
-                       MovementMasteryHomeView()
+                       // User completed onboarding - show main app with tabs
+                       MainTabView()
                    } else {
                        // User needs to complete onboarding
                        OnboardingFlowView(
