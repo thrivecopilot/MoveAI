@@ -33,7 +33,7 @@ struct CameraCaptureView: View {
                     CameraPreviewView(previewLayer: previewLayer)
                         .ignoresSafeArea()
                     
-                    // Pose overlay
+                    // Pose overlay - always show when pose detection is enabled
                     if cameraService.isPoseDetectionEnabled {
                         PoseOverlayView(
                             pose: cameraService.poseAnalysisService.currentPose,
