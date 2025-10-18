@@ -418,9 +418,28 @@ struct PoseOverlayViewCALayer: UIViewRepresentable {
     private func createKeypointLayer(for keypoint: PoseKeypoint, in bounds: CGRect) -> CALayer {
         let layer = CAShapeLayer()
         
-        // Convert normalized coordinates to screen coordinates
-        let screenX = keypoint.position.x * bounds.width
-        let screenY = keypoint.position.y * bounds.height // Use raw Vision coordinates
+        // Calculate aspect ratio to properly scale coordinates
+        let videoAspectRatio = videoSize.width / videoSize.height
+        let containerAspectRatio = bounds.width / bounds.height
+        
+        var scaledWidth = bounds.width
+        var scaledHeight = bounds.height
+        var offsetX: CGFloat = 0
+        var offsetY: CGFloat = 0
+        
+        if videoAspectRatio > containerAspectRatio {
+            // Video is wider - fit to width
+            scaledHeight = bounds.width / videoAspectRatio
+            offsetY = (bounds.height - scaledHeight) / 2
+        } else {
+            // Video is taller - fit to height
+            scaledWidth = bounds.height * videoAspectRatio
+            offsetX = (bounds.width - scaledWidth) / 2
+        }
+        
+        // Convert normalized coordinates to scaled video coordinates
+        let screenX = keypoint.position.x * scaledWidth + offsetX
+        let screenY = keypoint.position.y * scaledHeight + offsetY
         
         // Create circle path
         let radius: CGFloat = 4
@@ -458,14 +477,33 @@ struct PoseOverlayViewCALayer: UIViewRepresentable {
             ("rightKnee", "rightAnkle")
         ]
         
+        // Calculate aspect ratio to properly scale coordinates (same as keypoints)
+        let videoAspectRatio = videoSize.width / videoSize.height
+        let containerAspectRatio = bounds.width / bounds.height
+        
+        var scaledWidth = bounds.width
+        var scaledHeight = bounds.height
+        var offsetX: CGFloat = 0
+        var offsetY: CGFloat = 0
+        
+        if videoAspectRatio > containerAspectRatio {
+            // Video is wider - fit to width
+            scaledHeight = bounds.width / videoAspectRatio
+            offsetY = (bounds.height - scaledHeight) / 2
+        } else {
+            // Video is taller - fit to height
+            scaledWidth = bounds.height * videoAspectRatio
+            offsetX = (bounds.width - scaledWidth) / 2
+        }
+        
         for (startName, endName) in connections {
             if let startPoint = pose.keypoints.first(where: { $0.name == startName }),
                let endPoint = pose.keypoints.first(where: { $0.name == endName }) {
                 
-                let startX = startPoint.position.x * bounds.width
-                let startY = startPoint.position.y * bounds.height
-                let endX = endPoint.position.x * bounds.width
-                let endY = endPoint.position.y * bounds.height
+                let startX = startPoint.position.x * scaledWidth + offsetX
+                let startY = startPoint.position.y * scaledHeight + offsetY
+                let endX = endPoint.position.x * scaledWidth + offsetX
+                let endY = endPoint.position.y * scaledHeight + offsetY
                 
                 path.move(to: CGPoint(x: startX, y: startY))
                 path.addLine(to: CGPoint(x: endX, y: endY))

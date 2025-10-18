@@ -30,6 +30,7 @@ struct PoseOverlayView: View {
                     // Draw skeleton connections
                     SkeletonView(pose: pose, previewSize: previewSize == .zero ? geometry.size : previewSize)
                 }
+                .rotationEffect(.degrees(90)) // Rotate 90 degrees clockwise to fix counter-clockwise rotation
             }
         }
     }
