@@ -95,9 +95,10 @@ struct CameraCaptureView: View {
                     
                     Spacer()
                     
-                    // Placeholder for settings button
-                    Button("Settings") {
-                        // TODO: Add settings
+                    // Camera flip button
+                    Button(action: flipCamera) {
+                        Image(systemName: "camera.rotate")
+                            .font(.title2)
                     }
                     .foregroundColor(.white)
                     .padding()
@@ -267,6 +268,10 @@ struct CameraCaptureView: View {
         completedRecording = recording
         showingAnalysis = true
         onRecordingComplete(recording)
+    }
+    
+    private func flipCamera() {
+        cameraService.flipCamera()
     }
     
     private func formatDuration(_ duration: TimeInterval) -> String {

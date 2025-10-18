@@ -10,23 +10,23 @@ struct PoseOverlayView: View {
             GeometryReader { geometry in
                 ZStack {
                 ForEach(pose.keypoints) { keypoint in
-                    // Use raw Vision coordinates (no Y-flip) to match recorded video overlay
+                    // Vision uses bottom-left origin, SwiftUI uses top-left origin
+                    // Flip Y coordinate to convert from Vision to SwiftUI coordinate system
                     let screenX = keypoint.position.x * geometry.size.width
-                    let screenY = keypoint.position.y * geometry.size.height
+                    let screenY = (1.0 - keypoint.position.y) * geometry.size.height
                     
                     Circle()
                         .fill(keypointColor(for: keypoint))
                         .frame(width: 8, height: 8)
                         .position(x: screenX, y: screenY)
                         .onAppear {
-                            print("🎯 PoseOverlayView: \(keypoint.name) at normalized (\(String(format: "%.3f", keypoint.position.x)), \(String(format: "%.3f", keypoint.position.y))) -> screen (\(String(format: "%.1f", screenX)), \(String(format: "%.1f", screenY))) in geometry \(geometry.size)")
+                            print("🎯 PoseOverlayView: \(keypoint.name) at normalized (\(String(format: "%.3f", keypoint.position.x)), \(String(format: "%.3f", keypoint.position.y))) -> flipped Y (\(String(format: "%.3f", 1.0 - keypoint.position.y))) -> screen (\(String(format: "%.1f", screenX)), \(String(format: "%.1f", screenY))) in geometry \(geometry.size)")
                         }
                 }
                     
                     // Draw skeleton connections
                     SkeletonView(pose: pose, previewSize: geometry.size)
                 }
-                .rotationEffect(.degrees(90)) // Rotate 90 degrees clockwise to match recorded video
             }
         }
     }
@@ -97,14 +97,14 @@ struct SkeletonView: View {
                 continue
             }
             
-            // Use raw Vision coordinates (no Y-flip) to match recorded video overlay
+            // Apply Y-coordinate flip to convert from Vision to SwiftUI coordinate system
             let start = CGPoint(
                 x: startPoint.position.x * previewSize.width,
-                y: startPoint.position.y * previewSize.height
+                y: (1.0 - startPoint.position.y) * previewSize.height
             )
             let end = CGPoint(
                 x: endPoint.position.x * previewSize.width,
-                y: endPoint.position.y * previewSize.height
+                y: (1.0 - endPoint.position.y) * previewSize.height
             )
             
             var path = Path()

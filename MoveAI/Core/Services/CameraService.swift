@@ -30,6 +30,8 @@ class CameraService: NSObject, ObservableObject {
     private var videoDataOutput: AVCaptureVideoDataOutput?
     private var recordingTimer: Timer?
     private var recordingStartTime: Date?
+    private var currentCameraPosition: AVCaptureDevice.Position = .back
+    private var videoInput: AVCaptureDeviceInput?
     
     override init() {
         super.init()
@@ -95,7 +97,7 @@ class CameraService: NSObject, ObservableObject {
         }
         
         // Add video input
-        guard let videoDevice = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
+        guard let videoDevice = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: currentCameraPosition),
               let videoInput = try? AVCaptureDeviceInput(device: videoDevice),
               captureSession.canAddInput(videoInput) else {
             errorMessage = "Failed to setup camera input"
@@ -104,8 +106,9 @@ class CameraService: NSObject, ObservableObject {
             return
         }
         
+        self.videoInput = videoInput
         captureSession.addInput(videoInput)
-        print("✅ CameraService: Video input added")
+        print("✅ CameraService: Video input added for \(currentCameraPosition == .back ? "back" : "front") camera")
         
         // Add video output for recording
         let movieOutput = AVCaptureMovieFileOutput()
@@ -274,5 +277,31 @@ extension CameraService: AVCaptureVideoDataOutputSampleBufferDelegate {
             print("📷 CameraService: Processing frame for pose detection")
             poseAnalysisService.analyzeFrame(pixelBuffer)
         }
+    }
+    
+    // MARK: - Camera Flip
+    
+    func flipCamera() {
+        guard hasPermission else { return }
+        
+        // Toggle camera position
+        currentCameraPosition = currentCameraPosition == .back ? .front : .back
+        
+        // Remove current video input
+        if let videoInput = videoInput {
+            captureSession.removeInput(videoInput)
+        }
+        
+        // Add new video input with flipped camera
+        guard let videoDevice = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: currentCameraPosition),
+              let newVideoInput = try? AVCaptureDeviceInput(device: videoDevice),
+              captureSession.canAddInput(newVideoInput) else {
+            print("❌ CameraService: Failed to flip camera")
+            return
+        }
+        
+        self.videoInput = newVideoInput
+        captureSession.addInput(newVideoInput)
+        print("✅ CameraService: Camera flipped to \(currentCameraPosition == .back ? "back" : "front")")
     }
 }
