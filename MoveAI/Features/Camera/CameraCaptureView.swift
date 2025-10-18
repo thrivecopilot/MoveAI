@@ -35,19 +35,23 @@ struct CameraCaptureView: View {
                     
                     // Pose overlay - only show when preview layer is ready and pose detection is enabled
                     if cameraService.isPoseDetectionEnabled && previewLayer != nil {
+                        let _ = print("📱 CameraCaptureView: Rendering pose overlay - isPoseDetectionEnabled: \(cameraService.isPoseDetectionEnabled), previewLayer exists: \(previewLayer != nil)")
                         GeometryReader { geometry in
                             PoseOverlayView(
                                 pose: cameraService.poseAnalysisService.currentPose,
-                                previewSize: geometry.size // Use actual screen size
+                                previewSize: geometry.size // Use actual screen size from GeometryReader
                             )
                             .onAppear {
                                 print("📱 CameraCaptureView: Pose overlay appeared, currentPose: \(cameraService.poseAnalysisService.currentPose != nil ? "exists" : "nil"), size: \(geometry.size)")
+                                print("📱 CameraCaptureView: Preview layer bounds: \(previewLayer?.bounds ?? .zero)")
                             }
                             .onChange(of: cameraService.poseAnalysisService.currentPose) { newPose in
                                 print("📱 CameraCaptureView: Pose changed! New pose: \(newPose != nil ? "exists" : "nil")")
                             }
                         }
                         .ignoresSafeArea()
+                    } else {
+                        let _ = print("📱 CameraCaptureView: NOT rendering pose overlay - isPoseDetectionEnabled: \(cameraService.isPoseDetectionEnabled), previewLayer exists: \(previewLayer != nil)")
                     }
                 }
             } else {
@@ -195,6 +199,9 @@ struct CameraCaptureView: View {
         }
         .onAppear {
             print("📷 CameraCaptureView: View appeared")
+            print("📷 CameraCaptureView: isPoseDetectionEnabled: \(cameraService.isPoseDetectionEnabled)")
+            print("📷 CameraCaptureView: currentPose: \(cameraService.poseAnalysisService.currentPose != nil ? "exists" : "nil")")
+            
             // Request permissions and setup
             cameraService.requestPermissionAndSetup()
             
