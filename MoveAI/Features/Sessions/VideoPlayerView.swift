@@ -16,7 +16,7 @@ struct VideoPlayerView: View {
     @State private var isPlaying = false
     @State private var currentTime: Double = 0
     @State private var duration: Double = 0
-    @State private var showingPoseOverlay = false
+    @State private var showingPoseOverlay = true
     @State private var currentFrameIndex = 0
     @State private var videoSize: CGSize = CGSize(width: 1920, height: 1080)
     @State private var videoFrameRate: Double = 30.0
@@ -110,13 +110,15 @@ struct VideoPlayerView: View {
     private var poseOverlay: some View {
         Group {
             if showingPoseOverlay, let poseData = poseData, !poseData.isEmpty {
-                PoseOverlayViewCALayer(
-                    pose: currentPose,
-                    videoSize: videoSize,
-                    containerSize: .zero
-                )
-                .rotationEffect(.degrees(90)) // Rotate 90 degrees clockwise to correct orientation
-                .allowsHitTesting(false)
+                GeometryReader { geometry in
+                    PoseOverlayViewCALayer(
+                        pose: currentPose,
+                        videoSize: videoSize,
+                        containerSize: geometry.size
+                    )
+                    .rotationEffect(.degrees(90)) // Rotate 90 degrees clockwise to correct orientation
+                    .allowsHitTesting(false)
+                }
             }
         }
     }
