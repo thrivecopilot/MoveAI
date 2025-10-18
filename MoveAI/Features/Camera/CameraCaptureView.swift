@@ -33,8 +33,8 @@ struct CameraCaptureView: View {
                     CameraPreviewView(previewLayer: previewLayer)
                         .ignoresSafeArea()
                     
-                    // Pose overlay - always show when pose detection is enabled
-                    if cameraService.isPoseDetectionEnabled {
+                    // Pose overlay - only show when preview layer is ready and pose detection is enabled
+                    if cameraService.isPoseDetectionEnabled && previewLayer != nil {
                         GeometryReader { geometry in
                             PoseOverlayView(
                                 pose: cameraService.poseAnalysisService.currentPose,
@@ -234,6 +234,14 @@ struct CameraCaptureView: View {
             previewLayer = cameraService.createPreviewLayer()
             print("✅ CameraCaptureView: Preview layer created")
             
+            // Log camera dimensions for debugging
+            if let previewLayer = previewLayer {
+                let videoSize = previewLayer.videoGravity
+                print("📷 CameraCaptureView: Preview layer videoGravity: \(videoSize)")
+                print("📷 CameraCaptureView: Preview layer bounds: \(previewLayer.bounds)")
+                print("📷 CameraCaptureView: Preview layer frame: \(previewLayer.frame)")
+            }
+            
             // Start the session after setup
             cameraService.startSession()
         } else {
@@ -312,6 +320,11 @@ struct CameraPreviewView: UIViewRepresentable {
         if let previewLayer = previewLayer {
             previewLayer.frame = uiView.bounds
             uiView.layer.addSublayer(previewLayer)
+            
+            // Debug: Log actual camera preview dimensions
+            print("📷 CameraPreviewView: UIView bounds: \(uiView.bounds)")
+            print("📷 CameraPreviewView: Preview layer frame: \(previewLayer.frame)")
+            print("📷 CameraPreviewView: Preview layer videoGravity: \(previewLayer.videoGravity)")
         }
     }
 }
