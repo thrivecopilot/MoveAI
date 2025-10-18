@@ -35,14 +35,19 @@ struct CameraCaptureView: View {
                     
                     // Pose overlay - always show when pose detection is enabled
                     if cameraService.isPoseDetectionEnabled {
-                        PoseOverlayView(
-                            pose: cameraService.poseAnalysisService.currentPose,
-                            previewSize: .zero // Let GeometryReader handle sizing dynamically
-                        )
-                        .ignoresSafeArea()
-                        .onAppear {
-                            print("📱 CameraCaptureView: Pose overlay appeared, currentPose: \(cameraService.poseAnalysisService.currentPose != nil ? "exists" : "nil")")
+                        GeometryReader { geometry in
+                            PoseOverlayView(
+                                pose: cameraService.poseAnalysisService.currentPose,
+                                previewSize: geometry.size // Use actual screen size
+                            )
+                            .onAppear {
+                                print("📱 CameraCaptureView: Pose overlay appeared, currentPose: \(cameraService.poseAnalysisService.currentPose != nil ? "exists" : "nil"), size: \(geometry.size)")
+                            }
+                            .onChange(of: cameraService.poseAnalysisService.currentPose) { newPose in
+                                print("📱 CameraCaptureView: Pose changed! New pose: \(newPose != nil ? "exists" : "nil")")
+                            }
                         }
+                        .ignoresSafeArea()
                     }
                 }
             } else {

@@ -87,12 +87,14 @@ class PoseAnalysisService: ObservableObject {
         guard let observation = observation else {
             print("⚠️ PoseAnalysisService: No pose data for frame \(frameIndex), storing empty frame")
             let poseResult = PoseDetectionResult(keypoints: [], frameIndex: frameIndex)
-            currentPose = poseResult
-            poseHistory.append(poseResult)
-            
-            // Keep only last 1000 frames to prevent memory issues (supports ~33 seconds at 30fps)
-            if poseHistory.count > 1000 {
-                poseHistory.removeFirst(poseHistory.count - 1000)
+            DispatchQueue.main.async {
+                self.currentPose = poseResult
+                self.poseHistory.append(poseResult)
+                
+                // Keep only last 1000 frames to prevent memory issues (supports ~33 seconds at 30fps)
+                if self.poseHistory.count > 1000 {
+                    self.poseHistory.removeFirst(self.poseHistory.count - 1000)
+                }
             }
             return
         }
@@ -131,12 +133,14 @@ class PoseAnalysisService: ObservableObject {
         }
         
         let poseResult = PoseDetectionResult(keypoints: keypoints, frameIndex: frameIndex)
-        currentPose = poseResult
-        poseHistory.append(poseResult)
-        
-        // Keep only last 1000 frames to prevent memory issues (supports ~33 seconds at 30fps)
-        if poseHistory.count > 1000 {
-            poseHistory.removeFirst(poseHistory.count - 1000)
+        DispatchQueue.main.async {
+            self.currentPose = poseResult
+            self.poseHistory.append(poseResult)
+            
+            // Keep only last 1000 frames to prevent memory issues (supports ~33 seconds at 30fps)
+            if self.poseHistory.count > 1000 {
+                self.poseHistory.removeFirst(self.poseHistory.count - 1000)
+            }
         }
         
         print("✅ PoseAnalysisService: Detected \(keypoints.count) keypoints in frame \(frameIndex)")

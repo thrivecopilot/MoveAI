@@ -2,7 +2,7 @@ import Foundation
 import Vision
 
 // MARK: - Pose Keypoint Model
-struct PoseKeypoint: Identifiable, Codable {
+struct PoseKeypoint: Identifiable, Codable, Equatable {
     let id: UUID
     let name: String
     let position: CGPoint
@@ -19,7 +19,7 @@ struct PoseKeypoint: Identifiable, Codable {
 }
 
 // MARK: - Pose Detection Result
-struct PoseDetectionResult: Codable {
+struct PoseDetectionResult: Codable, Equatable {
     let keypoints: [PoseKeypoint]
     let timestamp: Date
     let frameIndex: Int
