@@ -40,6 +40,9 @@ struct CameraCaptureView: View {
                             previewSize: .zero // Let GeometryReader handle sizing dynamically
                         )
                         .ignoresSafeArea()
+                        .onAppear {
+                            print("📱 CameraCaptureView: Pose overlay appeared, currentPose: \(cameraService.poseAnalysisService.currentPose != nil ? "exists" : "nil")")
+                        }
                     }
                 }
             } else {

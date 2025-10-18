@@ -8,29 +8,34 @@ struct PoseOverlayView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
+                let _ = print("🎨 PoseOverlayView: Rendering with pose: \(pose != nil ? "exists" : "nil"), size: \(geometry.size)")
                 if let pose = pose {
-                    ForEach(pose.keypoints) { keypoint in
-                        // Use geometry.size for dynamic sizing instead of previewSize
-                        let actualSize = previewSize == .zero ? geometry.size : previewSize
+                    // Pose data - apply rotation only to pose elements
+                    ZStack {
+                        ForEach(pose.keypoints) { keypoint in
+                            // Use geometry.size for dynamic sizing instead of previewSize
+                            let actualSize = previewSize == .zero ? geometry.size : previewSize
+                            
+                            // Vision uses bottom-left origin, SwiftUI uses top-left origin
+                            // Flip Y coordinate to convert from Vision to SwiftUI coordinate system
+                            let screenX = keypoint.position.x * actualSize.width
+                            let screenY = (1.0 - keypoint.position.y) * actualSize.height
+                            
+                            Circle()
+                                .fill(keypointColor(for: keypoint))
+                                .frame(width: 8, height: 8)
+                                .position(x: screenX, y: screenY)
+                                .onAppear {
+                                    print("🎯 PoseOverlayView: \(keypoint.name) at normalized (\(String(format: "%.3f", keypoint.position.x)), \(String(format: "%.3f", keypoint.position.y))) -> flipped Y (\(String(format: "%.3f", 1.0 - keypoint.position.y))) -> screen (\(String(format: "%.1f", screenX)), \(String(format: "%.1f", screenY))) in actualSize \(actualSize)")
+                                }
+                        }
                         
-                        // Vision uses bottom-left origin, SwiftUI uses top-left origin
-                        // Flip Y coordinate to convert from Vision to SwiftUI coordinate system
-                        let screenX = keypoint.position.x * actualSize.width
-                        let screenY = (1.0 - keypoint.position.y) * actualSize.height
-                        
-                        Circle()
-                            .fill(keypointColor(for: keypoint))
-                            .frame(width: 8, height: 8)
-                            .position(x: screenX, y: screenY)
-                            .onAppear {
-                                print("🎯 PoseOverlayView: \(keypoint.name) at normalized (\(String(format: "%.3f", keypoint.position.x)), \(String(format: "%.3f", keypoint.position.y))) -> flipped Y (\(String(format: "%.3f", 1.0 - keypoint.position.y))) -> screen (\(String(format: "%.1f", screenX)), \(String(format: "%.1f", screenY))) in actualSize \(actualSize)")
-                            }
+                        // Draw skeleton connections
+                        SkeletonView(pose: pose, previewSize: previewSize == .zero ? geometry.size : previewSize)
                     }
-                        
-                    // Draw skeleton connections
-                    SkeletonView(pose: pose, previewSize: previewSize == .zero ? geometry.size : previewSize)
+                    .rotationEffect(.degrees(90)) // Rotate only pose elements
                 } else {
-                    // Show a subtle indicator when no pose is detected yet
+                    // Show a subtle indicator when no pose is detected yet - NO ROTATION
                     VStack {
                         Spacer()
                         HStack {
@@ -47,7 +52,6 @@ struct PoseOverlayView: View {
                     }
                 }
             }
-            .rotationEffect(.degrees(90)) // Rotate 90 degrees clockwise to fix counter-clockwise rotation
         }
     }
     
