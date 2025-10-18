@@ -37,7 +37,7 @@ struct CameraCaptureView: View {
                     if cameraService.isPoseDetectionEnabled {
                         PoseOverlayView(
                             pose: cameraService.poseAnalysisService.currentPose,
-                            previewSize: CGSize(width: UIScreen.main.bounds.width, height: UIScreen.main.bounds.height)
+                            previewSize: .zero // Let GeometryReader handle sizing dynamically
                         )
                         .ignoresSafeArea()
                     }

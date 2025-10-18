@@ -10,22 +10,25 @@ struct PoseOverlayView: View {
             GeometryReader { geometry in
                 ZStack {
                 ForEach(pose.keypoints) { keypoint in
+                    // Use geometry.size for dynamic sizing instead of previewSize
+                    let actualSize = previewSize == .zero ? geometry.size : previewSize
+                    
                     // Vision uses bottom-left origin, SwiftUI uses top-left origin
                     // Flip Y coordinate to convert from Vision to SwiftUI coordinate system
-                    let screenX = keypoint.position.x * geometry.size.width
-                    let screenY = (1.0 - keypoint.position.y) * geometry.size.height
+                    let screenX = keypoint.position.x * actualSize.width
+                    let screenY = (1.0 - keypoint.position.y) * actualSize.height
                     
                     Circle()
                         .fill(keypointColor(for: keypoint))
                         .frame(width: 8, height: 8)
                         .position(x: screenX, y: screenY)
                         .onAppear {
-                            print("🎯 PoseOverlayView: \(keypoint.name) at normalized (\(String(format: "%.3f", keypoint.position.x)), \(String(format: "%.3f", keypoint.position.y))) -> flipped Y (\(String(format: "%.3f", 1.0 - keypoint.position.y))) -> screen (\(String(format: "%.1f", screenX)), \(String(format: "%.1f", screenY))) in geometry \(geometry.size)")
+                            print("🎯 PoseOverlayView: \(keypoint.name) at normalized (\(String(format: "%.3f", keypoint.position.x)), \(String(format: "%.3f", keypoint.position.y))) -> flipped Y (\(String(format: "%.3f", 1.0 - keypoint.position.y))) -> screen (\(String(format: "%.1f", screenX)), \(String(format: "%.1f", screenY))) in actualSize \(actualSize)")
                         }
                 }
                     
                     // Draw skeleton connections
-                    SkeletonView(pose: pose, previewSize: geometry.size)
+                    SkeletonView(pose: pose, previewSize: previewSize == .zero ? geometry.size : previewSize)
                 }
             }
         }
