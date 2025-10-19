@@ -290,8 +290,8 @@ extension CameraService: AVCaptureVideoDataOutputSampleBufferDelegate {
                 print("⚠️ CameraService: Pose detection disabled, skipping frame")
                 return 
             }
-            print("📷 CameraService: Processing frame for pose detection")
-            poseAnalysisService.analyzeFrame(pixelBuffer)
+            print("📷 CameraService: Processing frame for pose detection - isPoseDetectionEnabled: \(isPoseDetectionEnabled)")
+            await poseAnalysisService.analyzeFrame(pixelBuffer)
         }
     }
     

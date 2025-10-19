@@ -37,16 +37,17 @@ struct CameraCaptureView: View {
                     if cameraService.isPoseDetectionEnabled && previewLayer != nil {
                         let _ = print("📱 CameraCaptureView: Rendering pose overlay - isPoseDetectionEnabled: \(cameraService.isPoseDetectionEnabled), previewLayer exists: \(previewLayer != nil)")
                         
-                        // Use the actual video dimensions from the camera service
-                        let videoDimensions = cameraService.getVideoDimensions()
-                        let _ = print("📱 CameraCaptureView: Using video dimensions: \(videoDimensions)")
-                        
-                        PoseOverlayView(
-                            pose: cameraService.poseAnalysisService.currentPose,
-                            previewSize: videoDimensions // Use actual video dimensions
-                        )
+                        // Use GeometryReader to get the actual display size for the pose overlay
+                        GeometryReader { geometry in
+                            let _ = print("📱 CameraCaptureView: Using display size: \(geometry.size)")
+                            
+                            PoseOverlayView(
+                                pose: cameraService.poseAnalysisService.currentPose,
+                                previewSize: geometry.size // Use actual display size
+                            )
+                        }
                         .onAppear {
-                            print("📱 CameraCaptureView: Pose overlay appeared, currentPose: \(cameraService.poseAnalysisService.currentPose != nil ? "exists" : "nil"), videoDimensions: \(videoDimensions)")
+                            print("📱 CameraCaptureView: Pose overlay appeared, currentPose: \(cameraService.poseAnalysisService.currentPose != nil ? "exists" : "nil")")
                             print("📱 CameraCaptureView: Preview layer bounds: \(previewLayer?.bounds ?? .zero)")
                         }
                         .onChange(of: cameraService.poseAnalysisService.currentPose) { newPose in
