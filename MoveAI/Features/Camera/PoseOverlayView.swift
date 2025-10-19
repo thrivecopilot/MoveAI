@@ -1,5 +1,6 @@
 import SwiftUI
 import Vision
+import AVFoundation
 
 struct PoseOverlayView: View {
     let pose: PoseDetectionResult?
@@ -7,24 +8,73 @@ struct PoseOverlayView: View {
     
     // Transform Vision coordinates to display coordinates
     // Vision coordinates are normalized (0-1) in the raw video frame
-    // Display coordinates are in the actual camera preview area
-    private func transformVisionToDisplay(visionPoint: CGPoint, displaySize: CGSize) -> CGPoint {
-        // Vision uses bottom-left origin, SwiftUI uses top-left origin
-        // First, flip Y coordinate
-        let flippedY = 1.0 - visionPoint.y
-        
-        // For now, use simple 1:1 mapping to test
-        // TODO: Add proper aspect ratio and cropping calculations
-        let screenX = visionPoint.x * displaySize.width
-        let screenY = flippedY * displaySize.height
-        
-        return CGPoint(x: screenX, y: screenY)
-    }
     
     var body: some View {
         GeometryReader { geometry in
             ZStack {
                 let _ = print("🎨 PoseOverlayView: Rendering with pose: \(pose != nil ? "exists" : "nil"), size: \(geometry.size)")
+                
+                // DEBUG: Add corner markers to show overlay bounds
+                VStack {
+                    HStack {
+                        // Top-left corner marker
+                        Circle()
+                            .fill(Color.red)
+                            .frame(width: 12, height: 12)
+                        Spacer()
+                        // Top-right corner marker
+                        Circle()
+                            .fill(Color.red)
+                            .frame(width: 12, height: 12)
+                    }
+                    Spacer()
+                    HStack {
+                        // Bottom-left corner marker
+                        Circle()
+                            .fill(Color.red)
+                            .frame(width: 12, height: 12)
+                        Spacer()
+                        // Bottom-right corner marker
+                        Circle()
+                            .fill(Color.red)
+                            .frame(width: 12, height: 12)
+                    }
+                }
+                .padding(8)
+                
+                // DEBUG: Add center crosshair
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        ZStack {
+                            Rectangle()
+                                .fill(Color.yellow)
+                                .frame(width: 2, height: 20)
+                            Rectangle()
+                                .fill(Color.yellow)
+                                .frame(width: 20, height: 2)
+                        }
+                        Spacer()
+                    }
+                    Spacer()
+                }
+                
+                // DEBUG: Add size indicator
+                VStack {
+                    HStack {
+                        Text("Size: \(Int(geometry.size.width))×\(Int(geometry.size.height))")
+                            .font(.caption2)
+                            .foregroundColor(.white)
+                            .padding(4)
+                            .background(Color.black.opacity(0.7))
+                            .cornerRadius(4)
+                        Spacer()
+                    }
+                    .padding(8)
+                    Spacer()
+                }
+                
                 if let pose = pose {
                     // Pose data - apply rotation only to pose elements
                     ZStack {
@@ -32,27 +82,31 @@ struct PoseOverlayView: View {
                             // Use geometry.size for dynamic sizing instead of previewSize
                             let actualSize = previewSize == .zero ? geometry.size : previewSize
                             
-                            // Transform Vision coordinates to display coordinates
-                            // Vision coordinates are normalized (0-1) in the raw video frame
-                            // We need to map them to the actual camera preview area
-                            let transformedPoint = transformVisionToDisplay(
-                                visionPoint: keypoint.position,
-                                displaySize: actualSize
-                            )
+                            // Vision uses bottom-left origin, SwiftUI uses top-left origin
+                            // First, flip Y coordinate to convert from Vision to SwiftUI coordinate system
+                            let flippedY = 1.0 - keypoint.position.y
+                            
+                            // Apply 90-degree rotation to the coordinates before mapping to screen
+                            // This rotates the coordinate system to match the camera orientation
+                            let rotatedX = flippedY  // Y becomes X after 90-degree rotation
+                            let rotatedY = keypoint.position.x  // X becomes Y after 90-degree rotation (no flip needed)
+                            
+                            // Map rotated coordinates to screen space
+                            let screenX = rotatedX * actualSize.width
+                            let screenY = rotatedY * actualSize.height
                             
                             Circle()
                                 .fill(keypointColor(for: keypoint))
                                 .frame(width: 8, height: 8)
-                                .position(x: transformedPoint.x, y: transformedPoint.y)
+                                .position(x: screenX, y: screenY)
                                 .onAppear {
-                                    print("🎯 PoseOverlayView: \(keypoint.name) at normalized (\(String(format: "%.3f", keypoint.position.x)), \(String(format: "%.3f", keypoint.position.y))) -> display (\(String(format: "%.1f", transformedPoint.x)), \(String(format: "%.1f", transformedPoint.y))) in size \(actualSize)")
+                                    print("🎯 PoseOverlayView: \(keypoint.name) at normalized (\(String(format: "%.3f", keypoint.position.x)), \(String(format: "%.3f", keypoint.position.y))) -> flipped Y (\(String(format: "%.3f", 1.0 - keypoint.position.y))) -> screen (\(String(format: "%.1f", screenX)), \(String(format: "%.1f", screenY))) in actualSize \(actualSize)")
                                 }
                         }
                         
                         // Draw skeleton connections
                         SkeletonView(pose: pose, previewSize: previewSize == .zero ? geometry.size : previewSize)
                     }
-                    .rotationEffect(.degrees(90)) // Rotate only pose elements
                 } else {
                     // Show a subtle indicator when no pose is detected yet - NO ROTATION
                     VStack {
@@ -97,18 +151,6 @@ struct SkeletonView: View {
     }
     
     // Transform Vision coordinates to display coordinates
-    private func transformVisionToDisplay(visionPoint: CGPoint, displaySize: CGSize) -> CGPoint {
-        // Vision uses bottom-left origin, SwiftUI uses top-left origin
-        // First, flip Y coordinate
-        let flippedY = 1.0 - visionPoint.y
-        
-        // For now, use simple 1:1 mapping to test
-        // TODO: Add proper aspect ratio and cropping calculations
-        let screenX = visionPoint.x * displaySize.width
-        let screenY = flippedY * displaySize.height
-        
-        return CGPoint(x: screenX, y: screenY)
-    }
     
     private func drawSkeleton(context: GraphicsContext, size: CGSize) {
         let keypoints = pose.keypoints
@@ -154,9 +196,24 @@ struct SkeletonView: View {
                 continue
             }
             
-            // Transform Vision coordinates to display coordinates
-            let start = transformVisionToDisplay(visionPoint: startPoint.position, displaySize: previewSize)
-            let end = transformVisionToDisplay(visionPoint: endPoint.position, displaySize: previewSize)
+            // Apply Y-coordinate flip and 90-degree rotation to convert from Vision to SwiftUI coordinate system
+            let flippedStartY = 1.0 - startPoint.position.y
+            let flippedEndY = 1.0 - endPoint.position.y
+            
+            // Apply 90-degree rotation to the coordinates before mapping to screen
+            let startRotatedX = flippedStartY  // Y becomes X after 90-degree rotation
+            let startRotatedY = startPoint.position.x  // X becomes Y after 90-degree rotation (no flip needed)
+            let endRotatedX = flippedEndY  // Y becomes X after 90-degree rotation
+            let endRotatedY = endPoint.position.x  // X becomes Y after 90-degree rotation (no flip needed)
+            
+            let start = CGPoint(
+                x: startRotatedX * previewSize.width,
+                y: startRotatedY * previewSize.height
+            )
+            let end = CGPoint(
+                x: endRotatedX * previewSize.width,
+                y: endRotatedY * previewSize.height
+            )
             
             var path = Path()
             path.move(to: start)
@@ -184,7 +241,7 @@ struct SkeletonView: View {
     
     let mockPose = PoseDetectionResult(keypoints: mockKeypoints, frameIndex: 1)
     
-    return PoseOverlayView(
+    PoseOverlayView(
         pose: mockPose,
         previewSize: CGSize(width: 300, height: 400)
     )

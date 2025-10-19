@@ -438,8 +438,10 @@ struct PoseOverlayViewCALayer: UIViewRepresentable {
         }
         
         // Convert normalized coordinates to scaled video coordinates
+        // Apply Y-flip to match Vision's bottom-left origin to UIKit's top-left origin
+        let flippedY = 1.0 - keypoint.position.y
         let screenX = keypoint.position.x * scaledWidth + offsetX
-        let screenY = keypoint.position.y * scaledHeight + offsetY
+        let screenY = flippedY * scaledHeight + offsetY
         
         // Create circle path
         let radius: CGFloat = 4
@@ -500,10 +502,14 @@ struct PoseOverlayViewCALayer: UIViewRepresentable {
             if let startPoint = pose.keypoints.first(where: { $0.name == startName }),
                let endPoint = pose.keypoints.first(where: { $0.name == endName }) {
                 
+                // Apply Y-flip to match Vision's bottom-left origin to UIKit's top-left origin
+                let startFlippedY = 1.0 - startPoint.position.y
+                let endFlippedY = 1.0 - endPoint.position.y
+                
                 let startX = startPoint.position.x * scaledWidth + offsetX
-                let startY = startPoint.position.y * scaledHeight + offsetY
+                let startY = startFlippedY * scaledHeight + offsetY
                 let endX = endPoint.position.x * scaledWidth + offsetX
-                let endY = endPoint.position.y * scaledHeight + offsetY
+                let endY = endFlippedY * scaledHeight + offsetY
                 
                 path.move(to: CGPoint(x: startX, y: startY))
                 path.addLine(to: CGPoint(x: endX, y: endY))

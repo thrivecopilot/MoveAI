@@ -30,7 +30,7 @@ class CameraService: NSObject, ObservableObject {
     private var videoDataOutput: AVCaptureVideoDataOutput?
     private var recordingTimer: Timer?
     private var recordingStartTime: Date?
-    private var currentCameraPosition: AVCaptureDevice.Position = .back
+    @Published var currentCameraPosition: AVCaptureDevice.Position = .back
     private var videoInput: AVCaptureDeviceInput?
     
     override init() {
