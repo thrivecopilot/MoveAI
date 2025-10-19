@@ -190,6 +190,22 @@ class CameraService: NSObject, ObservableObject {
         return previewLayer
     }
     
+    func getVideoDimensions() -> CGSize {
+        guard let videoOutput = videoDataOutput,
+              let connection = videoOutput.connection(with: .video),
+              let videoDevice = videoInput?.device else {
+            print("❌ CameraService: Cannot get video dimensions - no video output or device")
+            return CGSize(width: 1920, height: 1080) // Default fallback
+        }
+        
+        let formatDescription = videoDevice.activeFormat.formatDescription
+        let dimensions = CMVideoFormatDescriptionGetDimensions(formatDescription)
+        let size = CGSize(width: Int(dimensions.width), height: Int(dimensions.height))
+        
+        print("📷 CameraService: Video dimensions: \(size)")
+        return size
+    }
+    
     // MARK: - Permission & Setup Management
     
     func requestPermissionAndSetup(completion: (() -> Void)? = nil) {

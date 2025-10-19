@@ -36,18 +36,21 @@ struct CameraCaptureView: View {
                     // Pose overlay - only show when preview layer is ready and pose detection is enabled
                     if cameraService.isPoseDetectionEnabled && previewLayer != nil {
                         let _ = print("📱 CameraCaptureView: Rendering pose overlay - isPoseDetectionEnabled: \(cameraService.isPoseDetectionEnabled), previewLayer exists: \(previewLayer != nil)")
-                        GeometryReader { geometry in
-                            PoseOverlayView(
-                                pose: cameraService.poseAnalysisService.currentPose,
-                                previewSize: geometry.size // Use actual screen size from GeometryReader
-                            )
-                            .onAppear {
-                                print("📱 CameraCaptureView: Pose overlay appeared, currentPose: \(cameraService.poseAnalysisService.currentPose != nil ? "exists" : "nil"), size: \(geometry.size)")
-                                print("📱 CameraCaptureView: Preview layer bounds: \(previewLayer?.bounds ?? .zero)")
-                            }
-                            .onChange(of: cameraService.poseAnalysisService.currentPose) { newPose in
-                                print("📱 CameraCaptureView: Pose changed! New pose: \(newPose != nil ? "exists" : "nil")")
-                            }
+                        
+                        // Use the actual video dimensions from the camera service
+                        let videoDimensions = cameraService.getVideoDimensions()
+                        let _ = print("📱 CameraCaptureView: Using video dimensions: \(videoDimensions)")
+                        
+                        PoseOverlayView(
+                            pose: cameraService.poseAnalysisService.currentPose,
+                            previewSize: videoDimensions // Use actual video dimensions
+                        )
+                        .onAppear {
+                            print("📱 CameraCaptureView: Pose overlay appeared, currentPose: \(cameraService.poseAnalysisService.currentPose != nil ? "exists" : "nil"), videoDimensions: \(videoDimensions)")
+                            print("📱 CameraCaptureView: Preview layer bounds: \(previewLayer?.bounds ?? .zero)")
+                        }
+                        .onChange(of: cameraService.poseAnalysisService.currentPose) { newPose in
+                            print("📱 CameraCaptureView: Pose changed! New pose: \(newPose != nil ? "exists" : "nil")")
                         }
                         .ignoresSafeArea()
                     } else {
