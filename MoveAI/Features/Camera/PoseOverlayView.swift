@@ -5,6 +5,22 @@ struct PoseOverlayView: View {
     let pose: PoseDetectionResult?
     let previewSize: CGSize
     
+    // Transform Vision coordinates to display coordinates
+    // Vision coordinates are normalized (0-1) in the raw video frame
+    // Display coordinates are in the actual camera preview area
+    private func transformVisionToDisplay(visionPoint: CGPoint, displaySize: CGSize) -> CGPoint {
+        // Vision uses bottom-left origin, SwiftUI uses top-left origin
+        // First, flip Y coordinate
+        let flippedY = 1.0 - visionPoint.y
+        
+        // For now, use simple 1:1 mapping to test
+        // TODO: Add proper aspect ratio and cropping calculations
+        let screenX = visionPoint.x * displaySize.width
+        let screenY = flippedY * displaySize.height
+        
+        return CGPoint(x: screenX, y: screenY)
+    }
+    
     var body: some View {
         GeometryReader { geometry in
             ZStack {
@@ -16,17 +32,20 @@ struct PoseOverlayView: View {
                             // Use geometry.size for dynamic sizing instead of previewSize
                             let actualSize = previewSize == .zero ? geometry.size : previewSize
                             
-                            // Vision uses bottom-left origin, SwiftUI uses top-left origin
-                            // Flip Y coordinate to convert from Vision to SwiftUI coordinate system
-                            let screenX = keypoint.position.x * actualSize.width
-                            let screenY = (1.0 - keypoint.position.y) * actualSize.height
+                            // Transform Vision coordinates to display coordinates
+                            // Vision coordinates are normalized (0-1) in the raw video frame
+                            // We need to map them to the actual camera preview area
+                            let transformedPoint = transformVisionToDisplay(
+                                visionPoint: keypoint.position,
+                                displaySize: actualSize
+                            )
                             
                             Circle()
                                 .fill(keypointColor(for: keypoint))
                                 .frame(width: 8, height: 8)
-                                .position(x: screenX, y: screenY)
+                                .position(x: transformedPoint.x, y: transformedPoint.y)
                                 .onAppear {
-                                    print("🎯 PoseOverlayView: \(keypoint.name) at normalized (\(String(format: "%.3f", keypoint.position.x)), \(String(format: "%.3f", keypoint.position.y))) -> flipped Y (\(String(format: "%.3f", 1.0 - keypoint.position.y))) -> screen (\(String(format: "%.1f", screenX)), \(String(format: "%.1f", screenY))) in actualSize \(actualSize)")
+                                    print("🎯 PoseOverlayView: \(keypoint.name) at normalized (\(String(format: "%.3f", keypoint.position.x)), \(String(format: "%.3f", keypoint.position.y))) -> display (\(String(format: "%.1f", transformedPoint.x)), \(String(format: "%.1f", transformedPoint.y))) in size \(actualSize)")
                                 }
                         }
                         
@@ -77,6 +96,20 @@ struct SkeletonView: View {
         }
     }
     
+    // Transform Vision coordinates to display coordinates
+    private func transformVisionToDisplay(visionPoint: CGPoint, displaySize: CGSize) -> CGPoint {
+        // Vision uses bottom-left origin, SwiftUI uses top-left origin
+        // First, flip Y coordinate
+        let flippedY = 1.0 - visionPoint.y
+        
+        // For now, use simple 1:1 mapping to test
+        // TODO: Add proper aspect ratio and cropping calculations
+        let screenX = visionPoint.x * displaySize.width
+        let screenY = flippedY * displaySize.height
+        
+        return CGPoint(x: screenX, y: screenY)
+    }
+    
     private func drawSkeleton(context: GraphicsContext, size: CGSize) {
         let keypoints = pose.keypoints
         
@@ -121,15 +154,9 @@ struct SkeletonView: View {
                 continue
             }
             
-            // Apply Y-coordinate flip to convert from Vision to SwiftUI coordinate system
-            let start = CGPoint(
-                x: startPoint.position.x * previewSize.width,
-                y: (1.0 - startPoint.position.y) * previewSize.height
-            )
-            let end = CGPoint(
-                x: endPoint.position.x * previewSize.width,
-                y: (1.0 - endPoint.position.y) * previewSize.height
-            )
+            // Transform Vision coordinates to display coordinates
+            let start = transformVisionToDisplay(visionPoint: startPoint.position, displaySize: previewSize)
+            let end = transformVisionToDisplay(visionPoint: endPoint.position, displaySize: previewSize)
             
             var path = Path()
             path.move(to: start)
