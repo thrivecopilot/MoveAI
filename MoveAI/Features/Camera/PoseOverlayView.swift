@@ -5,107 +5,37 @@ import AVFoundation
 struct PoseOverlayView: View {
     let pose: PoseDetectionResult?
     let previewSize: CGSize
+    let flipXAxis: Bool
+    let isUploadedVideo: Bool  // Distinguish between camera feed and uploaded videos
     
     // Transform Vision coordinates to display coordinates
     // Vision coordinates are normalized (0-1) in the raw video frame
     
+    init(pose: PoseDetectionResult?, previewSize: CGSize, flipXAxis: Bool, isUploadedVideo: Bool = false) {
+        self.pose = pose
+        self.previewSize = previewSize
+        self.flipXAxis = flipXAxis
+        self.isUploadedVideo = isUploadedVideo
+    }
+    
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                let _ = print("🎨 PoseOverlayView: Rendering with pose: \(pose != nil ? "exists" : "nil"), size: \(geometry.size)")
-                
-                // DEBUG: Add corner markers to show overlay bounds
-                VStack {
-                    HStack {
-                        // Top-left corner marker
-                        Circle()
-                            .fill(Color.red)
-                            .frame(width: 12, height: 12)
-                        Spacer()
-                        // Top-right corner marker
-                        Circle()
-                            .fill(Color.red)
-                            .frame(width: 12, height: 12)
-                    }
-                    Spacer()
-                    HStack {
-                        // Bottom-left corner marker
-                        Circle()
-                            .fill(Color.red)
-                            .frame(width: 12, height: 12)
-                        Spacer()
-                        // Bottom-right corner marker
-                        Circle()
-                            .fill(Color.red)
-                            .frame(width: 12, height: 12)
-                    }
-                }
-                .padding(8)
-                
-                // DEBUG: Add center crosshair
-                VStack {
-                    Spacer()
-                    HStack {
-                        Spacer()
-                        ZStack {
-                            Rectangle()
-                                .fill(Color.yellow)
-                                .frame(width: 2, height: 20)
-                            Rectangle()
-                                .fill(Color.yellow)
-                                .frame(width: 20, height: 2)
-                        }
-                        Spacer()
-                    }
-                    Spacer()
-                }
-                
-                // DEBUG: Add size indicator
-                VStack {
-                    HStack {
-                        Text("Size: \(Int(geometry.size.width))×\(Int(geometry.size.height))")
-                            .font(.caption2)
-                            .foregroundColor(.white)
-                            .padding(4)
-                            .background(Color.black.opacity(0.7))
-                            .cornerRadius(4)
-                        Spacer()
-                    }
-                    .padding(8)
-                    Spacer()
-                }
-                
                 if let pose = pose {
                     // Pose data - apply rotation only to pose elements
                     ZStack {
                         ForEach(pose.keypoints) { keypoint in
-                            // Use geometry.size for dynamic sizing instead of previewSize
-                            let actualSize = previewSize == .zero ? geometry.size : previewSize
-                            
-                            // Vision uses bottom-left origin, SwiftUI uses top-left origin
-                            // First, flip Y coordinate to convert from Vision to SwiftUI coordinate system
-                            let flippedY = 1.0 - keypoint.position.y
-                            
-                            // Apply 90-degree rotation to the coordinates before mapping to screen
-                            // This rotates the coordinate system to match the camera orientation
-                            let rotatedX = flippedY  // Y becomes X after 90-degree rotation
-                            let rotatedY = keypoint.position.x  // X becomes Y after 90-degree rotation (no flip needed)
-                            
-                            // Map rotated coordinates to screen space
-                            let screenX = rotatedX * actualSize.width
-                            let screenY = rotatedY * actualSize.height
-                            
-                            Circle()
-                                .fill(keypointColor(for: keypoint))
-                                .frame(width: 8, height: 8)
-                                .position(x: screenX, y: screenY)
-                                .onAppear {
-                                    print("🎯 PoseOverlayView: \(keypoint.name) at normalized (\(String(format: "%.3f", keypoint.position.x)), \(String(format: "%.3f", keypoint.position.y))) -> flipped Y (\(String(format: "%.3f", 1.0 - keypoint.position.y))) -> screen (\(String(format: "%.1f", screenX)), \(String(format: "%.1f", screenY))) in actualSize \(actualSize)")
-                                }
+                            KeypointView(
+                                keypoint: keypoint,
+                                actualSize: previewSize == .zero ? geometry.size : previewSize,
+                                flipXAxis: flipXAxis,
+                                isUploadedVideo: isUploadedVideo,
+                                keypointColor: keypointColor(for: keypoint)
+                            )
                         }
                         
-                        // Draw skeleton connections
-                        SkeletonView(pose: pose, previewSize: previewSize == .zero ? geometry.size : previewSize)
+                // Draw skeleton connections
+                SkeletonView(pose: pose, previewSize: previewSize == .zero ? geometry.size : previewSize, flipXAxis: flipXAxis, isUploadedVideo: isUploadedVideo)
                     }
                 } else {
                     // Show a subtle indicator when no pose is detected yet - NO ROTATION
@@ -140,9 +70,79 @@ struct PoseOverlayView: View {
     }
 }
 
+private struct KeypointView: View {
+    let keypoint: PoseKeypoint
+    let actualSize: CGSize
+    let flipXAxis: Bool
+    let isUploadedVideo: Bool
+    let keypointColor: Color
+    
+    private var screenPosition: CGPoint {
+        // Vision uses bottom-left origin, SwiftUI uses top-left origin
+        // First, flip Y coordinate to convert from Vision to SwiftUI coordinate system
+        let flippedY = 1.0 - keypoint.position.y
+        
+        let finalX: CGFloat
+        let finalY: CGFloat
+        
+        if isUploadedVideo {
+            // For uploaded videos: frames are already correctly oriented after appliesPreferredTrackTransform
+            // Only apply Y-flip (no 90-degree rotation, no X-flip needed)
+            finalX = keypoint.position.x
+            finalY = flippedY
+        } else {
+            // For camera feed: apply 90-degree rotation to match camera orientation
+            let rotatedX = flippedY  // Y becomes X after 90-degree rotation
+            let rotatedY = keypoint.position.x  // X becomes Y after 90-degree rotation (no flip needed)
+            
+            // Apply X-axis flip for video playback if needed
+            finalX = flipXAxis ? (1.0 - rotatedX) : rotatedX
+            finalY = rotatedY
+        }
+        
+        // Map coordinates to screen space
+        return CGPoint(
+            x: finalX * actualSize.width,
+            y: finalY * actualSize.height
+        )
+    }
+    
+    var body: some View {
+        Circle()
+            .fill(keypointColor)
+            .frame(width: 8, height: 8)
+            .position(x: screenPosition.x, y: screenPosition.y)
+            .onAppear {
+                // #region agent log
+                if keypoint.name == "nose" {
+                    let flippedY = 1.0 - keypoint.position.y
+                    let logData: [String: Any] = [
+                        "hypothesisId": "H1,H4",
+                        "keypointName": keypoint.name,
+                        "originalX": keypoint.position.x,
+                        "originalY": keypoint.position.y,
+                        "flippedY": flippedY,
+                        "isUploadedVideo": isUploadedVideo,
+                        "finalX": isUploadedVideo ? keypoint.position.x : (flipXAxis ? (1.0 - flippedY) : flippedY),
+                        "finalY": isUploadedVideo ? flippedY : keypoint.position.x,
+                        "screenX": screenPosition.x,
+                        "screenY": screenPosition.y,
+                        "previewSize": "\(actualSize.width)x\(actualSize.height)",
+                        "flipXAxis": flipXAxis
+                    ]
+                    VideoProcessingHelpers.writeDebugLog("Coordinate transformation", data: logData, location: "PoseOverlayView.swift:38")
+                }
+                // #endregion
+                print("🎯 PoseOverlayView: \(keypoint.name) at normalized (\(String(format: "%.3f", keypoint.position.x)), \(String(format: "%.3f", keypoint.position.y))) -> screen (\(String(format: "%.1f", screenPosition.x)), \(String(format: "%.1f", screenPosition.y))) in actualSize \(actualSize) [isUploadedVideo: \(isUploadedVideo)]")
+            }
+    }
+}
+
 struct SkeletonView: View {
     let pose: PoseDetectionResult
     let previewSize: CGSize
+    let flipXAxis: Bool
+    let isUploadedVideo: Bool
     
     var body: some View {
         Canvas { context, size in
@@ -196,7 +196,24 @@ struct SkeletonView: View {
                 continue
             }
             
-            // Apply Y-coordinate flip and 90-degree rotation to convert from Vision to SwiftUI coordinate system
+        let start: CGPoint
+        let end: CGPoint
+        
+        if isUploadedVideo {
+            // For uploaded videos: only apply Y-flip (no 90-degree rotation, no X-flip needed)
+            let flippedStartY = 1.0 - startPoint.position.y
+            let flippedEndY = 1.0 - endPoint.position.y
+            
+            start = CGPoint(
+                x: startPoint.position.x * previewSize.width,
+                y: flippedStartY * previewSize.height
+            )
+            end = CGPoint(
+                x: endPoint.position.x * previewSize.width,
+                y: flippedEndY * previewSize.height
+            )
+        } else {
+            // For camera feed: apply Y-flip and 90-degree rotation
             let flippedStartY = 1.0 - startPoint.position.y
             let flippedEndY = 1.0 - endPoint.position.y
             
@@ -206,14 +223,19 @@ struct SkeletonView: View {
             let endRotatedX = flippedEndY  // Y becomes X after 90-degree rotation
             let endRotatedY = endPoint.position.x  // X becomes Y after 90-degree rotation (no flip needed)
             
-            let start = CGPoint(
-                x: startRotatedX * previewSize.width,
+            // Apply X-axis flip for video playback if needed
+            let startFinalX = flipXAxis ? (1.0 - startRotatedX) : startRotatedX
+            let endFinalX = flipXAxis ? (1.0 - endRotatedX) : endRotatedX
+            
+            start = CGPoint(
+                x: startFinalX * previewSize.width,
                 y: startRotatedY * previewSize.height
             )
-            let end = CGPoint(
-                x: endRotatedX * previewSize.width,
+            end = CGPoint(
+                x: endFinalX * previewSize.width,
                 y: endRotatedY * previewSize.height
             )
+        }
             
             var path = Path()
             path.move(to: start)
@@ -243,7 +265,9 @@ struct SkeletonView: View {
     
     PoseOverlayView(
         pose: mockPose,
-        previewSize: CGSize(width: 300, height: 400)
+        previewSize: CGSize(width: 300, height: 400),
+        flipXAxis: false,
+        isUploadedVideo: false
     )
     .background(Color.black)
 }

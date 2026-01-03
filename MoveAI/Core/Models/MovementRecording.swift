@@ -32,11 +32,13 @@ struct AnalysisResult: Codable {
     let score: Double // 0-100 overall form score
     let feedback: [FormFeedback]
     let timestamp: Date
+    let reps: [SquatRep]? // Optional for backward compatibility
     
-    init(score: Double, feedback: [FormFeedback]) {
+    init(score: Double, feedback: [FormFeedback], reps: [SquatRep]? = nil) {
         self.score = score
         self.feedback = feedback
         self.timestamp = Date()
+        self.reps = reps
     }
 }
 
@@ -46,13 +48,15 @@ struct FormFeedback: Codable, Identifiable {
     let message: String
     let severity: FeedbackSeverity
     let timestamp: TimeInterval // When in the video this applies
+    let repNumber: Int? // Which rep this feedback applies to (1-indexed)
     
-    init(category: FeedbackCategory, message: String, severity: FeedbackSeverity, timestamp: TimeInterval) {
+    init(category: FeedbackCategory, message: String, severity: FeedbackSeverity, timestamp: TimeInterval, repNumber: Int? = nil) {
         self.id = UUID()
         self.category = category
         self.message = message
         self.severity = severity
         self.timestamp = timestamp
+        self.repNumber = repNumber
     }
 }
 

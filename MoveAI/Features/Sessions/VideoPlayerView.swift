@@ -12,6 +12,7 @@ import AVFoundation
 struct VideoPlayerView: View {
     let videoURL: URL
     let poseData: [PoseDetectionResult]?
+    let isRecordedLive: Bool  // true for live camera recordings, false for uploaded videos
     @State private var player: AVPlayer?
     @State private var isPlaying = false
     @State private var currentTime: Double = 0
@@ -26,6 +27,14 @@ struct VideoPlayerView: View {
     @StateObject private var statusObserver = PlayerStatusObserver()
     var onFullScreenToggle: (() -> Void)?
     var isFullScreenMode: Bool = false
+    
+    init(videoURL: URL, poseData: [PoseDetectionResult]?, isRecordedLive: Bool = false, onFullScreenToggle: (() -> Void)? = nil, isFullScreenMode: Bool = false) {
+        self.videoURL = videoURL
+        self.poseData = poseData
+        self.isRecordedLive = isRecordedLive
+        self.onFullScreenToggle = onFullScreenToggle
+        self.isFullScreenMode = isFullScreenMode
+    }
     
     var body: some View {
         Group {
@@ -84,26 +93,55 @@ struct VideoPlayerView: View {
     // MARK: - Normal View
     private var normalView: some View {
         VStack(spacing: 0) {
-            // Video Player
-            if let player = player {
-                VideoPlayer(player: player)
-                    .aspectRatio(16/9, contentMode: .fit)
-                    .clipped()
+            // Video Player with Pose Overlay (Instagram-style: fills width, vertical 9:16 aspect ratio)
+            GeometryReader { geometry in
+                let availableWidth = geometry.size.width  // Accounts for parent padding
+                let fullVideoHeight = availableWidth * 16 / 9  // Full 9:16 aspect ratio (portrait iPhone video)
+                let visibleHeight = fullVideoHeight * 0.85  // Show only 85% vertically (crop top/bottom)
+                
+                if let player = player {
+                    ZStack(alignment: .topLeading) {
+                        VideoPlayer(player: player)
+                            .frame(width: availableWidth, height: fullVideoHeight)  // Full dimensions
+                            .aspectRatio(9/16, contentMode: .fill)  // 9:16 vertical video, fill and crop
+                            .frame(width: availableWidth, height: visibleHeight, alignment: .top)  // Crop from top, show 85%
+                            .clipped()
+                            .cornerRadius(8)
+                        
+                        // Pose overlay matches FULL video dimensions (not visible/cropped area)
+                        // Then clipped to match the same visible region as the video
+                        if showingPoseOverlay, let poseData = poseData, !poseData.isEmpty {
+                            PoseOverlayView(
+                                pose: currentPose,
+                                previewSize: CGSize(width: availableWidth, height: fullVideoHeight),  // Use FULL dimensions for coordinates
+                                flipXAxis: true,  // Flip X-axis for video playback
+                                isUploadedVideo: !isRecordedLive  // Use camera feed transformation for live recordings
+                            )
+                            .frame(width: availableWidth, height: visibleHeight, alignment: .top)  // Clip from top, matching video
+                            .clipped()
+                            .allowsHitTesting(false)
+                        }
+                    }
+                    .frame(width: availableWidth, height: visibleHeight)
                     .cornerRadius(8)
-                    .overlay(poseOverlay)
-            } else {
-                Rectangle()
-                    .fill(Color.black)
-                    .aspectRatio(16/9, contentMode: .fit)
-                    .overlay(loadingOverlay)
-                    .cornerRadius(8)
+                } else {
+                    Rectangle()
+                        .fill(Color.black)
+                        .frame(width: availableWidth, height: visibleHeight)
+                        .overlay(loadingOverlay)
+                        .cornerRadius(8)
+                }
             }
+            .frame(maxWidth: .infinity)  // Fill available width
+            .frame(height: UIScreen.main.bounds.width * 16 / 9 * 0.85)  // Explicit height to prevent expansion
+            .fixedSize(horizontal: false, vertical: true)  // Prevent vertical expansion
             
             // Controls Below Video
             controlsView
                 .padding(.horizontal)
                 .padding(.top, 8)
         }
+        .fixedSize(horizontal: false, vertical: false)  // Allow natural sizing
     }
     
     // MARK: - Pose Overlay
@@ -111,12 +149,12 @@ struct VideoPlayerView: View {
         Group {
             if showingPoseOverlay, let poseData = poseData, !poseData.isEmpty {
                 GeometryReader { geometry in
-                    PoseOverlayViewCALayer(
+                    PoseOverlayView(
                         pose: currentPose,
-                        videoSize: videoSize,
-                        containerSize: geometry.size
+                        previewSize: geometry.size,
+                        flipXAxis: true,  // Flip X-axis for video playback
+                        isUploadedVideo: !isRecordedLive  // Use camera feed transformation for live recordings
                     )
-                    .rotationEffect(.degrees(90)) // Rotate 90 degrees clockwise to correct orientation
                     .allowsHitTesting(false)
                 }
             }
@@ -266,6 +304,16 @@ struct VideoPlayerView: View {
                     if let videoTrack = tracks?.first {
                         let size = try? await videoTrack.load(.naturalSize)
                         let frameRate = try? await videoTrack.load(.nominalFrameRate)
+                        let preferredTransform = try? await videoTrack.load(.preferredTransform)
+                        // #region agent log
+                        let logData: [String: Any] = [
+                            "hypothesisId": "H2,H3",
+                            "naturalSize": size != nil ? "\(size!.width)x\(size!.height)" : "nil",
+                            "preferredTransform": preferredTransform != nil ? "\(preferredTransform!)" : "nil",
+                            "frameRate": frameRate != nil ? Double(frameRate!) : 0
+                        ]
+                        VideoProcessingHelpers.writeDebugLog("Video player track info", data: logData, location: "VideoPlayerView.swift:305")
+                        // #endregion
                         await MainActor.run {
                             if let size = size {
                                 self.videoSize = size

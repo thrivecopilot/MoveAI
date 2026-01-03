@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import AVFoundation
 
 struct SessionHistoryView: View {
     @ObservedObject var sessionManager: SessionManager
@@ -221,6 +222,7 @@ struct SessionDetailView: View {
                     VideoPlayerView(
                         videoURL: session.videoURL,
                         poseData: session.poseData,
+                        isRecordedLive: session.isRecordedLive,
                         onFullScreenToggle: {
                             isVideoFullScreen = true
                         }
@@ -231,7 +233,15 @@ struct SessionDetailView: View {
                     
                     // Analysis Results
                     if let analysisResult = session.analysisResult {
-                        analysisSection(analysisResult)
+                        // Use the unified AnalysisResultsView
+                        let recording = createMovementRecording(from: session)
+                        AnalysisResultsView(
+                            recording: recording,
+                            sessionId: session.id,
+                            sessionManager: sessionManager,
+                            existingAnalysisResult: analysisResult,
+                            isEmbeddedInSessionDetail: true
+                        )
                     } else {
                         pendingAnalysisSection
                     }
@@ -257,7 +267,8 @@ struct SessionDetailView: View {
         .sheet(isPresented: $isVideoFullScreen) {
             FullScreenVideoView(
                 videoURL: session.videoURL,
-                poseData: session.poseData
+                poseData: session.poseData,
+                isRecordedLive: session.isRecordedLive
             )
         }
     }
@@ -296,32 +307,30 @@ struct SessionDetailView: View {
         .cornerRadius(8)
     }
     
-    private func analysisSection(_ analysisResult: AnalysisResult) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Analysis Results")
-                .font(.headline)
-            
-            ForEach(analysisResult.feedback) { feedback in
-                HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: "lightbulb.fill")
-                        .foregroundColor(Color(feedback.severity.color))
-                        .font(.headline)
-                    
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("At \(String(format: "%.1f", feedback.timestamp))s:")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text(feedback.message)
-                            .font(.body)
-                    }
-                    
-                    Spacer()
-                }
-                .padding()
-                .background(Color(.systemGray6))
-                .cornerRadius(12)
-            }
+    /// Create a MovementRecording from a Session for use with AnalysisResultsView
+    private func createMovementRecording(from session: Session) -> MovementRecording {
+        // Try to get video duration from the video file
+        // Note: AVAsset.duration is synchronous but may return invalid time for some formats
+        // We'll use a simple synchronous approach with a fallback
+        let duration: TimeInterval
+        let asset = AVAsset(url: session.videoURL)
+        let assetDuration = asset.duration
+        let durationSeconds = CMTimeGetSeconds(assetDuration)
+        
+        if durationSeconds.isFinite && durationSeconds > 0 {
+            duration = durationSeconds
+        } else {
+            // Fallback to a default duration if we can't read the video
+            // In practice, this should rarely happen as videos should have valid duration
+            duration = 10.0
         }
+        
+        return MovementRecording(
+            movementType: session.movementType,
+            videoURL: session.videoURL,
+            duration: duration,
+            poseData: session.poseData
+        )
     }
     
     private var pendingAnalysisSection: some View {
@@ -404,6 +413,7 @@ struct SessionDetailView: View {
 struct FullScreenVideoView: View {
     let videoURL: URL
     let poseData: [PoseDetectionResult]?
+    let isRecordedLive: Bool
     @Environment(\.dismiss) var dismiss
     
     var body: some View {
@@ -414,6 +424,7 @@ struct FullScreenVideoView: View {
                 VideoPlayerView(
                     videoURL: videoURL,
                     poseData: poseData,
+                    isRecordedLive: isRecordedLive,
                     isFullScreenMode: true
                 )
                 .ignoresSafeArea(.all, edges: .all)

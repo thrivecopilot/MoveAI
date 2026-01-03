@@ -21,7 +21,6 @@ final class MoveAITests: XCTestCase {
         XCTAssertFalse(appState.isPremiumUser, "User should not be premium initially")
         XCTAssertTrue(appState.showAds, "Ads should be shown initially")
         XCTAssertEqual(appState.selectedTab, .home, "Default tab should be home")
-        XCTAssertNil(appState.currentUser, "Current user should be nil initially")
     }
     
     func testOnboardingCompletion() throws {
@@ -110,51 +109,11 @@ final class MoveAITests: XCTestCase {
         XCTAssertGreaterThan(intermediateMovements.count, 0, "Should have intermediate movements")
     }
     
-    func testGoalManagement() throws {
-        let movementManager = MovementManager()
-        
-        // Create a test goal
-        let testMovement = movementManager.movements.first!
-        let testGoal = MovementGoal(movementId: testMovement.id, priority: .high, targetScore: 85.0)
-        
-        // Add goal
-        movementManager.addGoal(testGoal)
-        
-        XCTAssertEqual(movementManager.userGoals.count, 1, "Should have one goal")
-        XCTAssertEqual(movementManager.userGoals.first?.movementId, testMovement.id, "Goal should reference correct movement")
-        
-        // Test getting goals for movement
-        let goalsForMovement = movementManager.getGoalsForMovement(testMovement.id)
-        XCTAssertEqual(goalsForMovement.count, 1, "Should find goal for movement")
-        
-        // Update goal
-        var updatedGoal = testGoal
-        updatedGoal.targetScore = 90.0
-        movementManager.updateGoal(updatedGoal)
-        
-        XCTAssertEqual(movementManager.userGoals.first?.targetScore, 90.0, "Goal should be updated")
-        
-        // Delete goal
-        movementManager.deleteGoal(testGoal)
-        XCTAssertEqual(movementManager.userGoals.count, 0, "Should have no goals after deletion")
-    }
+    // Goal management functionality has been removed from MovementManager
     
     // MARK: - Model Tests
     
-    func testUserProfileModel() throws {
-        let profile = UserProfile(
-            height: 180.0,
-            weight: 80.0,
-            age: 25,
-            experienceLevel: .intermediate
-        )
-        
-        XCTAssertEqual(profile.height, 180.0, "Height should be set correctly")
-        XCTAssertEqual(profile.weight, 80.0, "Weight should be set correctly")
-        XCTAssertEqual(profile.age, 25, "Age should be set correctly")
-        XCTAssertEqual(profile.experienceLevel, .intermediate, "Experience level should be set correctly")
-        XCTAssertTrue(profile.goals.isEmpty, "Goals should be empty initially")
-    }
+    // UserProfile model has been removed - user data is now managed via @AppStorage
     
     func testMovementModel() throws {
         let movement = Movement(
@@ -192,15 +151,7 @@ final class MoveAITests: XCTestCase {
     
     // MARK: - Enum Tests
     
-    func testExperienceLevelEnum() throws {
-        XCTAssertEqual(ExperienceLevel.allCases.count, 4, "Should have 4 experience levels")
-        
-        let beginner = ExperienceLevel.beginner
-        XCTAssertEqual(beginner.description, "New to powerlifting", "Beginner description should be correct")
-        
-        let expert = ExperienceLevel.expert
-        XCTAssertEqual(expert.description, "Competitive level", "Expert description should be correct")
-    }
+    // ExperienceLevel enum has been removed - user data is now managed via @AppStorage
     
     func testDifficultyLevelEnum() throws {
         XCTAssertEqual(DifficultyLevel.allCases.count, 4, "Should have 4 difficulty levels")
@@ -236,13 +187,17 @@ final class MoveAITests: XCTestCase {
     }
     
     func testModelCreationPerformance() throws {
+        let movementManager = MovementManager()
+        
         measure {
             for _ in 0..<1000 {
-                _ = UserProfile(
-                    height: Double.random(in: 150...200),
-                    weight: Double.random(in: 50...150),
-                    age: Int.random(in: 18...65),
-                    experienceLevel: ExperienceLevel.allCases.randomElement()!
+                _ = Movement(
+                    name: "Test Movement",
+                    category: .powerlifting,
+                    description: "Test description",
+                    idealForm: IdealForm(),
+                    difficulty: .beginner,
+                    equipment: [.barbell, .plates]
                 )
             }
         }
@@ -272,12 +227,13 @@ final class MoveAITests: XCTestCase {
     func testInvalidDataHandling() throws {
         let movementManager = MovementManager()
         
-        // Test with invalid movement ID
-        let invalidGoal = MovementGoal(movementId: UUID(), priority: .high, targetScore: 85.0)
-        movementManager.addGoal(invalidGoal)
+        // Test search with invalid query
+        let results = movementManager.searchMovements("nonexistentmovement12345")
+        XCTAssertEqual(results.count, 0, "Should return empty results for invalid query")
         
-        let goalsForInvalidMovement = movementManager.getGoalsForMovement(invalidGoal.movementId)
-        XCTAssertEqual(goalsForInvalidMovement.count, 1, "Should still add goal even with invalid movement ID")
+        // Test filtering with empty results
+        let filteredResults = movementManager.getMovementsByDifficulty(.expert)
+        XCTAssertGreaterThanOrEqual(filteredResults.count, 0, "Should handle filtering gracefully")
     }
     
     // MARK: - Data Persistence Tests

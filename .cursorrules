@@ -1,0 +1,14 @@
+{
+  "rules": [
+    "Use The Composable Architecture (TCA) for state management. Structure each feature with State, Action, Reducer, and View files.",
+    "Use Swift Concurrency (async/await) instead of Combine where possible.",
+    "Favor structs and enums. Avoid classes unless necessary for UIKit or delegate patterns.",
+    "Adopt SwiftUI best practices: computed properties for derived state, `@Dependency` for environment data, and minimal side effects in views.",
+    "When accessing HealthKit, create a dedicated HealthKitManager service conforming to a protocol, with dependency injection.",
+    "All code should be production-quality, cleanly formatted, and include concise explanatory comments for architecture choices.",
+    "Use consistent naming: FeatureNameView, FeatureNameReducer, FeatureNameAction, etc.",
+    "Generate TODOs when an API call or logic cannot be implemented without credentials or external data.",
+    "Prefer clarity over brevity. Avoid over-abstracting too early.",
+    "Follow Apple's Human Interface Guidelines for navigation and UX flow."
+  ]
+}

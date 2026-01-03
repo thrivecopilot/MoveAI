@@ -8,39 +8,74 @@
 import SwiftUI
 
 struct MovementSelectionView: View {
+    @StateObject private var sessionManager = SessionManager()
     @State private var cameraService = CameraService()
     @State private var showingCamera = false
+    @State private var showingVideoImport = false
     @State private var selectedMovement: MovementType?
+    @State private var captureMode: CaptureMode = .record
+    
+    enum CaptureMode {
+        case record
+        case upload
+    }
     
     var body: some View {
         NavigationView {
-            ScrollView {
-                LazyVGrid(columns: [
-                    GridItem(.flexible()),
-                    GridItem(.flexible())
-                ], spacing: 20) {
-                    ForEach(MovementType.allCases) { movement in
-                        MovementSelectionCard(
-                            movement: movement,
-                            onTap: {
-                                selectedMovement = movement
-                                showingCamera = true
-                            }
-                        )
-                    }
+            VStack(spacing: 0) {
+                // Mode Selection
+                Picker("Mode", selection: $captureMode) {
+                    Text("Record").tag(CaptureMode.record)
+                    Text("Upload").tag(CaptureMode.upload)
                 }
+                .pickerStyle(.segmented)
                 .padding()
+                
+                ScrollView {
+                    LazyVGrid(columns: [
+                        GridItem(.flexible()),
+                        GridItem(.flexible())
+                    ], spacing: 20) {
+                        ForEach(MovementType.allCases) { movement in
+                            MovementSelectionCard(
+                                movement: movement,
+                                onTap: {
+                                    selectedMovement = movement
+                                    if captureMode == .record {
+                                        showingCamera = true
+                                    } else {
+                                        showingVideoImport = true
+                                    }
+                                }
+                            )
+                        }
+                    }
+                    .padding()
+                }
             }
-            .navigationTitle("Record Movement")
+            .navigationTitle(captureMode == .record ? "Record Movement" : "Upload Video")
             .navigationBarTitleDisplayMode(.large)
             .sheet(isPresented: $showingCamera) {
                 if let movement = selectedMovement {
                     CameraCaptureView(
                         movementType: movement,
                         cameraService: cameraService,
+                        sessionManager: sessionManager,
                         onRecordingComplete: { recording in
-                            // TODO: Save recording and show results
+                            // Session is created in CameraCaptureView
                             print("Recording completed: \(recording.id)")
+                        }
+                    )
+                }
+            }
+            .sheet(isPresented: $showingVideoImport) {
+                if let movement = selectedMovement {
+                    VideoImportView(
+                        movementType: movement,
+                        sessionManager: sessionManager,
+                        onVideoProcessed: { recording in
+                            // Session is created in VideoImportView
+                            print("Video processed: \(recording.id)")
                         }
                     )
                 }

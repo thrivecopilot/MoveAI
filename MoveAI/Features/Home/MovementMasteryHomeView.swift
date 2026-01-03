@@ -16,10 +16,12 @@ struct MovementMasteryHomeView: View {
     
     @State private var selectedMovement: MovementType?
     @State private var showingCamera = false
+    @State private var showingVideoImport = false
     @StateObject private var sessionManager = SessionManager()
     @StateObject private var cameraService = CameraService()
     @State private var showingSessionHistory = false
     @State private var cameraView: CameraCaptureView?
+    @State private var showingActionSheet = false
     
     var body: some View {
         NavigationStack {
@@ -46,12 +48,52 @@ struct MovementMasteryHomeView: View {
                 cameraView
             }
         }
+        .sheet(isPresented: $showingVideoImport) {
+            if let movement = selectedMovement {
+                VideoImportView(
+                    movementType: movement,
+                    sessionManager: sessionManager,
+                    onVideoProcessed: { recording in
+                        // Session is now created in VideoImportView
+                        // This callback is kept for any additional processing if needed
+                    }
+                )
+            }
+        }
+        .confirmationDialog("Choose Option", isPresented: $showingActionSheet, presenting: selectedMovement) { movement in
+            Button("Record New Video") {
+                // Create camera view
+                cameraView = CameraCaptureView(
+                    movementType: movement,
+                    cameraService: cameraService,
+                    sessionManager: sessionManager
+                ) { recordedMovement in
+                    // Session is now created in CameraCaptureView
+                    // This callback is kept for any additional processing if needed
+                }
+                
+                showingCamera = true
+            }
+            
+            Button("Upload Existing Video") {
+                showingVideoImport = true
+            }
+            
+            Button("Cancel", role: .cancel) {
+                selectedMovement = nil
+            }
+        }
         .onChange(of: showingCamera) { isShowing in
             print("🏠 MovementMasteryHomeView: showingCamera changed to: \(isShowing)")
             if !isShowing {
                 print("🏠 MovementMasteryHomeView: Camera sheet dismissed, resetting selectedMovement")
                 selectedMovement = nil
                 cameraView = nil
+            }
+        }
+        .onChange(of: showingVideoImport) { isShowing in
+            if !isShowing {
+                selectedMovement = nil
             }
         }
     }
@@ -116,25 +158,7 @@ struct MovementMasteryHomeView: View {
                 onMovementSelected: { movementType in
                     print("🏠 MovementMasteryHomeView: Movement selected: \(movementType.displayName)")
                     selectedMovement = movementType
-                    
-                    // Create camera view
-                    cameraView = CameraCaptureView(
-                        movementType: movementType,
-                        cameraService: cameraService
-                    ) { recordedMovement in
-                        // Create a session from the recorded movement
-                        let session = Session(
-                            movementType: recordedMovement.movementType,
-                            videoURL: recordedMovement.videoURL,
-                            timestamp: recordedMovement.timestamp,
-                            poseData: recordedMovement.poseData
-                        )
-                        
-                        // Add to session manager
-                        sessionManager.addSession(session)
-                    }
-                    
-                    showingCamera = true
+                    showingActionSheet = true
                 }
             )
             

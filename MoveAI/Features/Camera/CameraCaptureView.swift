@@ -11,16 +11,19 @@ import AVFoundation
 struct CameraCaptureView: View {
     let movementType: MovementType
     @ObservedObject var cameraService: CameraService
+    let sessionManager: SessionManager
     let onRecordingComplete: (MovementRecording) -> Void
     
     @State private var previewLayer: AVCaptureVideoPreviewLayer?
     @State private var showingAnalysis = false
     @State private var completedRecording: MovementRecording?
+    @State private var sessionId: UUID?
     
-    init(movementType: MovementType, cameraService: CameraService, onRecordingComplete: @escaping (MovementRecording) -> Void) {
+    init(movementType: MovementType, cameraService: CameraService, sessionManager: SessionManager, onRecordingComplete: @escaping (MovementRecording) -> Void) {
         print("📷 CameraCaptureView: Initializing for movement: \(movementType.displayName)")
         self.movementType = movementType
         self.cameraService = cameraService
+        self.sessionManager = sessionManager
         self.onRecordingComplete = onRecordingComplete
         print("📷 CameraCaptureView: Camera service hasPermission: \(cameraService.hasPermission)")
     }
@@ -37,7 +40,8 @@ struct CameraCaptureView: View {
                     if cameraService.isPoseDetectionEnabled {
                         PoseOverlayView(
                             pose: cameraService.poseAnalysisService.currentPose,
-                            previewSize: .zero // Let GeometryReader handle sizing dynamically
+                            previewSize: .zero, // Let GeometryReader handle sizing dynamically
+                            flipXAxis: false  // No X-axis flip for live capture
                         )
                         .ignoresSafeArea()
                     }
@@ -211,7 +215,22 @@ struct CameraCaptureView: View {
         }
         .sheet(isPresented: $showingAnalysis) {
             if let recording = completedRecording {
-                AnalysisResultsView(recording: recording)
+                NavigationView {
+                    AnalysisResultsView(
+                        recording: recording,
+                        sessionId: sessionId,
+                        sessionManager: sessionManager
+                    )
+                    .navigationTitle("Analysis Results")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarTrailing) {
+                            Button("Done") {
+                                showingAnalysis = false
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -276,6 +295,21 @@ struct CameraCaptureView: View {
             poseData: cameraService.poseAnalysisService.poseHistory
         )
         
+        // Create a session from the recorded movement (live-recorded)
+        let session = Session(
+            movementType: recording.movementType,
+            videoURL: recording.videoURL,
+            timestamp: recording.timestamp,
+            poseData: recording.poseData,
+            isRecordedLive: true  // Live camera recording
+        )
+        
+        // Store session ID for passing to AnalysisResultsView
+        sessionId = session.id
+        
+        // Add to session manager
+        sessionManager.addSession(session)
+        
         completedRecording = recording
         showingAnalysis = true
         onRecordingComplete(recording)
@@ -331,6 +365,7 @@ struct CameraPreviewView: UIViewRepresentable {
     CameraCaptureView(
         movementType: .squat,
         cameraService: CameraService(),
+        sessionManager: SessionManager(),
         onRecordingComplete: { _ in }
     )
 }

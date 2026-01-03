@@ -116,8 +116,9 @@ class PoseAnalysisService: ObservableObject {
                 // Lower confidence threshold to catch more keypoints
                 if point.confidence > 0.1 {
                     // Store raw Vision coordinates - we'll handle coordinate transformation in the overlay
+                    // Use consistent keypoint name mapping to ensure reliable matching
                     let keypoint = PoseKeypoint(
-                        name: String(describing: jointName),
+                        name: PoseAnalysisHelpers.jointNameToString(jointName),
                         position: CGPoint(x: point.location.x, y: point.location.y),
                         confidence: point.confidence
                     )
