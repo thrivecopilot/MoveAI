@@ -41,8 +41,9 @@ class PoseBasedAnalysisService: AnalysisServiceProtocol {
             let feedback = analysisResult.feedback
             let score = analysisResult.overallScore
             let reps = analysisResult.reps
+            let depthMetrics = analysisResult.depthMetrics
             
-            return AnalysisResult(score: score, feedback: feedback, reps: reps)
+            return AnalysisResult(score: score, feedback: feedback, reps: reps, depthMetrics: depthMetrics)
             
         case .failure(let error):
             // Convert SquatAnalysisError to AnalysisError

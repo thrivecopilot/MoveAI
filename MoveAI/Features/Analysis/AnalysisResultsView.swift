@@ -18,6 +18,7 @@ struct AnalysisResultsView: View {
     @State private var isLoading = true
     @State private var errorMessage: String?
     @State private var lastError: Error?
+    @State private var showScoreInfo = false
     
     @Environment(\.dismiss) private var dismiss
     
@@ -219,8 +220,20 @@ struct AnalysisResultsView: View {
     
     private func scoreCard(_ score: Double) -> some View {
         VStack(spacing: 16) {
-            Text("Overall Score")
-                .font(.headline)
+            HStack {
+                Text("Overall Score")
+                    .font(.headline)
+                
+                Spacer()
+                
+                Button(action: {
+                    showScoreInfo = true
+                }) {
+                    Image(systemName: "info.circle")
+                        .foregroundColor(.blue)
+                        .font(.system(size: 18))
+                }
+            }
             
             ZStack {
                 Circle()
@@ -245,11 +258,14 @@ struct AnalysisResultsView: View {
         .padding()
         .background(Color(.systemGray6))
         .cornerRadius(16)
+        .sheet(isPresented: $showScoreInfo) {
+            ScoreInfoSheet()
+        }
     }
     
     @ViewBuilder
     private func repCounterCard(_ feedback: [FormFeedback]) -> some View {
-        let repStats = calculateRepStatistics(feedback, reps: analysisResult?.reps)
+        let repStats = calculateRepStatistics(feedback, reps: analysisResult?.reps, depthMetrics: analysisResult?.depthMetrics)
         
         // Only show rep counter if we have rep data
         if repStats.totalReps > 0 {
@@ -309,51 +325,64 @@ struct AnalysisResultsView: View {
         }
     }
     
-    private func calculateRepStatistics(_ feedback: [FormFeedback], reps: [SquatRep]? = nil) -> (totalReps: Int, goodReps: Int, warningReps: Int) {
-        // Get all unique rep numbers from feedback
-        let repNumbers = Set(feedback.compactMap { $0.repNumber })
-        let totalReps = repNumbers.count
-        
-        // Debug logging
-        print("🔍 Rep Counting Debug:")
-        print("  - Total feedback items: \(feedback.count)")
-        print("  - Feedback items with rep numbers: \(feedback.filter { $0.repNumber != nil }.count)")
-        print("  - Unique rep numbers found: \(repNumbers)")
-        print("  - Rep numbers: \(Array(repNumbers).sorted())")
-        print("  - Reps data available: \(reps != nil ? "Yes (\(reps!.count) reps)" : "No")")
-        
-        // If no rep numbers, return zeros
-        guard totalReps > 0 else {
-            print("  ⚠️ No rep numbers found in feedback")
+    private func calculateRepStatistics(_ feedback: [FormFeedback], reps: [SquatRep]? = nil, depthMetrics: [DepthAnalysis]? = nil) -> (totalReps: Int, goodReps: Int, warningReps: Int) {
+        // Use reps array as primary source (since feedback is now aggregated and doesn't have rep numbers)
+        guard let reps = reps, !reps.isEmpty else {
+            // Fallback: try to get rep numbers from feedback if reps array is not available (legacy support)
+            let repNumbers = Set(feedback.compactMap { $0.repNumber })
+            let totalReps = repNumbers.count
+            if totalReps > 0 {
+                var goodReps = 0
+                var warningReps = 0
+                for repNumber in repNumbers {
+                    let repFeedback = feedback.filter { $0.repNumber == repNumber }
+                    let hasWarnings = repFeedback.contains { $0.severity == .warning || $0.severity == .critical }
+                    if hasWarnings {
+                        warningReps += 1
+                    } else {
+                        goodReps += 1
+                    }
+                }
+                return (totalReps: totalReps, goodReps: goodReps, warningReps: warningReps)
+            }
             return (totalReps: 0, goodReps: 0, warningReps: 0)
         }
         
+        let totalReps = reps.count
         var goodReps = 0
         var warningReps = 0
         
-        // For each rep, check if it has any warnings or critical issues OR is not full
-        for repNumber in repNumbers {
-            let repFeedback = feedback.filter { $0.repNumber == repNumber }
+        // Group depth metrics by rep number (there can be multiple metrics per rep - one per frame)
+        let depthByRep: [Int: [DepthAnalysis]] = Dictionary(
+            grouping: (depthMetrics ?? []).compactMap { metric -> DepthAnalysis? in
+                guard metric.repNumber != nil else { return nil }
+                return metric
+            },
+            by: { $0.repNumber! }
+        )
+        
+        // Categorize reps based on whether they're full reps AND reached proper depth
+        // A rep needs attention if:
+        // 1. It's not a full rep (didn't complete full range of motion), OR
+        // 2. It didn't reach proper depth (isAtDepth=false from depth metrics)
+        for rep in reps {
+            // Check if rep reached proper depth using depth metrics
+            // Use the deepest point (maximum depthPercentage) - this is the bottom of the rep
+            var reachedProperDepth = true
+            if let repDepthMetrics = depthByRep[rep.repNumber], !repDepthMetrics.isEmpty {
+                // Find the deepest point (where depthPercentage is maximum)
+                if let deepestPoint = repDepthMetrics.max(by: { $0.depthPercentage < $1.depthPercentage }) {
+                    reachedProperDepth = deepestPoint.isAtDepth
+                }
+            }
             
-            print("  - Rep \(repNumber): \(repFeedback.count) feedback items")
-            
-            // Check if rep is full
-            let isFullRep = reps?.first(where: { $0.repNumber == repNumber })?.isFullRep ?? true
-            
-            // Check if this rep has any warnings or critical issues
-            let hasWarnings = repFeedback.contains { $0.severity == .warning || $0.severity == .critical }
-            
-            if hasWarnings || !isFullRep {
-                warningReps += 1
-                print("    → Has warnings/critical issues or is not full (isFullRep=\(isFullRep))")
-            } else {
-                // Rep is good if it's full and only has excellent or good feedback (or no feedback)
+            // Rep needs attention if it's incomplete OR shallow
+            if rep.isFullRep && reachedProperDepth {
                 goodReps += 1
-                print("    → Good rep")
+            } else {
+                warningReps += 1
             }
         }
-        
-        print("  ✅ Final stats: Total=\(totalReps), Good=\(goodReps), Warnings=\(warningReps)")
         
         return (totalReps: totalReps, goodReps: goodReps, warningReps: warningReps)
     }
@@ -476,6 +505,198 @@ struct AnalysisResultsView: View {
     }
 }
 
+struct ScoreInfoSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    // Introduction
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("How Your Score is Calculated")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                        
+                        Text("Your overall score (0-100) is the average of all rep scores. Each rep starts at 100 points and penalties are subtracted based on form quality.")
+                            .font(.body)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    // Calculation Method
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Calculation Method")
+                            .font(.headline)
+                        
+                        HStack(alignment: .top, spacing: 8) {
+                            Text("•")
+                                .foregroundColor(.blue)
+                            Text("Each rep is scored individually (0-100)")
+                        }
+                        
+                        HStack(alignment: .top, spacing: 8) {
+                            Text("•")
+                                .foregroundColor(.blue)
+                            Text("Overall score = Average of all rep scores")
+                        }
+                        
+                        HStack(alignment: .top, spacing: 8) {
+                            Text("•")
+                                .foregroundColor(.blue)
+                            Text("Example: Rep 1 (70) + Rep 2 (90) = 80 overall")
+                        }
+                    }
+                    .padding()
+                    .background(Color(.systemGray6))
+                    .cornerRadius(12)
+                    
+                    // Factors Considered
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Factors Considered")
+                            .font(.headline)
+                        
+                        // Range of Motion
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Image(systemName: "arrow.up.arrow.down")
+                                    .foregroundColor(.orange)
+                                Text("Range of Motion")
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                            }
+                            
+                            Text("Incomplete rep (doesn't return to start): -20 points")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .padding(.leading, 24)
+                        }
+                        
+                        Divider()
+                        
+                        // Depth
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Image(systemName: "arrow.down.circle")
+                                    .foregroundColor(.blue)
+                                Text("Depth")
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                            }
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("• Excellent depth (hip below knee): No penalty")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Text("• Good depth (>80%): -5 points")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Text("• Moderate depth (60-80%): -15 points")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Text("• Shallow depth (<60%): -30 points")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.leading, 24)
+                        }
+                        
+                        Divider()
+                        
+                        // Knee Tracking
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Image(systemName: "figure.walk")
+                                    .foregroundColor(.green)
+                                Text("Knee Tracking")
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                            }
+                            
+                            Text("Knees caving inward (valgus): -20 points")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .padding(.leading, 24)
+                        }
+                        
+                        Divider()
+                        
+                        // Back Position
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Image(systemName: "figure.walk")
+                                    .foregroundColor(.red)
+                                Text("Back Position")
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                            }
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("• Mild back rounding: -10 points")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Text("• Moderate back rounding: -25 points")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Text("• Severe back rounding: -40 points")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.leading, 24)
+                        }
+                    }
+                    .padding()
+                    .background(Color(.systemGray6))
+                    .cornerRadius(12)
+                    
+                    // Example
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Example Calculation")
+                            .font(.headline)
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Rep 1:")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                            Text("  100 (start) - 20 (incomplete) - 10 (mild back rounding) = 70")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .padding(.leading, 12)
+                            
+                            Text("Rep 2:")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                            Text("  100 (start) - 5 (good depth) = 95")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .padding(.leading, 12)
+                            
+                            Divider()
+                            
+                            Text("Overall Score: (70 + 95) ÷ 2 = 82.5")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.blue)
+                        }
+                    }
+                    .padding()
+                    .background(Color(.systemGray6))
+                    .cornerRadius(12)
+                }
+                .padding()
+            }
+            .navigationTitle("Score Information")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+}
+
 struct FeedbackCard: View {
     let feedback: FormFeedback
     
@@ -506,9 +727,12 @@ struct FeedbackCard: View {
                     .font(.body)
                     .foregroundColor(.secondary)
                 
-                Text("at \(formatTimestamp(feedback.timestamp))")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                // Only show timestamp for rep-specific feedback (not aggregated)
+                if feedback.repNumber != nil {
+                    Text("at \(formatTimestamp(feedback.timestamp))")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
         }
         .padding()

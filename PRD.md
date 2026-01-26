@@ -27,8 +27,8 @@ The app will focus on techniques in sports, exercises for improving performance,
 ## CUJs
 
 1. \[create-profile\] I want to quickly set up my profile and enter my goals so I can get personalized recommendations without friction, so I…  
-   1. \[enter-info\] Enter relevant info like height, weight, other relevant information  
-   2. \[sync-info\] There’s an option to sync this data from the health app   
+   1. \[sync-info\] There’s an option to sync relevant info like height, weight from the health app  
+   2. \[enter-info\] Manually enter the info that's not prepopulated from health app
    3. \[digitize\] Take pictures of myself so that the app can understand absolute and relative proportions as it pertains to proper technique
 
 2. \[set-goals\] I want to specify which movements I want to master, so I…  

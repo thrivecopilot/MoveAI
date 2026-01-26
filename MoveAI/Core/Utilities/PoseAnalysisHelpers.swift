@@ -197,5 +197,23 @@ enum PoseAnalysisHelpers {
         let keypointNames = Set(keypoints.map { $0.name })
         return required.allSatisfy { keypointNames.contains($0) }
     }
+    
+    /// Check if pose has at least one complete leg visible (for side-view videos)
+    /// Returns true if (leftHip AND leftKnee) OR (rightHip AND rightKnee) are present
+    static func hasSameSideHipAndKnee(
+        _ pose: PoseDetectionResult,
+        minConfidence: Float = 0.3
+    ) -> Bool {
+        let keypoints = filterByConfidence(pose.keypoints, minConfidence: minConfidence)
+        let keypointNames = Set(keypoints.map { $0.name })
+        
+        // Check for left side: leftHip AND leftKnee
+        let hasLeftSide = keypointNames.contains("leftHip") && keypointNames.contains("leftKnee")
+        
+        // Check for right side: rightHip AND rightKnee
+        let hasRightSide = keypointNames.contains("rightHip") && keypointNames.contains("rightKnee")
+        
+        return hasLeftSide || hasRightSide
+    }
 }
 

@@ -62,42 +62,68 @@ class VideoProcessor: ObservableObject {
         // Step 2: Load asset and get duration
         let asset = AVAsset(url: url)
         let duration = try await VideoProcessingHelpers.getVideoDuration(asset)
+        let totalFrames = Int(duration * 30.0) // Estimate based on 30fps
         
-        // Step 3: Extract frames
+        // Step 3 & 4: Extract and process frames in streaming mode (memory efficient)
         currentStep = .extractingFrames
         progress = 0.2
         progressHandler?(0.2)
         
-        var frameProgress: Double = 0.2
-        let frames = try await VideoProcessingHelpers.extractFrames(
-            from: asset,
-            targetFPS: 30.0
-        ) { frameProgressValue in
-            // Map frame extraction progress (0.0-1.0) to overall progress (0.2-0.6)
-            frameProgress = 0.2 + (frameProgressValue * 0.4)
-            Task { @MainActor in
-                self.progress = frameProgress
-                progressHandler?(frameProgress)
-            }
-        }
+        // Reset pose analysis service
+        poseAnalysisService.reset()
         
-        guard !frames.isEmpty else {
+        var poseResults: [PoseDetectionResult] = []
+        var processedFrameCount = 0
+        
+        // Stream frames: extract, downscale, process, release
+        try await VideoProcessingHelpers.extractFrames(
+            from: asset,
+            targetFPS: 30.0,
+            frameHandler: { [weak self] pixelBuffer, frameIndex in
+                guard let self = self else { return }
+                
+                // Downscale frame for memory efficiency (pose detection doesn't need full resolution)
+                guard let downscaledBuffer = VideoProcessingHelpers.downscalePixelBuffer(
+                    pixelBuffer,
+                    maxWidth: 640,
+                    maxHeight: 480
+                ) else {
+                    // If downscaling fails, use original (shouldn't happen, but handle gracefully)
+                    print("⚠️ VideoProcessor: Failed to downscale frame \(frameIndex), using original")
+                    let result = await self.processSingleFrame(pixelBuffer, index: frameIndex)
+                    await MainActor.run {
+                        poseResults.append(result)
+                        processedFrameCount += 1
+                    }
+                    return
+                }
+                
+                // Process downscaled frame for pose detection
+                let result = await self.processSingleFrame(downscaledBuffer, index: frameIndex)
+                
+                // Store result (small data structure)
+                await MainActor.run {
+                    poseResults.append(result)
+                    processedFrameCount += 1
+                    
+                    // Update progress: combine extraction and processing (0.2-0.95)
+                    let extractionProgress = Double(frameIndex + 1) / Double(totalFrames)
+                    let overallProgress = 0.2 + (extractionProgress * 0.75)
+                    self.progress = overallProgress
+                    progressHandler?(overallProgress)
+                }
+                
+                // Frame buffers will be released automatically after this scope
+            },
+            progressHandler: nil // Progress handled in frameHandler
+        )
+        
+        guard !poseResults.isEmpty else {
             throw VideoProcessingError.noFramesExtracted
         }
         
-        // Step 4: Process frames for pose detection
+        // Update to analyzing step for final processing
         currentStep = .analyzingPoses
-        progress = 0.6
-        progressHandler?(0.6)
-        
-        let poseResults = try await processFramesForPose(frames) { poseProgressValue in
-            // Map pose analysis progress (0.0-1.0) to overall progress (0.6-0.95)
-            let poseProgress = 0.6 + (poseProgressValue * 0.35)
-            Task { @MainActor in
-                self.progress = poseProgress
-                progressHandler?(poseProgress)
-            }
-        }
         
         // Step 5: Create MovementRecording
         currentStep = .complete
@@ -116,41 +142,8 @@ class VideoProcessor: ObservableObject {
     
     // MARK: - Pose Detection Processing
     
-    /// Process frames through pose detection
-    private func processFramesForPose(
-        _ frames: [CVPixelBuffer],
-        progressHandler: ((Double) -> Void)? = nil
-    ) async throws -> [PoseDetectionResult] {
-        // Reset pose analysis service
-        poseAnalysisService.reset()
-        
-        var poseResults: [PoseDetectionResult] = []
-        let totalFrames = frames.count
-        
-        // Process frames in batches to avoid memory issues
-        let batchSize = 10
-        var frameIndex = 0
-        
-        for batchStart in stride(from: 0, to: frames.count, by: batchSize) {
-            let batchEnd = min(batchStart + batchSize, frames.count)
-            let batch = Array(frames[batchStart..<batchEnd])
-            
-            // Process batch
-            for frame in batch {
-                let result = await processSingleFrame(frame, index: frameIndex)
-                poseResults.append(result)
-                frameIndex += 1
-                
-                // Update progress
-                let progress = Double(frameIndex) / Double(totalFrames)
-                progressHandler?(progress)
-            }
-        }
-        
-        return poseResults
-    }
-    
     /// Process a single frame and wait for pose detection result
+    /// Uses autoreleasepool to release intermediate objects promptly
     private func processSingleFrame(_ pixelBuffer: CVPixelBuffer, index: Int) async -> PoseDetectionResult {
         return await withCheckedContinuation { continuation in
             let request = VNDetectHumanBodyPoseRequest { request, error in
@@ -203,26 +196,29 @@ class VideoProcessor: ObservableObject {
                 continuation.resume(returning: poseResult)
             }
             
-            let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .up)
-            do {
-                // #region agent log
-                if index == 0 {
-                    let width = CVPixelBufferGetWidth(pixelBuffer)
-                    let height = CVPixelBufferGetHeight(pixelBuffer)
-                    let logData: [String: Any] = [
-                        "hypothesisId": "H1,H3",
-                        "pixelBufferWidth": width,
-                        "pixelBufferHeight": height,
-                        "visionOrientation": "up"
-                    ]
-                    VideoProcessingHelpers.writeDebugLog("Pose detection input dimensions", data: logData, location: "VideoProcessor.swift:192")
+            // Process within autoreleasepool to release memory promptly
+            autoreleasepool {
+                let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .up)
+                do {
+                    // #region agent log
+                    if index == 0 {
+                        let width = CVPixelBufferGetWidth(pixelBuffer)
+                        let height = CVPixelBufferGetHeight(pixelBuffer)
+                        let logData: [String: Any] = [
+                            "hypothesisId": "H1,H3",
+                            "pixelBufferWidth": width,
+                            "pixelBufferHeight": height,
+                            "visionOrientation": "up"
+                        ]
+                        VideoProcessingHelpers.writeDebugLog("Pose detection input dimensions", data: logData, location: "VideoProcessor.swift:192")
+                    }
+                    // #endregion
+                    try handler.perform([request])
+                } catch {
+                    print("❌ VideoProcessor: Failed to perform pose detection: \(error.localizedDescription)")
+                    let emptyResult = PoseDetectionResult(keypoints: [], frameIndex: index)
+                    continuation.resume(returning: emptyResult)
                 }
-                // #endregion
-                try handler.perform([request])
-            } catch {
-                print("❌ VideoProcessor: Failed to perform pose detection: \(error.localizedDescription)")
-                let emptyResult = PoseDetectionResult(keypoints: [], frameIndex: index)
-                continuation.resume(returning: emptyResult)
             }
         }
     }

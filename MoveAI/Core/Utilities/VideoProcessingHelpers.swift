@@ -8,6 +8,7 @@
 import Foundation
 import AVFoundation
 import CoreVideo
+import CoreImage
 
 /// Helper functions for video processing and frame extraction
 enum VideoProcessingHelpers {
@@ -83,11 +84,13 @@ enum VideoProcessingHelpers {
     /// - Parameters:
     ///   - asset: AVAsset to extract frames from
     ///   - targetFPS: Target frames per second to extract (e.g., 30)
+    ///   - frameHandler: Optional async closure to process each frame as it's extracted (for streaming)
     ///   - progressHandler: Optional progress callback (0.0 to 1.0)
-    /// - Returns: Array of CVPixelBuffers representing video frames
+    /// - Returns: Array of CVPixelBuffers representing video frames (only if frameHandler is nil)
     static func extractFrames(
         from asset: AVAsset,
         targetFPS: Double = 30.0,
+        frameHandler: ((CVPixelBuffer, Int) async throws -> Void)? = nil,
         progressHandler: ((Double) -> Void)? = nil
     ) async throws -> [CVPixelBuffer] {
         guard let videoTrack = try await asset.loadTracks(withMediaType: .video).first else {
@@ -102,6 +105,7 @@ enum VideoProcessingHelpers {
         let totalFrames = Int(videoDuration * targetFPS)
         
         var frames: [CVPixelBuffer] = []
+        var frameCount = 0
         let imageGenerator = AVAssetImageGenerator(asset: asset)
         imageGenerator.requestedTimeToleranceBefore = .zero
         imageGenerator.requestedTimeToleranceAfter = .zero
@@ -126,6 +130,7 @@ enum VideoProcessingHelpers {
             let time = CMTime(seconds: Double(i) * frameInterval, preferredTimescale: 600)
             
             do {
+                // Extract frame - CGImage will be released after this scope
                 let cgImage = try await imageGenerator.image(at: time).image
                 
                 // #region agent log
@@ -140,20 +145,32 @@ enum VideoProcessingHelpers {
                 // #endregion
                 
                 // Convert CGImage to CVPixelBuffer
-                if let pixelBuffer = cgImageToPixelBuffer(cgImage) {
-                    // #region agent log
-                    if i == 0 {
-                        let width = CVPixelBufferGetWidth(pixelBuffer)
-                        let height = CVPixelBufferGetHeight(pixelBuffer)
-                        let logData: [String: Any] = [
-                            "hypothesisId": "H1,H3",
-                            "pixelBufferWidth": width,
-                            "pixelBufferHeight": height
-                        ]
-                        writeDebugLog("First frame pixel buffer dimensions", data: logData, location: "VideoProcessingHelpers.swift:102")
-                    }
-                    // #endregion
+                guard let pixelBuffer = cgImageToPixelBuffer(cgImage) else {
+                    continue
+                }
+                
+                // #region agent log
+                if i == 0 {
+                    let width = CVPixelBufferGetWidth(pixelBuffer)
+                    let height = CVPixelBufferGetHeight(pixelBuffer)
+                    let logData: [String: Any] = [
+                        "hypothesisId": "H1,H3",
+                        "pixelBufferWidth": width,
+                        "pixelBufferHeight": height
+                    ]
+                    writeDebugLog("First frame pixel buffer dimensions", data: logData, location: "VideoProcessingHelpers.swift:102")
+                }
+                // #endregion
+                
+                // If frameHandler is provided, use streaming mode
+                if let handler = frameHandler {
+                    try await handler(pixelBuffer, i)
+                    // Frame will be released after handler completes
+                    frameCount += 1
+                } else {
+                    // Legacy mode: accumulate frames
                     frames.append(pixelBuffer)
+                    frameCount += 1
                 }
                 
                 // Update progress
@@ -166,11 +183,73 @@ enum VideoProcessingHelpers {
             }
         }
         
-        guard !frames.isEmpty else {
+        guard frameCount > 0 else {
             throw VideoProcessingError.noFramesExtracted
         }
         
+        // Return frames array only if not using streaming mode
         return frames
+    }
+    
+    // MARK: - Frame Downscaling
+    
+    /// Downscale a pixel buffer to a maximum resolution for memory efficiency
+    /// - Parameters:
+    ///   - pixelBuffer: Source pixel buffer
+    ///   - maxWidth: Maximum width (default 640)
+    ///   - maxHeight: Maximum height (default 480)
+    /// - Returns: Downscaled pixel buffer, or nil if scaling fails
+    static func downscalePixelBuffer(
+        _ pixelBuffer: CVPixelBuffer,
+        maxWidth: Int = 640,
+        maxHeight: Int = 480
+    ) -> CVPixelBuffer? {
+        let width = CVPixelBufferGetWidth(pixelBuffer)
+        let height = CVPixelBufferGetHeight(pixelBuffer)
+        
+        // If already smaller than max dimensions, return original
+        if width <= maxWidth && height <= maxHeight {
+            return pixelBuffer
+        }
+        
+        // Calculate scale factor to fit within max dimensions while maintaining aspect ratio
+        let widthScale = Double(maxWidth) / Double(width)
+        let heightScale = Double(maxHeight) / Double(height)
+        let scale = min(widthScale, heightScale)
+        
+        let newWidth = Int(Double(width) * scale)
+        let newHeight = Int(Double(height) * scale)
+        
+        // Create new pixel buffer for downscaled image
+        var downscaledBuffer: CVPixelBuffer?
+        let status = CVPixelBufferCreate(
+            kCFAllocatorDefault,
+            newWidth,
+            newHeight,
+            kCVPixelFormatType_32BGRA,
+            [
+                kCVPixelBufferCGImageCompatibilityKey: kCFBooleanTrue!,
+                kCVPixelBufferCGBitmapContextCompatibilityKey: kCFBooleanTrue!
+            ] as CFDictionary,
+            &downscaledBuffer
+        )
+        
+        guard status == kCVReturnSuccess, let outputBuffer = downscaledBuffer else {
+            return nil
+        }
+        
+        // Use Core Image for high-quality scaling
+        let ciContext = CIContext()
+        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+        
+        // Create transform for scaling
+        let transform = CGAffineTransform(scaleX: scale, y: scale)
+        let scaledImage = ciImage.transformed(by: transform)
+        
+        // Render scaled image to output buffer
+        ciContext.render(scaledImage, to: outputBuffer)
+        
+        return outputBuffer
     }
     
     // MARK: - Pixel Buffer Conversion

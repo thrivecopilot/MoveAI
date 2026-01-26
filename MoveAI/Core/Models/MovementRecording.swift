@@ -33,12 +33,14 @@ struct AnalysisResult: Codable {
     let feedback: [FormFeedback]
     let timestamp: Date
     let reps: [SquatRep]? // Optional for backward compatibility
+    let depthMetrics: [DepthAnalysis]? // Optional depth metrics for shallow rep detection
     
-    init(score: Double, feedback: [FormFeedback], reps: [SquatRep]? = nil) {
+    init(score: Double, feedback: [FormFeedback], reps: [SquatRep]? = nil, depthMetrics: [DepthAnalysis]? = nil) {
         self.score = score
         self.feedback = feedback
         self.timestamp = Date()
         self.reps = reps
+        self.depthMetrics = depthMetrics
     }
 }
 

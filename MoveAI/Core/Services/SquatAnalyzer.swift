@@ -21,26 +21,107 @@ struct SquatAnalyzer {
         }
         
         // Check pose data quality
-        // Minimum required: hips and knees (for depth analysis)
-        // Ankles and shoulders are optional (for knee angle and back angle analyses)
-        let requiredKeypoints = ["leftHip", "rightHip", "leftKnee", "rightKnee"]
+        // For depth analysis, we need at least one complete leg visible:
+        // (leftHip AND leftKnee) OR (rightHip AND rightKnee)
+        // This is more lenient than requiring all four keypoints, which helps with side-view videos
+        // where one leg may be occluded
         
-        // Analyze keypoint availability
-        let missingKeypoints = findMissingKeypoints(in: poseHistory, required: requiredKeypoints)
+        // First, check if we have at least some keypoints available in the entire history
+        let allKeypoints = ["leftHip", "rightHip", "leftKnee", "rightKnee"]
+        let missingKeypoints = findMissingKeypoints(in: poseHistory, required: allKeypoints)
         if !missingKeypoints.isEmpty {
-            return .failure(.missingRequiredKeypoints(missing: missingKeypoints))
+            // Check if we have at least one side available
+            let hasLeftSide = !findMissingKeypoints(in: poseHistory, required: ["leftHip", "leftKnee"]).contains("leftHip") && 
+                             !findMissingKeypoints(in: poseHistory, required: ["leftHip", "leftKnee"]).contains("leftKnee")
+            let hasRightSide = !findMissingKeypoints(in: poseHistory, required: ["rightHip", "rightKnee"]).contains("rightHip") && 
+                              !findMissingKeypoints(in: poseHistory, required: ["rightHip", "rightKnee"]).contains("rightKnee")
+            
+            if !hasLeftSide && !hasRightSide {
+                return .failure(.missingRequiredKeypoints(missing: missingKeypoints))
+            }
         }
+        
+        // Detect camera angle from pose data
+        let cameraAngle = detectCameraAngle(from: poseHistory)
         
         // Filter out frames with insufficient keypoints
-        let validPoses = poseHistory.filter { pose in
-            PoseAnalysisHelpers.hasRequiredKeypoints(
-                pose,
-                required: requiredKeypoints,
-                minConfidence: 0.3
-            )
+        // Accept frames with (leftHip AND leftKnee) OR (rightHip AND rightKnee)
+        var filteredFrames: [(originalIndex: Int, reason: String)] = []
+        let validPoses = poseHistory.enumerated().compactMap { (index, pose) -> PoseDetectionResult? in
+            if PoseAnalysisHelpers.hasSameSideHipAndKnee(pose, minConfidence: 0.3) {
+                return pose
+            } else {
+                // Determine why frame was filtered
+                let keypoints = PoseAnalysisHelpers.filterByConfidence(pose.keypoints, minConfidence: 0.3)
+                let keypointNames = Set(keypoints.map { $0.name })
+                let hasLeftHip = keypointNames.contains("leftHip")
+                let hasLeftKnee = keypointNames.contains("leftKnee")
+                let hasRightHip = keypointNames.contains("rightHip")
+                let hasRightKnee = keypointNames.contains("rightKnee")
+                
+                var missing: [String] = []
+                if !hasLeftHip { missing.append("leftHip") }
+                if !hasLeftKnee { missing.append("leftKnee") }
+                if !hasRightHip { missing.append("rightHip") }
+                if !hasRightKnee { missing.append("rightKnee") }
+                
+                let reason = "Missing: \(missing.joined(separator: ", "))"
+                filteredFrames.append((originalIndex: pose.frameIndex, reason: reason))
+                return nil
+            }
         }
         
+        // Debug: Log filtering results
         print("🔍 SquatAnalyzer: Total pose history: \(poseHistory.count) frames, Valid poses after filtering: \(validPoses.count) frames")
+        if !filteredFrames.isEmpty {
+            print("🔍 SquatAnalyzer: Filtered out \(filteredFrames.count) frames:")
+            
+            // Group consecutive filtered frames to show gaps
+            var gaps: [(start: Int, end: Int, count: Int)] = []
+            var currentGapStart: Int? = nil
+            var currentGapEnd: Int? = nil
+            
+            for filtered in filteredFrames.sorted(by: { $0.originalIndex < $1.originalIndex }) {
+                if let start = currentGapStart {
+                    if filtered.originalIndex == currentGapEnd! + 1 {
+                        // Consecutive frame, extend gap
+                        currentGapEnd = filtered.originalIndex
+                    } else {
+                        // Gap ended, save it
+                        gaps.append((start: start, end: currentGapEnd!, count: currentGapEnd! - start + 1))
+                        currentGapStart = filtered.originalIndex
+                        currentGapEnd = filtered.originalIndex
+                    }
+                } else {
+                    currentGapStart = filtered.originalIndex
+                    currentGapEnd = filtered.originalIndex
+                }
+            }
+            
+            // Save last gap if exists
+            if let start = currentGapStart {
+                gaps.append((start: start, end: currentGapEnd!, count: currentGapEnd! - start + 1))
+            }
+            
+            // Show gaps
+            for gap in gaps {
+                if gap.count > 5 {
+                    print("  ⚠️  Large gap: Frames \(gap.start)-\(gap.end) (\(gap.count) frames) - may indicate filtering issue")
+                } else {
+                    print("  - Frames \(gap.start)-\(gap.end) (\(gap.count) frames)")
+                }
+            }
+            
+            // Show sample of filtered frames with reasons
+            let sampleSize = min(10, filteredFrames.count)
+            print("  Sample of filtered frames (showing first \(sampleSize)):")
+            for filtered in filteredFrames.prefix(sampleSize) {
+                print("    Frame \(filtered.originalIndex): \(filtered.reason)")
+            }
+            if filteredFrames.count > sampleSize {
+                print("    ... and \(filteredFrames.count - sampleSize) more")
+            }
+        }
         
         // Check for sufficient valid frames
         // Reduced from 10 to 5 to be more lenient with imperfect videos
@@ -58,12 +139,16 @@ struct SquatAnalyzer {
         }
         
         // Extract hip heights and smooth for rep detection
+        // Handle single-leg visibility: prefer same-side hip when available, fall back to average
         let hipHeights = validPoses.compactMap { pose -> Double? in
             let (leftHip, rightHip) = PoseAnalysisHelpers.extractBilateralKeypoints(
                 leftName: "leftHip",
                 rightName: "rightHip",
                 from: pose
             )
+            
+            // Prefer same-side hip if available (for side-view videos)
+            // averagePosition already handles single-leg visibility, but we're explicit here
             guard let hipPos = PoseAnalysisHelpers.averagePosition(leftHip, rightHip) else {
                 return nil
             }
@@ -82,8 +167,8 @@ struct SquatAnalyzer {
         let minimumHipHeight = getMinimumHipHeight(validPoses)
         
         // Detect reps (descent/ascent cycles)
-        let minDepthThreshold = 0.05  // Minimum 5% change in normalized height to count as a rep
-        let reps = detectReps(validPoses, smoothedHeights: smoothedHeights, startHeight: startingHipHeight, minDepthThreshold: minDepthThreshold)
+        let minDepthThreshold = 0.10  // Minimum 10% change in normalized height to count as a rep
+        let reps = detectReps(validPoses, smoothedHeights: smoothedHeights, rawHeights: hipHeights, startHeight: startingHipHeight, minDepthThreshold: minDepthThreshold)
         
         // Detect phases (for backward compatibility, but now we have reps)
         let phases = detectPhases(validPoses)
@@ -106,14 +191,49 @@ struct SquatAnalyzer {
         for (index, pose) in validPoses.enumerated() {
             let repNum = repNumberForFrame(index)
             
-            if let depth = calculateDepth(pose, startHeight: startingHipHeight, minHeight: minimumHipHeight, repNumber: repNum) {
+            // Get rep-specific heights if this frame belongs to a rep
+            var repStartHeight: Double? = nil
+            var repBottomHeight: Double? = nil
+            var isRepBottom = false
+            if let repNum = repNum, let rep = reps.first(where: { $0.repNumber == repNum }) {
+                // Use the rep's start top height and bottom height for depth percentage calculation
+                repStartHeight = smoothedHeights[rep.startFrame]
+                repBottomHeight = smoothedHeights[rep.bottomFrame]
+                // Check if this is the bottom frame of the rep
+                isRepBottom = (index == rep.bottomFrame)
+            }
+            
+            if let depth = calculateDepth(pose, startHeight: startingHipHeight, minHeight: minimumHipHeight, repNumber: repNum, repStartHeight: repStartHeight, repBottomHeight: repBottomHeight) {
+                // Debug: Log depth calculation at bottom of each rep
+                if isRepBottom, let repNum = repNum {
+                    print("🔍 calculateDepth at Rep \(repNum) bottom: hipY=\(String(format: "%.3f", depth.hipHeight)), kneeY=\(String(format: "%.3f", depth.kneeHeight)), isAtDepth=\(depth.isAtDepth), depthPercentage=\(String(format: "%.1f", depth.depthPercentage))%")
+                    
+                    if let repStart = repStartHeight, let repBottom = repBottomHeight {
+                        print("  - Using rep-specific heights: start=\(String(format: "%.3f", repStart)), bottom=\(String(format: "%.3f", repBottom))")
+                    } else {
+                        print("  - Using global heights: start=\(String(format: "%.3f", startingHipHeight)), bottom=\(String(format: "%.3f", minimumHipHeight))")
+                    }
+                }
                 depthMetrics.append(depth)
             }
-            if let knee = calculateKneeAngles(pose, repNumber: repNum) {
+            if let knee = calculateKneeAngles(pose, repNumber: repNum, cameraAngle: cameraAngle) {
                 kneeMetrics.append(knee)
             }
             if let back = calculateBackAngle(pose, repNumber: repNum) {
                 backMetrics.append(back)
+                
+                // Debug: Log back analysis at bottom of each rep
+                if let repNum = repNum, let rep = reps.first(where: { $0.repNumber == repNum }) {
+                    let isRepBottom = (pose.frameIndex == rep.bottomFrame)
+                    if isRepBottom {
+                        print("🔍 calculateBackAngle at Rep \(repNum) bottom (frame \(pose.frameIndex)): spineAngle=\(String(format: "%.1f", back.spineAngle))°, isRounded=\(back.isRounded), severity=\(back.roundingSeverity)")
+                    }
+                }
+            } else if let repNum = repNum, let rep = reps.first(where: { $0.repNumber == repNum }) {
+                let isRepBottom = (pose.frameIndex == rep.bottomFrame)
+                if isRepBottom {
+                    print("⚠️ calculateBackAngle returned nil at Rep \(repNum) bottom (frame \(pose.frameIndex)) - missing shoulder or hip keypoints")
+                }
             }
         }
         
@@ -147,11 +267,12 @@ struct SquatAnalyzer {
             back.repNumber != nil ? back : assignRepNumberToBackMetric(back, reps: reps)
         }
         
-        // Calculate overall score
+        // Calculate overall score based on all reps (not just worst case)
         let score = calculateOverallScore(
-            depth: worstDepth,
-            knee: worstKneeAngle,
-            back: worstBackAngle
+            reps: reps,
+            depthMetrics: depthMetricsWithReps.isEmpty ? depthMetrics : depthMetricsWithReps,
+            kneeMetrics: kneeMetricsWithReps.isEmpty ? kneeMetrics : kneeMetricsWithReps,
+            backMetrics: backMetricsWithReps.isEmpty ? backMetrics : backMetricsWithReps
         )
         
         // Generate feedback (using relative timestamps from start of recording)
@@ -165,7 +286,8 @@ struct SquatAnalyzer {
             worstDepth: worstDepth,
             worstKnee: worstKneeAngle,
             worstBack: worstBackAngle,
-            startTime: startTime
+            startTime: startTime,
+            cameraAngle: cameraAngle
         )
         
         let result = SquatAnalysisResult(
@@ -191,82 +313,338 @@ struct SquatAnalyzer {
     static func detectReps(
         _ poses: [PoseDetectionResult],
         smoothedHeights: [Double],
+        rawHeights: [Double],
         startHeight: Double,
         minDepthThreshold: Double
     ) -> [SquatRep] {
-        guard poses.count >= 3, smoothedHeights.count == poses.count else { return [] }
+        guard poses.count >= 3, 
+              smoothedHeights.count == poses.count,
+              rawHeights.count == poses.count else { return [] }
         
         var reps: [SquatRep] = []
         
-        // Note: In normalized coordinates, Y increases downward
-        // When hip is at bottom (lowest), Y is maximum
-        // When hip is at top (highest), Y is minimum
-        var bottoms: [Int] = []  // Frame indices of bottom positions (local maxima in Y)
-        var tops: [Int] = []     // Frame indices of top positions (local minima in Y)
+        // Note: In normalized coordinates, Y decreases downward
+        // When hip is at bottom (lowest), Y is minimum
+        // When hip is at top (highest), Y is maximum
+        var bottoms: [Int] = []  // Frame indices of bottom positions (local minima in Y)
+        var tops: [Int] = []     // Frame indices of top positions (local maxima in Y)
         
         // Window size for detecting local extrema (avoid noise)
         let windowSize = 5
         
-        // Find local maxima (bottom positions - hip is lowest, Y is maximum)
-        for i in windowSize..<(smoothedHeights.count - windowSize) {
-            let current = smoothedHeights[i]
-            let isLocalMax = (1...windowSize).allSatisfy { offset in
-                smoothedHeights[i - offset] <= current && smoothedHeights[i + offset] <= current
-            }
-            if isLocalMax {
-                bottoms.append(i)
-            }
-        }
-        
-        // Find local minima (top positions - hip is highest, Y is minimum)
+        // Find local minima (bottom positions - hip is lowest, Y is minimum)
         for i in windowSize..<(smoothedHeights.count - windowSize) {
             let current = smoothedHeights[i]
             let isLocalMin = (1...windowSize).allSatisfy { offset in
                 smoothedHeights[i - offset] >= current && smoothedHeights[i + offset] >= current
             }
             if isLocalMin {
+                bottoms.append(i)
+            }
+        }
+        
+        // Find local maxima (top positions - hip is highest, Y is maximum)
+        for i in windowSize..<(smoothedHeights.count - windowSize) {
+            let current = smoothedHeights[i]
+            let isLocalMax = (1...windowSize).allSatisfy { offset in
+                smoothedHeights[i - offset] <= current && smoothedHeights[i + offset] <= current
+            }
+            if isLocalMax {
                 tops.append(i)
             }
         }
         
-        // Filter out extrema that don't have significant change
-        let minDepthChange = 0.05  // Minimum 5% change in normalized height
-        tops = tops.filter { index in
-            guard index > 0 && index < smoothedHeights.count - 1 else { return false }
-            // Check if there's a significant descent/ascent around this top
+        // Calculate movement range for relative filtering
+        // Find the minimum height (deepest bottom) in the sequence
+        let minHeight = smoothedHeights.min() ?? startHeight
+        let movementRange = startHeight - minHeight
+        guard movementRange > 0 else {
+            print("⚠️ detectReps: Invalid movement range (startHeight=\(String(format: "%.3f", startHeight)), minHeight=\(String(format: "%.3f", minHeight)))")
+            return []
+        }
+        
+        print("🔍 detectReps: Movement range analysis:")
+        print("  - Start height: \(String(format: "%.3f", startHeight))")
+        print("  - Min height: \(String(format: "%.3f", minHeight))")
+        print("  - Movement range: \(String(format: "%.3f", movementRange))")
+        
+        // Relative height thresholds
+        let topHeightThreshold = 0.10  // Tops must be within 10% of startHeight (relative)
+        let bottomDepthThreshold = 0.20  // Bottoms must represent at least 20% of movement range
+        let minDepthChange = 0.05  // Minimum 5% change in normalized height (for initial filtering)
+        
+        // Track filtered extrema for debugging
+        var filteredTops: [(index: Int, reason: String)] = []
+        var filteredBottoms: [(index: Int, reason: String)] = []
+        
+        // Filter tops: Must be within threshold of startHeight (relative height check)
+        let validTops = tops.filter { index in
+            guard index > 0 && index < smoothedHeights.count - 1 else {
+                filteredTops.append((index, "Out of bounds"))
+                return false
+            }
+            
+            let topHeight = smoothedHeights[index]
+            let heightDifference = abs(topHeight - startHeight)
+            let relativeDifference = startHeight > 0 ? heightDifference / startHeight : heightDifference
+            
+            // Check if top is close enough to startHeight
+            if relativeDifference > topHeightThreshold {
+                let originalFrame = index < poses.count ? poses[index].frameIndex : -1
+                filteredTops.append((index, "Too far from startHeight: \(String(format: "%.1f", relativeDifference * 100))% (height=\(String(format: "%.3f", topHeight)), startHeight=\(String(format: "%.3f", startHeight)))"))
+                return false
+            }
+            
+            // Also check if there's a significant descent/ascent around this top (original check)
             let hasSignificantChange = bottoms.contains { bottom in
-                abs(smoothedHeights[bottom] - smoothedHeights[index]) > minDepthChange
+                abs(smoothedHeights[bottom] - topHeight) > minDepthChange
             }
-            return hasSignificantChange
+            if !hasSignificantChange {
+                filteredTops.append((index, "No significant change from nearby bottoms"))
+                return false
+            }
+            
+            return true
         }
         
-        bottoms = bottoms.filter { index in
-            guard index > 0 && index < smoothedHeights.count - 1 else { return false }
-            // Check if there's a significant change from nearby tops
+        // Filter bottoms: Must represent significant descent (at least 20% of movement range)
+        let validBottoms = bottoms.filter { index in
+            guard index > 0 && index < smoothedHeights.count - 1 else {
+                filteredBottoms.append((index, "Out of bounds"))
+                return false
+            }
+            
+            let bottomHeight = smoothedHeights[index]
+            let depthFromStart = startHeight - bottomHeight
+            let depthPercentage = movementRange > 0 ? depthFromStart / movementRange : 0
+            
+            // Check if bottom represents sufficient descent
+            if depthPercentage < bottomDepthThreshold {
+                let originalFrame = index < poses.count ? poses[index].frameIndex : -1
+                filteredBottoms.append((index, "Insufficient depth: \(String(format: "%.1f", depthPercentage * 100))% of range (height=\(String(format: "%.3f", bottomHeight)), needs at least \(String(format: "%.1f", bottomDepthThreshold * 100))%)"))
+                return false
+            }
+            
+            // Also check if there's a significant change from nearby tops (original check)
             let hasSignificantChange = tops.contains { top in
-                abs(smoothedHeights[index] - smoothedHeights[top]) > minDepthChange
+                abs(bottomHeight - smoothedHeights[top]) > minDepthChange
             }
-            return hasSignificantChange
+            if !hasSignificantChange {
+                filteredBottoms.append((index, "No significant change from nearby tops"))
+                return false
+            }
+            
+            return true
         }
         
-        // Debug: Log detected extrema
-        print("🔍 detectReps: Found \(tops.count) tops at indices: \(tops)")
-        print("🔍 detectReps: Found \(bottoms.count) bottoms at indices: \(bottoms)")
+        // Update tops and bottoms with filtered results
+        tops = validTops
+        bottoms = validBottoms
+        
+        // Ascent completion validation: Filter tops that haven't ascended enough from nearest bottom
+        let ascentCompletionThreshold = 0.50  // Must ascend at least 50% of the way back to startHeight
+        var ascentFilteredTops: [(index: Int, reason: String)] = []
+        
+        let topsWithAscent = tops.filter { topIndex in
+            let topHeight = smoothedHeights[topIndex]
+            
+            // Find the nearest bottom before this top
+            let nearestBottom = bottoms.filter { $0 < topIndex }.max()
+            
+            guard let bottomIndex = nearestBottom else {
+                // No bottom before this top - might be initial setup, allow it
+                return true
+            }
+            
+            let bottomHeight = smoothedHeights[bottomIndex]
+            let ascentRange = topHeight - bottomHeight
+            let totalRangeToStart = startHeight - bottomHeight
+            
+            guard totalRangeToStart > 0 else {
+                ascentFilteredTops.append((topIndex, "Bottom height >= startHeight (invalid)"))
+                return false
+            }
+            
+            let ascentProgress = ascentRange / totalRangeToStart
+            
+            if ascentProgress < ascentCompletionThreshold {
+                let originalTopFrame = topIndex < poses.count ? poses[topIndex].frameIndex : -1
+                let originalBottomFrame = bottomIndex < poses.count ? poses[bottomIndex].frameIndex : -1
+                ascentFilteredTops.append((topIndex, "Insufficient ascent: \(String(format: "%.1f", ascentProgress * 100))% (top=\(String(format: "%.3f", topHeight)), bottom=\(String(format: "%.3f", bottomHeight)), needs at least \(String(format: "%.1f", ascentCompletionThreshold * 100))%)"))
+                return false
+            }
+            
+            return true
+        }
+        
+        tops = topsWithAscent
+        
+        // Debug: Log ascent-filtered tops
+        if !ascentFilteredTops.isEmpty {
+            print("🔍 detectReps: Filtered out \(ascentFilteredTops.count) tops due to insufficient ascent:")
+            for filtered in ascentFilteredTops.prefix(10) {
+                let originalFrame = filtered.index < poses.count ? poses[filtered.index].frameIndex : -1
+                print("  - Filtered top at filtered \(filtered.index) (original \(originalFrame)): \(filtered.reason)")
+            }
+            if ascentFilteredTops.count > 10 {
+                print("  ... and \(ascentFilteredTops.count - 10) more")
+            }
+        }
+        
+        // Debug: Log filtered extrema
+        if !filteredTops.isEmpty {
+            print("🔍 detectReps: Filtered out \(filteredTops.count) tops:")
+            for filtered in filteredTops.prefix(10) {
+                let originalFrame = filtered.index < poses.count ? poses[filtered.index].frameIndex : -1
+                print("  - Filtered top at filtered \(filtered.index) (original \(originalFrame)): \(filtered.reason)")
+            }
+            if filteredTops.count > 10 {
+                print("  ... and \(filteredTops.count - 10) more")
+            }
+        }
+        
+        if !filteredBottoms.isEmpty {
+            print("🔍 detectReps: Filtered out \(filteredBottoms.count) bottoms:")
+            for filtered in filteredBottoms.prefix(10) {
+                let originalFrame = filtered.index < poses.count ? poses[filtered.index].frameIndex : -1
+                print("  - Filtered bottom at filtered \(filtered.index) (original \(originalFrame)): \(filtered.reason)")
+            }
+            if filteredBottoms.count > 10 {
+                print("  ... and \(filteredBottoms.count - 10) more")
+            }
+        }
+        
+        // Debug: Log detected extrema with original frame numbers
+        let topsWithFrames = tops.map { (index: $0, originalFrame: $0 < poses.count ? poses[$0].frameIndex : -1) }
+        let bottomsWithFrames = bottoms.map { (index: $0, originalFrame: $0 < poses.count ? poses[$0].frameIndex : -1) }
+        print("🔍 detectReps: Found \(tops.count) tops:")
+        for (index, originalFrame) in topsWithFrames {
+            print("  - Top at filtered index \(index) (original frame \(originalFrame)), height=\(String(format: "%.3f", smoothedHeights[index]))")
+        }
+        print("🔍 detectReps: Found \(bottoms.count) bottoms:")
+        for (index, originalFrame) in bottomsWithFrames {
+            print("  - Bottom at filtered index \(index) (original frame \(originalFrame)), height=\(String(format: "%.3f", smoothedHeights[index]))")
+        }
+        
+        // Helper function to find where descent begins before a top
+        // Looks backwards from the top to find where Y starts decreasing (descent begins)
+        func findDescentStart(before topIndex: Int, in heights: [Double], startHeight: Double) -> Int {
+            guard topIndex < heights.count else { return max(0, topIndex - 1) }
+            let topHeight = heights[topIndex]
+            let threshold = 0.02 // 2% change to detect descent start
+            
+            // Look backwards from top to find where Y starts decreasing (descent begins)
+            // Since Y decreases downward, descent means Y goes from higher to lower
+            // Limit search to 50 frames back to avoid going too far
+            for i in stride(from: topIndex - 1, through: max(0, topIndex - 50), by: -1) {
+                let heightDiff = topHeight - heights[i]  // Reversed: top - previous
+                let relativeChange = topHeight > 0 ? heightDiff / topHeight : heightDiff
+                
+                // If we've moved significantly toward lower Y (descent started), return this frame
+                if relativeChange > threshold {
+                    return i + 1 // Return frame just before descent
+                }
+            }
+            return max(0, topIndex - 1) // Fallback
+        }
         
         // Group into cycles: start at a top → descend to bottom → ascend to next top
         // We need at least one top to start from, or start from beginning
         var repNumber = 1
         var cycleStart = 0
         
-        // If we have tops, start from the first one (or just before it)
+        // If we have tops, find where descent begins before the first top
         if let firstTop = tops.first, firstTop > 0 {
-            cycleStart = max(0, firstTop - 1)
+            cycleStart = findDescentStart(before: firstTop, in: smoothedHeights, startHeight: startHeight)
         }
         
         var currentTopIndex = 0
         
         while currentTopIndex < tops.count {
             let startTop = tops[currentTopIndex]
+            
+            // Set cycleStart to startTop at the beginning of each iteration
+            // This ensures each rep starts from the correct top
+            // For the first iteration, cycleStart was already set by findDescentStart
+            if currentTopIndex > 0 {
+                cycleStart = startTop
+            }
+            
+            // Find the next top after startTop (to check if we should split the rep)
+            // Validate that it's a valid rep boundary before using it
+            let startTopHeight = smoothedHeights[startTop]
+            let repBoundaryHeightThreshold = 0.10  // Must be within 10% of startTopHeight
+            
+            // Helper function to validate if a top is a valid rep boundary
+            func isValidRepBoundary(_ topIndex: Int) -> Bool {
+                let topHeight = smoothedHeights[topIndex]
+                let heightDifference = abs(topHeight - startTopHeight)
+                let relativeDifference = startTopHeight > 0 ? heightDifference / startTopHeight : heightDifference
+                
+                // Check if height is close enough to starting top
+                if relativeDifference > repBoundaryHeightThreshold {
+                    return false
+                }
+                
+                // Check if it has ascended sufficiently from nearest bottom
+                let nearestBottom = bottoms.filter { $0 < topIndex && $0 > startTop }.max()
+                if let bottomIndex = nearestBottom {
+                    let bottomHeight = smoothedHeights[bottomIndex]
+                    let ascentRange = topHeight - bottomHeight
+                    let totalRangeToStart = startTopHeight - bottomHeight
+                    
+                    if totalRangeToStart > 0 {
+                        let ascentProgress = ascentRange / totalRangeToStart
+                        if ascentProgress < 0.50 {  // Must ascend at least 50% of way back
+                            return false
+                        }
+                    }
+                }
+                
+                return true
+            }
+            
+            // Find the next valid top candidate (skip invalid ones)
+            var nextTopCandidate: Int? = nil
+            var skippedTops: [(index: Int, reason: String)] = []
+            
+            for candidateIndex in tops where candidateIndex > startTop {
+                if isValidRepBoundary(candidateIndex) {
+                    nextTopCandidate = candidateIndex
+                    break
+                } else {
+                    let candidateHeight = smoothedHeights[candidateIndex]
+                    let heightDiff = abs(candidateHeight - startTopHeight)
+                    let relativeDiff = startTopHeight > 0 ? heightDiff / startTopHeight : heightDiff
+                    let originalFrame = candidateIndex < poses.count ? poses[candidateIndex].frameIndex : -1
+                    
+                    var reason = "Height difference: \(String(format: "%.1f", relativeDiff * 100))% (needs < \(String(format: "%.1f", repBoundaryHeightThreshold * 100))%)"
+                    
+                    // Check ascent if there's a bottom
+                    if let nearestBottom = bottoms.filter({ $0 < candidateIndex && $0 > startTop }).max() {
+                        let bottomHeight = smoothedHeights[nearestBottom]
+                        let ascentRange = candidateHeight - bottomHeight
+                        let totalRangeToStart = startTopHeight - bottomHeight
+                        if totalRangeToStart > 0 {
+                            let ascentProgress = ascentRange / totalRangeToStart
+                            if ascentProgress < 0.50 {
+                                reason += ", Insufficient ascent: \(String(format: "%.1f", ascentProgress * 100))% (needs >= 50%)"
+                            }
+                        }
+                    }
+                    
+                    skippedTops.append((candidateIndex, reason))
+                }
+            }
+            
+            // Debug: Log skipped tops
+            if !skippedTops.isEmpty {
+                print("🔍 detectReps: Rep \(repNumber + 1) - Skipped \(skippedTops.count) invalid top candidate(s):")
+                for skipped in skippedTops {
+                    let originalFrame = skipped.index < poses.count ? poses[skipped.index].frameIndex : -1
+                    print("  - Skipped top at filtered \(skipped.index) (original \(originalFrame)): \(skipped.reason)")
+                }
+            }
             
             // Find the next bottom after this top
             guard let nextBottom = bottoms.first(where: { $0 > startTop }) else {
@@ -276,10 +654,17 @@ struct SquatAnalyzer {
                     // Look for any significant movement after this top
                     let endFrame = poses.count - 1
                     let endHeight = smoothedHeights[endFrame]
-                    let heightChange = abs(endHeight - smoothedHeights[startTop])
+                    let startTopHeight = smoothedHeights[startTop]
+                    let absoluteHeightChange = abs(endHeight - startTopHeight)
+                    // Calculate as relative percentage
+                    let heightChange = startTopHeight > 0 ? absoluteHeightChange / startTopHeight : absoluteHeightChange
                     
                     if heightChange > minDepthThreshold {
                         // Partial rep - descended but didn't complete
+                        let originalStartFrame = poses[cycleStart].frameIndex
+                        let originalEndFrame = poses[endFrame].frameIndex
+                        print("🔍 detectReps: Creating partial rep: filtered frames \(cycleStart)-\(endFrame) (original frames \(originalStartFrame)-\(originalEndFrame))")
+                        print("  - Height change: absolute=\(String(format: "%.3f", absoluteHeightChange)), relative=\(String(format: "%.1f", heightChange * 100))%")
                         reps.append(SquatRep(
                             repNumber: repNumber,
                             startFrame: cycleStart,
@@ -297,20 +682,490 @@ struct SquatAnalyzer {
                 break
             }
             
-            // Find the next top after this bottom (completing the cycle)
-            let nextTop = tops.first(where: { $0 > nextBottom }) ?? poses.count - 1
+            // Determine the rep end and actual bottom
+            // Always use nextTopCandidate when it exists, regardless of position relative to bottom
+            let nextTop: Int
+            let actualBottom: Int
+            let actualBottomHeight: Double
             
-            // Check if this rep reached proper depth
-            // Depth is achieved when hip goes significantly below starting height
-            let bottomHeight = smoothedHeights[nextBottom]
-            let depthChange = bottomHeight - smoothedHeights[startTop]
+            if let candidate = nextTopCandidate {
+                // Always use the next top candidate as the rep end
+                nextTop = candidate
+                
+                // Find the bottom between startTop and this candidate top
+                // Since Y decreases downward, bottom = minimum Y value
+                let bottomRange = (startTop + 1)..<candidate
+                if let foundBottom = bottomRange.min(by: { smoothedHeights[$0] < smoothedHeights[$1] }) {
+                    // Phase 1: Found smoothed minimum
+                    let smoothedBottom = foundBottom
+                    let smoothedBottomHeight = smoothedHeights[smoothedBottom]
+                    
+                    // Phase 2: Refine with raw height check in small window around smoothed minimum
+                    let refinementWindow = 10  // Check ±10 frames around smoothed minimum
+                    let refinementStart = max(startTop + 1, smoothedBottom - refinementWindow)
+                    let refinementEnd = min(candidate, smoothedBottom + refinementWindow + 1)
+                    let refinementRange = refinementStart..<refinementEnd
+                    
+                    // ENHANCED DEBUGGING: Detailed Refinement Window Analysis
+                    print("🔍 detectReps: Refinement Window Analysis for Rep \(repNumber + 1):")
+                    print("  - Smoothed minimum: filtered \(smoothedBottom) (original frame \(poses[smoothedBottom].frameIndex)), height=\(String(format: "%.3f", smoothedBottomHeight))")
+                    print("  - Refinement window: filtered indices \(refinementStart)..<\(refinementEnd) (original frames \(poses[refinementStart].frameIndex)..<\(poses[min(refinementEnd - 1, poses.count - 1)].frameIndex))")
+                    print("  - Window size: \(refinementEnd - refinementStart) frames (±\(refinementWindow) frames around smoothed minimum)")
+                    
+                    // Analyze all candidates in refinement window
+                    var candidates: [(index: Int, rawHeight: Double, smoothedHeight: Double, improvement: Double, smoothedDiff: Double)] = []
+                    for idx in refinementRange {
+                        guard idx < rawHeights.count && idx < smoothedHeights.count else { continue }
+                        let rawH = rawHeights[idx]
+                        let smoothedH = smoothedHeights[idx]
+                        let improvement = smoothedBottomHeight - rawH  // How much better is raw than smoothed minimum
+                        let smoothedDiff = abs(smoothedH - smoothedBottomHeight)  // How close is smoothed value to smoothed minimum
+                        candidates.append((idx, rawH, smoothedH, improvement, smoothedDiff))
+                    }
+                    
+                    // Sort by raw height (best candidates first)
+                    candidates.sort { $0.rawHeight < $1.rawHeight }
+                    
+                    print("  - All candidates in refinement window (sorted by raw height, best first):")
+                    for (idx, candidate) in candidates.enumerated() {
+                        let originalFrame = poses[candidate.index].frameIndex
+                        let significantImprovement = candidate.improvement > 0.01
+                        let reasonableSmoothed = candidate.smoothedDiff < 0.02
+                        let wouldBeSelected = significantImprovement && reasonableSmoothed
+                        
+                        var reasons: [String] = []
+                        if !significantImprovement {
+                            reasons.append("improvement too small (\(String(format: "%.3f", candidate.improvement)) <= 0.01)")
+                        }
+                        if !reasonableSmoothed {
+                            reasons.append("smoothed diff too large (\(String(format: "%.3f", candidate.smoothedDiff)) >= 0.02)")
+                        }
+                        if wouldBeSelected {
+                            reasons.append("✓ SELECTED")
+                        }
+                        
+                        let reasonStr = reasons.isEmpty ? "" : " [\(reasons.joined(separator: ", "))]"
+                        let rankMarker = idx == 0 ? " (BEST RAW)" : ""
+                        print("    \(idx + 1). Filtered \(candidate.index) (original \(originalFrame)): raw=\(String(format: "%.3f", candidate.rawHeight)), smoothed=\(String(format: "%.3f", candidate.smoothedHeight)), improvement=\(String(format: "%.3f", candidate.improvement)), smoothedDiff=\(String(format: "%.3f", candidate.smoothedDiff))\(rankMarker)\(reasonStr)")
+                    }
+                    
+                    // Find raw minimum in refinement window
+                    if let rawBottom = refinementRange.min(by: { rawHeights[$0] < rawHeights[$1] }) {
+                        let rawBottomHeight = rawHeights[rawBottom]
+                        let smoothedAtRawBottom = smoothedHeights[rawBottom]
+                        
+                        // Use raw minimum if it's significantly better (at least 0.01 lower in normalized coordinates)
+                        // and smoothed value at that frame is still reasonable (within 0.02 of smoothed minimum)
+                        let rawImprovement = smoothedBottomHeight - rawBottomHeight
+                        let smoothedDifference = abs(smoothedAtRawBottom - smoothedBottomHeight)
+                        let significantImprovement = rawImprovement > 0.01  // Raw is at least 0.01 lower
+                        let reasonableSmoothed = smoothedDifference < 0.02  // Smoothed value still close to minimum
+                        
+                        print("  - Refinement Decision:")
+                        print("    Raw minimum: filtered \(rawBottom) (original \(poses[rawBottom].frameIndex)), raw=\(String(format: "%.3f", rawBottomHeight)), smoothed=\(String(format: "%.3f", smoothedAtRawBottom))")
+                        print("    Improvement: \(String(format: "%.3f", rawImprovement)) (threshold: 0.01) - \(significantImprovement ? "✓ PASS" : "✗ FAIL")")
+                        print("    Smoothed diff: \(String(format: "%.3f", smoothedDifference)) (threshold: 0.02) - \(reasonableSmoothed ? "✓ PASS" : "✗ FAIL")")
+                        
+                        if significantImprovement && reasonableSmoothed {
+                            // Use refined bottom (raw minimum)
+                            actualBottom = rawBottom
+                            actualBottomHeight = smoothedHeights[rawBottom]
+                            
+                            print("    → Using refined bottom: filtered \(rawBottom) (improvement=\(String(format: "%.3f", rawImprovement)))")
+                        } else {
+                            // Keep smoothed minimum
+                            actualBottom = smoothedBottom
+                            actualBottomHeight = smoothedBottomHeight
+                            print("    → Keeping smoothed minimum (refinement criteria not met)")
+                        }
+                    } else {
+                        // Fallback: use smoothed minimum
+                        actualBottom = smoothedBottom
+                        actualBottomHeight = smoothedBottomHeight
+                        print("    → No raw minimum found in refinement window, using smoothed minimum")
+                    }
+                    
+                    // Debug: Log smoothed heights around the detected bottom for all reps
+                    print("🔍 detectReps: Bottom detection for Rep \(repNumber + 1):")
+                    print("  - Range: filtered indices \(startTop + 1)..<\(candidate) (original frames ~\(poses[startTop + 1].frameIndex)..<\(poses[min(candidate - 1, poses.count - 1)].frameIndex))")
+                    print("  - Detected bottom: filtered index \(actualBottom) (original frame \(poses[actualBottom].frameIndex)), smoothed height=\(String(format: "%.3f", actualBottomHeight))")
+                    
+                    // ENHANCED DEBUGGING: Rep Range Analysis - Show raw vs smoothed heights across entire rep range
+                    let repStartFrame = poses[startTop + 1].frameIndex
+                    let repEndFrame = poses[min(candidate - 1, poses.count - 1)].frameIndex
+                    print("🔍 detectReps: Rep \(repNumber + 1) Range Analysis (original frames \(repStartFrame)-\(repEndFrame)):")
+                    
+                    // Sample frames across the rep range (every 10th frame, plus key points)
+                    let sampleInterval = max(1, (candidate - startTop - 1) / 20) // Sample ~20 points
+                    var sampleFrames: Set<Int> = []
+                    
+                    // Add start, detected bottom region, and end
+                    sampleFrames.insert(startTop + 1)
+                    sampleFrames.insert(actualBottom)
+                    if let smoothedBottom = bottomRange.min(by: { smoothedHeights[$0] < smoothedHeights[$1] }) {
+                        sampleFrames.insert(smoothedBottom)
+                    }
+                    sampleFrames.insert(candidate - 1)
+                    
+                    // Add samples across the range
+                    for i in stride(from: startTop + 1, to: candidate, by: sampleInterval) {
+                        sampleFrames.insert(i)
+                    }
+                    
+                    // Add frames around detected bottom (±20 frames for detailed view)
+                    for offset in -20...20 {
+                        let frameIdx = actualBottom + offset
+                        if frameIdx >= startTop + 1 && frameIdx < candidate {
+                            sampleFrames.insert(frameIdx)
+                        }
+                    }
+                    
+                    // Sort and display
+                    let sortedSamples = Array(sampleFrames).sorted()
+                    print("  - Raw vs Smoothed Heights (sampled across rep range):")
+                    for frameIdx in sortedSamples {
+                        guard frameIdx < poses.count && frameIdx < rawHeights.count && frameIdx < smoothedHeights.count else { continue }
+                        let originalFrame = poses[frameIdx].frameIndex
+                        let rawHeight = rawHeights[frameIdx]
+                        let smoothedHeight = smoothedHeights[frameIdx]
+                        let smoothingDiff = smoothedHeight - rawHeight
+                        
+                        var markers: [String] = []
+                        if frameIdx == actualBottom {
+                            markers.append("DETECTED_BOTTOM")
+                        }
+                        if let smoothedBottom = bottomRange.min(by: { smoothedHeights[$0] < smoothedHeights[$1] }), frameIdx == smoothedBottom {
+                            markers.append("SMOOTHED_MIN")
+                        }
+                        if frameIdx == startTop + 1 {
+                            markers.append("START")
+                        }
+                        if frameIdx == candidate - 1 {
+                            markers.append("END")
+                        }
+                        
+                        let markerStr = markers.isEmpty ? "" : " [\(markers.joined(separator: ", "))]"
+                        print("    Frame \(originalFrame) (filtered \(frameIdx)): raw=\(String(format: "%.3f", rawHeight)), smoothed=\(String(format: "%.3f", smoothedHeight)), diff=\(String(format: "%+.3f", smoothingDiff))\(markerStr)")
+                    }
+                    
+                    // Find and highlight the true raw minimum in the rep range
+                    if let trueRawBottom = bottomRange.min(by: { rawHeights[$0] < rawHeights[$1] }) {
+                        let trueRawBottomFrame = poses[trueRawBottom].frameIndex
+                        let trueRawBottomHeight = rawHeights[trueRawBottom]
+                        let smoothedAtTrueRawBottom = smoothedHeights[trueRawBottom]
+                        print("  - True raw minimum in rep range: filtered \(trueRawBottom) (original frame \(trueRawBottomFrame))")
+                        print("    Raw height=\(String(format: "%.3f", trueRawBottomHeight)), Smoothed height=\(String(format: "%.3f", smoothedAtTrueRawBottom))")
+                        if trueRawBottom != actualBottom {
+                            let frameDiff = abs(trueRawBottom - actualBottom)
+                            let originalFrameDiff = abs(trueRawBottomFrame - poses[actualBottom].frameIndex)
+                            print("    ⚠️  MISMATCH: Detected bottom is \(frameDiff) filtered frames (\(originalFrameDiff) original frames) away from true raw minimum!")
+                        }
+                    }
+                    
+                    // Log smoothed heights for key frames: start, around detected bottom, and end
+                    let keyFrames: [Int] = [
+                        startTop + 1,  // Start of descent
+                        foundBottom - 5, foundBottom - 2, foundBottom, foundBottom + 2, foundBottom + 5,  // Around detected bottom
+                        candidate - 1  // End of range
+                    ].filter { $0 >= startTop + 1 && $0 < candidate && $0 < poses.count }
+                    
+                    print("  - Smoothed heights at key frames (raw → smoothed):")
+                    for frameIdx in keyFrames {
+                        guard frameIdx < poses.count else { continue }
+                        let originalFrame = poses[frameIdx].frameIndex
+                        let smoothedHeight = smoothedHeights[frameIdx]
+                        
+                        // Get raw height for this frame
+                        let (leftHip, rightHip) = PoseAnalysisHelpers.extractBilateralKeypoints(
+                            leftName: "leftHip",
+                            rightName: "rightHip",
+                            from: poses[frameIdx]
+                        )
+                        let rawHeight = PoseAnalysisHelpers.averagePosition(leftHip, rightHip)?.y ?? 0.0
+                        
+                        let marker = frameIdx == actualBottom ? " <-- MINIMUM (smoothed)" : ""
+                        let smoothingDiff = smoothedHeight - Double(rawHeight)
+                        print("    - Filtered \(frameIdx) (original \(originalFrame)): raw=\(String(format: "%.3f", Double(rawHeight))), smoothed=\(String(format: "%.3f", smoothedHeight)) (diff=\(String(format: "%+.3f", smoothingDiff)))\(marker)")
+                    }
+                    
+                    // ENHANCED DEBUGGING: Smoothing Effect Analysis
+                    print("🔍 detectReps: Smoothing Effect Analysis for Rep \(repNumber + 1):")
+                    
+                    // Compare smoothed minimum vs raw minimum locations
+                    if let rawMinInRange = bottomRange.min(by: { rawHeights[$0] < rawHeights[$1] }) {
+                        let rawMinFrame = poses[rawMinInRange].frameIndex
+                        let rawMinHeight = rawHeights[rawMinInRange]
+                        let smoothedAtRawMin = smoothedHeights[rawMinInRange]
+                        
+                        let smoothedMinFrame = poses[smoothedBottom].frameIndex
+                        let frameOffset = rawMinInRange - smoothedBottom
+                        let originalFrameOffset = rawMinFrame - smoothedMinFrame
+                        
+                        print("  - Minimum Location Comparison:")
+                        print("    Smoothed minimum: filtered \(smoothedBottom) (original \(smoothedMinFrame)), height=\(String(format: "%.3f", smoothedBottomHeight))")
+                        print("    Raw minimum: filtered \(rawMinInRange) (original \(rawMinFrame)), height=\(String(format: "%.3f", rawMinHeight))")
+                        print("    Offset: \(frameOffset) filtered frames (\(originalFrameOffset) original frames)")
+                        if frameOffset != 0 {
+                            print("    ⚠️  Smoothing shifted minimum by \(abs(frameOffset)) frames (\(frameOffset > 0 ? "later" : "earlier"))")
+                        }
+                        print("    Smoothed value at raw minimum location: \(String(format: "%.3f", smoothedAtRawMin))")
+                        print("    Smoothing effect at raw minimum: \(String(format: "%+.3f", smoothedAtRawMin - rawMinHeight))")
+                    }
+                    
+                    // Show smoothing window details for detected bottom
+                    if actualBottom >= 2 && actualBottom < smoothedHeights.count - 2 {
+                        let smoothingWindowSize = 5  // Same as used in smoothValues
+                        let windowStart = max(0, actualBottom - smoothingWindowSize / 2)
+                        let windowEnd = min(poses.count, actualBottom + smoothingWindowSize / 2 + 1)
+                        
+                        print("  - Smoothing Window Analysis at Detected Bottom (filtered \(actualBottom), original frame \(poses[actualBottom].frameIndex)):")
+                        print("    Window size: \(smoothingWindowSize) frames (indices \(windowStart)..<\(windowEnd))")
+                        
+                        var rawWindowValues: [(index: Int, frame: Int, raw: Double, smoothed: Double)] = []
+                        for idx in windowStart..<windowEnd {
+                            guard idx < poses.count && idx < rawHeights.count && idx < smoothedHeights.count else { continue }
+                            rawWindowValues.append((idx, poses[idx].frameIndex, rawHeights[idx], smoothedHeights[idx]))
+                        }
+                        
+                        print("    Raw values in smoothing window:")
+                        for (idx, frame, raw, smoothed) in rawWindowValues {
+                            let marker = idx == actualBottom ? " <-- CENTER" : ""
+                            print("      Filtered \(idx) (original \(frame)): raw=\(String(format: "%.3f", raw)), smoothed=\(String(format: "%.3f", smoothed)), diff=\(String(format: "%+.3f", smoothed - raw))\(marker)")
+                        }
+                        
+                        if !rawWindowValues.isEmpty {
+                            let windowRawAvg = rawWindowValues.map { $0.raw }.reduce(0, +) / Double(rawWindowValues.count)
+                            print("    Window raw average: \(String(format: "%.3f", windowRawAvg))")
+                            print("    Smoothed result at center: \(String(format: "%.3f", actualBottomHeight))")
+                            print("    Smoothing effect: \(String(format: "%+.3f", actualBottomHeight - windowRawAvg))")
+                        }
+                    }
+                    
+                    // Show smoothing effect in the true bottom region (if different from detected)
+                    if let trueRawBottom = bottomRange.min(by: { rawHeights[$0] < rawHeights[$1] }), trueRawBottom != actualBottom {
+                        let trueRawBottomFrame = poses[trueRawBottom].frameIndex
+                        let smoothingWindowSize = 5
+                        let windowStart = max(0, trueRawBottom - smoothingWindowSize / 2)
+                        let windowEnd = min(poses.count, trueRawBottom + smoothingWindowSize / 2 + 1)
+                        
+                        print("  - Smoothing Window Analysis at True Raw Minimum (filtered \(trueRawBottom), original frame \(trueRawBottomFrame)):")
+                        print("    Window size: \(smoothingWindowSize) frames (indices \(windowStart)..<\(windowEnd))")
+                        
+                        var trueBottomWindowValues: [(index: Int, frame: Int, raw: Double, smoothed: Double)] = []
+                        for idx in windowStart..<windowEnd {
+                            guard idx < poses.count && idx < rawHeights.count && idx < smoothedHeights.count else { continue }
+                            trueBottomWindowValues.append((idx, poses[idx].frameIndex, rawHeights[idx], smoothedHeights[idx]))
+                        }
+                        
+                        print("    Raw values in smoothing window:")
+                        for (idx, frame, raw, smoothed) in trueBottomWindowValues {
+                            let marker = idx == trueRawBottom ? " <-- CENTER" : ""
+                            print("      Filtered \(idx) (original \(frame)): raw=\(String(format: "%.3f", raw)), smoothed=\(String(format: "%.3f", smoothed)), diff=\(String(format: "%+.3f", smoothed - raw))\(marker)")
+                        }
+                        
+                        if !trueBottomWindowValues.isEmpty {
+                            let windowRawAvg = trueBottomWindowValues.map { $0.raw }.reduce(0, +) / Double(trueBottomWindowValues.count)
+                            let smoothedAtTrueBottom = smoothedHeights[trueRawBottom]
+                            print("    Window raw average: \(String(format: "%.3f", windowRawAvg))")
+                            print("    Smoothed result at center: \(String(format: "%.3f", smoothedAtTrueBottom))")
+                            print("    Smoothing effect: \(String(format: "%+.3f", smoothedAtTrueBottom - windowRawAvg))")
+                            print("    ⚠️  This is the true bottom region, but smoothing may have shifted the minimum earlier!")
+                        }
+                    }
+                    
+                    print("🔍 detectReps: Using next top candidate \(candidate) as rep end, found bottom at \(actualBottom) between startTop \(startTop) and candidate")
+                    
+                    // ENHANCED DEBUGGING: Rep-Specific Frame-by-Frame Descent Analysis
+                    // Special detailed analysis for Rep 3 (or any rep in problematic range)
+                    let repStartOriginalFrame = poses[startTop + 1].frameIndex
+                    let repEndOriginalFrame = poses[min(candidate - 1, poses.count - 1)].frameIndex
+                    let isRep3 = repNumber == 2  // Rep 3 is repNumber 2 (0-indexed)
+                    let isProblematicRange = repStartOriginalFrame >= 300 && repEndOriginalFrame <= 430
+                    
+                    if isRep3 || isProblematicRange {
+                        print("🔍 detectReps: DETAILED DESCENT ANALYSIS for Rep \(repNumber + 1) (original frames \(repStartOriginalFrame)-\(repEndOriginalFrame)):")
+                        
+                        // Analyze descent phase frame-by-frame
+                        let descentStart = startTop + 1
+                        let descentEnd = actualBottom
+                        let descentRange = descentStart..<min(descentEnd + 20, candidate)  // Include some frames after detected bottom
+                        
+                        print("  - Descent Phase Analysis (filtered indices \(descentStart)..<\(min(descentEnd + 20, candidate))):")
+                        
+                        // Sample every 5th frame during descent, plus frames around detected bottom
+                        var analysisFrames: Set<Int> = []
+                        for i in stride(from: descentStart, to: min(descentEnd + 20, candidate), by: 5) {
+                            analysisFrames.insert(i)
+                        }
+                        // Add frames around detected bottom
+                        for offset in -10...10 {
+                            let frameIdx = actualBottom + offset
+                            if frameIdx >= descentStart && frameIdx < candidate {
+                                analysisFrames.insert(frameIdx)
+                            }
+                        }
+                        // Add frames around true raw minimum if different
+                        if let trueRawBottom = bottomRange.min(by: { rawHeights[$0] < rawHeights[$1] }), trueRawBottom != actualBottom {
+                            for offset in -10...10 {
+                                let frameIdx = trueRawBottom + offset
+                                if frameIdx >= descentStart && frameIdx < candidate {
+                                    analysisFrames.insert(frameIdx)
+                                }
+                            }
+                        }
+                        
+                        let sortedAnalysisFrames = Array(analysisFrames).sorted()
+                        
+                        print("  - Frame-by-Frame Descent Data (raw height, smoothed height, hip vs knee):")
+                        for frameIdx in sortedAnalysisFrames {
+                            guard frameIdx < poses.count && frameIdx < rawHeights.count && frameIdx < smoothedHeights.count else { continue }
+                            
+                            let originalFrame = poses[frameIdx].frameIndex
+                            let rawHeight = rawHeights[frameIdx]
+                            let smoothedHeight = smoothedHeights[frameIdx]
+                            
+                            // Check if hips are below knees at this frame
+                            let pose = poses[frameIdx]
+                            let (leftHip, rightHip) = PoseAnalysisHelpers.extractBilateralKeypoints(
+                                leftName: "leftHip",
+                                rightName: "rightHip",
+                                from: pose
+                            )
+                            let (leftKnee, rightKnee) = PoseAnalysisHelpers.extractBilateralKeypoints(
+                                leftName: "leftKnee",
+                                rightName: "rightKnee",
+                                from: pose
+                            )
+                            
+                            var hipBelowKnee = false
+                            var hipKneeInfo = ""
+                            if let leftHipY = leftHip?.position.y, let leftKneeY = leftKnee?.position.y {
+                                if leftHipY < leftKneeY {
+                                    hipBelowKnee = true
+                                    hipKneeInfo = "L-hip<L-knee"
+                                }
+                            }
+                            if !hipBelowKnee, let rightHipY = rightHip?.position.y, let rightKneeY = rightKnee?.position.y {
+                                if rightHipY < rightKneeY {
+                                    hipBelowKnee = true
+                                    hipKneeInfo = "R-hip<R-knee"
+                                }
+                            }
+                            if !hipBelowKnee {
+                                if let leftHipY = leftHip?.position.y, let rightKneeY = rightKnee?.position.y, leftHipY < rightKneeY {
+                                    hipBelowKnee = true
+                                    hipKneeInfo = "L-hip<R-knee"
+                                } else if let rightHipY = rightHip?.position.y, let leftKneeY = leftKnee?.position.y, rightHipY < leftKneeY {
+                                    hipBelowKnee = true
+                                    hipKneeInfo = "R-hip<L-knee"
+                                }
+                            }
+                            
+                            var markers: [String] = []
+                            if frameIdx == actualBottom {
+                                markers.append("DETECTED_BOTTOM")
+                            }
+                            if let smoothedBottom = bottomRange.min(by: { smoothedHeights[$0] < smoothedHeights[$1] }), frameIdx == smoothedBottom {
+                                markers.append("SMOOTHED_MIN")
+                            }
+                            if let trueRawBottom = bottomRange.min(by: { rawHeights[$0] < rawHeights[$1] }), frameIdx == trueRawBottom {
+                                markers.append("TRUE_RAW_MIN")
+                            }
+                            if hipBelowKnee {
+                                markers.append("HIPS_BELOW_KNEES")
+                            }
+                            
+                            let markerStr = markers.isEmpty ? "" : " [\(markers.joined(separator: ", "))]"
+                            let hipKneeStr = hipBelowKnee ? " ✓ \(hipKneeInfo)" : ""
+                            print("    Frame \(originalFrame) (filtered \(frameIdx)): raw=\(String(format: "%.3f", rawHeight)), smoothed=\(String(format: "%.3f", smoothedHeight)), diff=\(String(format: "%+.3f", smoothedHeight - rawHeight))\(hipKneeStr)\(markerStr)")
+                        }
+                        
+                        // Summary: Find frames where hips are below knees
+                        var framesWithHipsBelowKnees: [Int] = []
+                        for frameIdx in descentStart..<candidate {
+                            guard frameIdx < poses.count else { continue }
+                            let pose = poses[frameIdx]
+                            let (leftHip, rightHip) = PoseAnalysisHelpers.extractBilateralKeypoints(
+                                leftName: "leftHip",
+                                rightName: "rightHip",
+                                from: pose
+                            )
+                            let (leftKnee, rightKnee) = PoseAnalysisHelpers.extractBilateralKeypoints(
+                                leftName: "leftKnee",
+                                rightName: "rightKnee",
+                                from: pose
+                            )
+                            
+                            var isBelow = false
+                            if let leftHipY = leftHip?.position.y {
+                                if let leftKneeY = leftKnee?.position.y, leftHipY < leftKneeY {
+                                    isBelow = true
+                                } else if let rightKneeY = rightKnee?.position.y, leftHipY < rightKneeY {
+                                    isBelow = true
+                                }
+                            }
+                            if !isBelow, let rightHipY = rightHip?.position.y {
+                                if let rightKneeY = rightKnee?.position.y, rightHipY < rightKneeY {
+                                    isBelow = true
+                                } else if let leftKneeY = leftKnee?.position.y, rightHipY < leftKneeY {
+                                    isBelow = true
+                                }
+                            }
+                            
+                            if isBelow {
+                                framesWithHipsBelowKnees.append(frameIdx)
+                            }
+                        }
+                        
+                        if !framesWithHipsBelowKnees.isEmpty {
+                            let firstBelowFrame = poses[framesWithHipsBelowKnees.first!].frameIndex
+                            let lastBelowFrame = poses[framesWithHipsBelowKnees.last!].frameIndex
+                            print("  - Frames with hips below knees: \(framesWithHipsBelowKnees.count) frames")
+                            print("    First: filtered \(framesWithHipsBelowKnees.first!) (original \(firstBelowFrame))")
+                            print("    Last: filtered \(framesWithHipsBelowKnees.last!) (original \(lastBelowFrame))")
+                            print("    Range: original frames \(firstBelowFrame)-\(lastBelowFrame)")
+                            
+                            let detectedBottomFrame = poses[actualBottom].frameIndex
+                            if detectedBottomFrame < firstBelowFrame {
+                                print("    ⚠️  PROBLEM: Detected bottom (frame \(detectedBottomFrame)) is BEFORE hips go below knees (starts at frame \(firstBelowFrame))!")
+                                print("    ⚠️  Detected bottom is \(firstBelowFrame - detectedBottomFrame) frames too early!")
+                            } else if detectedBottomFrame > lastBelowFrame {
+                                print("    ⚠️  Detected bottom (frame \(detectedBottomFrame)) is AFTER hips go below knees (ends at frame \(lastBelowFrame))")
+                            } else {
+                                print("    ✓ Detected bottom (frame \(detectedBottomFrame)) is within the hips-below-knees range")
+                            }
+                        } else {
+                            print("  - ⚠️  No frames found with hips below knees in this rep range")
+                        }
+                    }
+                } else {
+                    // If no bottom found in range, use the next bottom after startTop
+                    // This handles edge cases where bottom detection missed a bottom
+                    actualBottom = nextBottom
+                    actualBottomHeight = smoothedHeights[nextBottom]
+                    print("🔍 detectReps: Using next top candidate \(candidate) as rep end, no bottom found in range, using nextBottom \(nextBottom)")
+                }
+            } else {
+                // No more tops - this is the last rep
+                // Find next top after bottom, or use end of sequence
+                nextTop = tops.first(where: { $0 > nextBottom }) ?? poses.count - 1
+                actualBottom = nextBottom
+                actualBottomHeight = smoothedHeights[nextBottom]
+            }
+            
+            // Get the starting top height for depth calculation (already declared above)
+            // startTopHeight is already available from the validation section above
+            
+            // Calculate depthChange as relative percentage of starting height
+            // Since Y decreases downward, depth = top - bottom (positive value)
+            let absoluteDepthChange = startTopHeight - actualBottomHeight
+            let depthChange = startTopHeight > 0 ? absoluteDepthChange / startTopHeight : absoluteDepthChange
             let reachedDepth = depthChange > minDepthThreshold
             
             // Check if returned to starting height (within threshold)
             let endHeight = nextTop < smoothedHeights.count ? smoothedHeights[nextTop] : (smoothedHeights.last ?? startHeight)
-            let startTopHeight = smoothedHeights[startTop]
             let heightDifference = abs(endHeight - startTopHeight)
-            let returnedToStart = heightDifference < 0.03  // Within 3% of starting top height
+            let returnedToStart = heightDifference < 0.05  // Within 5% of starting top height
             
             let isFullRep = reachedDepth && returnedToStart
             
@@ -319,6 +1174,10 @@ struct SquatAnalyzer {
             let hasSignificantMovement = depthChange > minDepthThreshold * 0.5  // At least half the threshold
             
             if cycleDuration >= 10 && hasSignificantMovement {
+                let originalStartFrame = poses[cycleStart].frameIndex
+                let originalEndFrame = poses[min(nextTop, poses.count - 1)].frameIndex
+                let originalBottomFrame = poses[actualBottom].frameIndex
+                
                 reps.append(SquatRep(
                     repNumber: repNumber,
                     startFrame: cycleStart,
@@ -326,13 +1185,15 @@ struct SquatAnalyzer {
                     startTime: poses[cycleStart].timestamp.timeIntervalSince1970,
                     endTime: poses[min(nextTop, poses.count - 1)].timestamp.timeIntervalSince1970,
                     isFullRep: isFullRep,
-                    bottomFrame: nextBottom,
-                    bottomTime: poses[nextBottom].timestamp.timeIntervalSince1970,
+                    bottomFrame: actualBottom,
+                    bottomTime: poses[actualBottom].timestamp.timeIntervalSince1970,
                     reachedDepth: reachedDepth,
                     returnedToStart: returnedToStart
                 ))
                 
-                print("🔍 detectReps: Created rep \(repNumber): frames \(cycleStart)-\(min(nextTop, poses.count - 1)), bottom at \(nextBottom), depthChange=\(String(format: "%.3f", depthChange))")
+                print("🔍 detectReps: Created rep \(repNumber): filtered frames \(cycleStart)-\(min(nextTop, poses.count - 1)) (original frames \(originalStartFrame)-\(originalEndFrame)), bottom at filtered \(actualBottom) (original \(originalBottomFrame))")
+                print("  - Heights: startTop=\(String(format: "%.3f", startTopHeight)), bottom=\(String(format: "%.3f", actualBottomHeight)), startHeight=\(String(format: "%.3f", startHeight))")
+                print("  - Depth: absolute=\(String(format: "%.3f", absoluteDepthChange)), relative=\(String(format: "%.1f", depthChange * 100))%, threshold=\(String(format: "%.1f", minDepthThreshold * 100))%")
                 
                 repNumber += 1
             }
@@ -340,45 +1201,61 @@ struct SquatAnalyzer {
             // Move to next cycle - start from the next top
             cycleStart = nextTop
             
-            // Find the index of nextTop in the tops array, then move to the next one
+            // Find the index of nextTop in the tops array, then process it as the start of next rep
             if let currentTopIndexInArray = tops.firstIndex(of: nextTop) {
-                // Move to the next top in the array
+                // Set currentTopIndex to nextTop itself, so next iteration processes it as startTop
+                // This ensures each top serves as both the end of one rep and the start of the next
+                currentTopIndex = currentTopIndexInArray
+                
+                // Check if there's another top after this one
                 let nextTopIndexInArray = currentTopIndexInArray + 1
                 if nextTopIndexInArray < tops.count {
-                    currentTopIndex = nextTopIndexInArray
-                    // Debug: Log continuation
-                    print("🔍 detectReps: Moving to next top at index \(tops[currentTopIndex]) for rep \(repNumber)")
+                    // There's another top, continue loop to process nextTop as start of next rep
+                    print("🔍 detectReps: Will process top at index \(nextTop) as start of rep \(repNumber + 1)")
                 } else {
                     // No more tops in array, but check if there's a final rep after this top
                     // This handles the case where the last rep ends at the end of the sequence
-                    print("🔍 detectReps: At last top (\(nextTop)), checking for final rep")
+                    let originalTopFrame = nextTop < poses.count ? poses[nextTop].frameIndex : -1
+                    print("🔍 detectReps: At last top (filtered \(nextTop), original frame \(originalTopFrame)), checking for final rep")
                     
                     // Check if there's significant movement after this top that could form another rep
                     // Always check, regardless of remaining frame count - let the rep creation logic handle duration requirements
                     let endFrame = poses.count - 1
                     let remainingFrames = endFrame - nextTop
-                    print("🔍 detectReps: endFrame=\(endFrame), nextTop=\(nextTop), remaining frames=\(remainingFrames)")
+                    let originalEndFrame = endFrame < poses.count ? poses[endFrame].frameIndex : -1
+                    print("🔍 detectReps: endFrame=filtered \(endFrame) (original \(originalEndFrame)), nextTop=filtered \(nextTop) (original \(originalTopFrame)), remaining frames=\(remainingFrames)")
                     
                     // Find the deepest point (bottom) after this top
+                    // Since Y decreases downward, bottom = minimum Y value
                     let remainingFrameRange = nextTop..<smoothedHeights.count
-                    if let bottomIndex = remainingFrameRange.max(by: { smoothedHeights[$0] < smoothedHeights[$1] }) {
+                    if let bottomIndex = remainingFrameRange.min(by: { smoothedHeights[$0] < smoothedHeights[$1] }) {
                         let bottomHeight = smoothedHeights[bottomIndex]
                         let startTopHeight = smoothedHeights[nextTop]
-                        let depthChange = bottomHeight - startTopHeight
+                        // Calculate depthChange as relative percentage of starting height
+                        // Since Y decreases downward, depth = top - bottom (positive value)
+                        let absoluteDepthChange = startTopHeight - bottomHeight
+                        let depthChange = startTopHeight > 0 ? absoluteDepthChange / startTopHeight : absoluteDepthChange
                         let reachedDepth = depthChange > minDepthThreshold
                         
-                        print("🔍 detectReps: Found bottom at \(bottomIndex), depthChange=\(String(format: "%.3f", depthChange)), threshold=\(String(format: "%.3f", minDepthThreshold))")
+                        let originalBottomFrame = bottomIndex < poses.count ? poses[bottomIndex].frameIndex : -1
+                        let originalTopFrame = nextTop < poses.count ? poses[nextTop].frameIndex : -1
+                        print("🔍 detectReps: Found bottom at filtered index \(bottomIndex) (original frame \(originalBottomFrame))")
+                        print("  - Heights: startTop=\(String(format: "%.3f", startTopHeight)), bottom=\(String(format: "%.3f", bottomHeight)), startHeight=\(String(format: "%.3f", startHeight))")
+                        print("  - Depth: absolute=\(String(format: "%.3f", absoluteDepthChange)), relative=\(String(format: "%.1f", depthChange * 100))%, threshold=\(String(format: "%.1f", minDepthThreshold * 100))%")
                         
                         // Check if returned to starting height
                         let endHeight = smoothedHeights[endFrame]
                         let heightDifference = abs(endHeight - startTopHeight)
-                        let returnedToStart = heightDifference < 0.03
+                        let returnedToStart = heightDifference < 0.05
                         let isFullRep = reachedDepth && returnedToStart
                         
                         let cycleDuration = endFrame - nextTop
                         let hasSignificantMovement = depthChange > minDepthThreshold * 0.5
                         
+                        let originalStartFrame = nextTop < poses.count ? poses[nextTop].frameIndex : -1
+                        let originalEndFrame = endFrame < poses.count ? poses[endFrame].frameIndex : -1
                         print("🔍 detectReps: cycleDuration=\(cycleDuration), hasSignificantMovement=\(hasSignificantMovement), reachedDepth=\(reachedDepth)")
+                        print("  - Rep range: filtered \(nextTop)-\(endFrame) (original frames \(originalStartFrame)-\(originalEndFrame))")
                         
                         // Create rep if it meets duration and movement criteria
                         // Duration check ensures we don't create reps from tiny movements
@@ -413,13 +1290,15 @@ struct SquatAnalyzer {
                     if let nextTopIndexInArray = tops.firstIndex(of: nextTopAfterBottom) {
                         currentTopIndex = nextTopIndexInArray
                         cycleStart = nextTopAfterBottom - 1  // Start slightly before the top
-                        print("🔍 detectReps: Found next top at index \(nextTopAfterBottom) for rep \(repNumber)")
+                        let originalTopFrame = nextTopAfterBottom < poses.count ? poses[nextTopAfterBottom].frameIndex : -1
+                        print("🔍 detectReps: Found next top at filtered index \(nextTopAfterBottom) (original frame \(originalTopFrame)) for rep \(repNumber)")
                     } else {
                         break
                     }
                 } else {
                     // No more tops found
-                    print("🔍 detectReps: No more tops after bottom at \(nextBottom), detected \(repNumber) reps")
+                    let originalBottomFrame = nextBottom < poses.count ? poses[nextBottom].frameIndex : -1
+                    print("🔍 detectReps: No more tops after bottom at filtered \(nextBottom) (original frame \(originalBottomFrame)), detected \(repNumber) reps")
                     break
                 }
             }
@@ -427,14 +1306,30 @@ struct SquatAnalyzer {
         
         // If no reps were detected but we have significant movement, create a single rep
         if reps.isEmpty && poses.count >= 10 {
-            let totalHeightChange = abs(smoothedHeights.last! - smoothedHeights.first!)
+            let startHeightValue = smoothedHeights.first!
+            let endHeightValue = smoothedHeights.last!
+            let totalAbsoluteChange = abs(endHeightValue - startHeightValue)
+            // Calculate as relative percentage
+            let totalHeightChange = startHeightValue > 0 ? totalAbsoluteChange / startHeightValue : totalAbsoluteChange
             if totalHeightChange > minDepthThreshold {
                 // Single rep covering entire sequence
                 let endFrame = poses.count - 1
-                let bottomIndex = smoothedHeights.enumerated().max(by: { $0.element < $1.element })?.offset ?? endFrame
+                // Since Y decreases downward, bottom = minimum Y value
+                let bottomIndex = smoothedHeights.enumerated().min(by: { $0.element < $1.element })?.offset ?? endFrame
                 let bottomHeight = smoothedHeights[bottomIndex]
-                let reachedDepth = (bottomHeight - startHeight) > minDepthThreshold
-                let returnedToStart = abs(smoothedHeights[endFrame] - startHeight) < 0.03
+                // Calculate depthChange as relative percentage
+                // Since Y decreases downward, depth = top - bottom (positive value)
+                let absoluteDepthChange = startHeightValue - bottomHeight
+                let depthChange = startHeightValue > 0 ? absoluteDepthChange / startHeightValue : absoluteDepthChange
+                let reachedDepth = depthChange > minDepthThreshold
+                let returnedToStart = abs(smoothedHeights[endFrame] - startHeightValue) < 0.05
+                
+                let originalStartFrame = poses[0].frameIndex
+                let originalEndFrame = poses[endFrame].frameIndex
+                let originalBottomFrame = poses[bottomIndex].frameIndex
+                print("🔍 detectReps: Creating single rep fallback: filtered frames 0-\(endFrame) (original frames \(originalStartFrame)-\(originalEndFrame))")
+                print("  - Heights: start=\(String(format: "%.3f", startHeightValue)), bottom=\(String(format: "%.3f", bottomHeight)), end=\(String(format: "%.3f", endHeightValue))")
+                print("  - Depth: absolute=\(String(format: "%.3f", absoluteDepthChange)), relative=\(String(format: "%.1f", depthChange * 100))%, threshold=\(String(format: "%.1f", minDepthThreshold * 100))%")
                 
                 reps.append(SquatRep(
                     repNumber: 1,
@@ -451,10 +1346,13 @@ struct SquatAnalyzer {
             }
         }
         
-        // Debug: Log final result
+        // Debug: Log final result with original frame numbers
         print("🔍 detectReps: Final result - detected \(reps.count) reps")
         for rep in reps {
-            print("  - Rep \(rep.repNumber): frames \(rep.startFrame)-\(rep.endFrame), isFullRep=\(rep.isFullRep)")
+            let originalStartFrame = rep.startFrame < poses.count ? poses[rep.startFrame].frameIndex : -1
+            let originalEndFrame = rep.endFrame < poses.count ? poses[rep.endFrame].frameIndex : -1
+            let originalBottomFrame = rep.bottomFrame < poses.count ? poses[rep.bottomFrame].frameIndex : -1
+            print("  - Rep \(rep.repNumber): filtered frames \(rep.startFrame)-\(rep.endFrame) (original frames \(originalStartFrame)-\(originalEndFrame)), bottom at filtered \(rep.bottomFrame) (original \(originalBottomFrame)), isFullRep=\(rep.isFullRep)")
         }
         
         return reps
@@ -487,8 +1385,8 @@ struct SquatAnalyzer {
         // Find starting height (average of first few frames)
         let startHeight = Array(smoothedHeights.prefix(5)).reduce(0, +) / Double(min(5, smoothedHeights.count))
         
-        // Find bottom position (maximum Y value = lowest point)
-        guard let bottomIndex = smoothedHeights.enumerated().max(by: { $0.element < $1.element })?.offset else {
+        // Find bottom position (minimum Y value = lowest point, since Y decreases downward)
+        guard let bottomIndex = smoothedHeights.enumerated().min(by: { $0.element < $1.element })?.offset else {
             return []
         }
         let bottomHeight = smoothedHeights[bottomIndex]
@@ -543,7 +1441,9 @@ struct SquatAnalyzer {
     // MARK: - Depth Analysis
     
     /// Calculate depth metrics for a single pose
-    static func calculateDepth(_ pose: PoseDetectionResult, startHeight: Double, minHeight: Double, repNumber: Int? = nil) -> DepthAnalysis? {
+    /// If repStartHeight and repBottomHeight are provided, uses rep-specific heights for depth percentage calculation
+    /// Otherwise falls back to global startHeight and minHeight
+    static func calculateDepth(_ pose: PoseDetectionResult, startHeight: Double, minHeight: Double, repNumber: Int? = nil, repStartHeight: Double? = nil, repBottomHeight: Double? = nil) -> DepthAnalysis? {
         let (leftHip, rightHip) = PoseAnalysisHelpers.extractBilateralKeypoints(
             leftName: "leftHip",
             rightName: "rightHip",
@@ -555,23 +1455,85 @@ struct SquatAnalyzer {
             from: pose
         )
         
-        guard let hipPos = PoseAnalysisHelpers.averagePosition(leftHip, rightHip),
-              let kneePos = PoseAnalysisHelpers.averagePosition(leftKnee, rightKnee) else {
+        // Extract individual hip and knee Y values
+        let leftHipY = leftHip?.position.y
+        let rightHipY = rightHip?.position.y
+        let leftKneeY = leftKnee?.position.y
+        let rightKneeY = rightKnee?.position.y
+        
+        // Check if any hip point goes below any knee point
+        // Since Y decreases downward, hip below knee means hipY < kneeY
+        // For side-view videos, one hip might be lower than the other
+        var isAtDepth = false
+        if let leftHipY = leftHipY {
+            if let leftKneeY = leftKneeY, leftHipY < leftKneeY {
+                isAtDepth = true
+            } else if let rightKneeY = rightKneeY, leftHipY < rightKneeY {
+                isAtDepth = true
+            }
+        }
+        if !isAtDepth, let rightHipY = rightHipY {
+            if let leftKneeY = leftKneeY, rightHipY < leftKneeY {
+                isAtDepth = true
+            } else if let rightKneeY = rightKneeY, rightHipY < rightKneeY {
+                isAtDepth = true
+            }
+        }
+        
+        // For depth percentage calculation, prefer same-side hip and knee when available
+        // This handles side-view videos where one leg may be occluded
+        // Fall back to average positions if both sides are available (front-view)
+        let hipY: Double
+        let kneeY: Double
+        
+        // Try to use same-side keypoints first (left side or right side)
+        if let leftHipY = leftHipY, let leftKneeY = leftKneeY {
+            // Use left side
+            hipY = Double(leftHipY)
+            kneeY = Double(leftKneeY)
+        } else if let rightHipY = rightHipY, let rightKneeY = rightKneeY {
+            // Use right side
+            hipY = Double(rightHipY)
+            kneeY = Double(rightKneeY)
+        } else if let hipPos = PoseAnalysisHelpers.averagePosition(leftHip, rightHip),
+                   let kneePos = PoseAnalysisHelpers.averagePosition(leftKnee, rightKnee) {
+            // Fall back to average positions (both sides available, front-view)
+            hipY = Double(hipPos.y)
+            kneeY = Double(kneePos.y)
+        } else {
+            // No valid hip/knee combination available
             return nil
         }
         
-        let hipY = Double(hipPos.y)
-        let kneeY = Double(kneePos.y)
+        // Calculate depth percentage relative to knee level
+        // 0% = standing (start position), 100% = hip reaches knee level
+        // Values >100% are capped at 100% (hip below knee)
+        let depthStartY = repStartHeight ?? startHeight
+        let depthPercentage: Double
+        if hipY < kneeY {
+            // Hip is already at or below knee level
+            depthPercentage = 100.0
+        } else {
+            // Calculate how close hip is to knee level
+            // Percentage of the way from start position to knee level
+            let totalRangeToKnee = depthStartY - kneeY
+            guard totalRangeToKnee > 0 else {
+                // Edge case: knee is above start (shouldn't happen in normal squat)
+                return DepthAnalysis(
+                    hipHeight: hipY,
+                    kneeHeight: kneeY,
+                    isAtDepth: isAtDepth,
+                    depthPercentage: 0.0,
+                    timestamp: pose.timestamp,
+                    repNumber: repNumber
+                )
+            }
+            let currentRange = depthStartY - hipY
+            depthPercentage = min(100.0, max(0.0, (currentRange / totalRangeToKnee) * 100))
+        }
         
-        // Depth is achieved when hip crease is below knee level
-        let isAtDepth = hipY > kneeY
-        
-        // Calculate depth percentage (0 = standing, 100 = maximum depth achieved)
-        let depthPercentage = PoseAnalysisHelpers.calculateDepthPercentage(
-            currentY: hipY,
-            startY: startHeight,
-            bottomY: minHeight
-        )
+        // Debug: Log depth calculation at bottom of each rep for verification
+        // This will be checked in the calling code to only log at rep bottoms
         
         return DepthAnalysis(
             hipHeight: hipY,
@@ -583,10 +1545,74 @@ struct SquatAnalyzer {
         )
     }
     
+    // MARK: - Camera Angle Detection
+    
+    /// Detect camera angle from pose data
+    /// Returns .side if only one side is visible or both sides have similar x-coordinates (stacked)
+    /// Returns .front or .back if both sides are visible with significant x-coordinate separation
+    static func detectCameraAngle(from poseHistory: [PoseDetectionResult]) -> CameraAngle {
+        guard !poseHistory.isEmpty else { return .side } // Default to side if no data
+        
+        var framesWithBothSides = 0
+        var framesWithOneSide = 0
+        var totalXSeparation: Double = 0
+        var framesWithSeparation = 0
+        
+        for pose in poseHistory {
+            let (leftHip, rightHip) = PoseAnalysisHelpers.extractBilateralKeypoints(
+                leftName: "leftHip",
+                rightName: "rightHip",
+                from: pose
+            )
+            let (leftKnee, rightKnee) = PoseAnalysisHelpers.extractBilateralKeypoints(
+                leftName: "leftKnee",
+                rightName: "rightKnee",
+                from: pose
+            )
+            
+            let hasLeftSide = (leftHip != nil && leftKnee != nil)
+            let hasRightSide = (rightHip != nil && rightKnee != nil)
+            
+            if hasLeftSide && hasRightSide {
+                framesWithBothSides += 1
+                // Check x-coordinate separation
+                if let leftKnee = leftKnee, let rightKnee = rightKnee {
+                    let xSeparation = abs(Double(leftKnee.position.x - rightKnee.position.x))
+                    totalXSeparation += xSeparation
+                    framesWithSeparation += 1
+                    // If separation is significant (>0.1 in normalized coordinates), likely front/back view
+                    if xSeparation > 0.1 {
+                        // This is likely a front/back view
+                    }
+                }
+            } else if hasLeftSide || hasRightSide {
+                framesWithOneSide += 1
+            }
+        }
+        
+        // If most frames have only one side visible, it's a side view
+        if framesWithOneSide > framesWithBothSides {
+            return .side
+        }
+        
+        // If both sides are visible but x-separation is small (average < 0.08), it's a side view
+        if framesWithSeparation > 0 {
+            let averageSeparation = totalXSeparation / Double(framesWithSeparation)
+            if averageSeparation < 0.08 {
+                return .side
+            }
+        }
+        
+        // If both sides are consistently visible with good separation, it's front/back view
+        // Default to front (can't distinguish front vs back from pose data alone)
+        return .front
+    }
+    
     // MARK: - Knee Angle Analysis
     
     /// Calculate knee angle metrics for a single pose
-    static func calculateKneeAngles(_ pose: PoseDetectionResult, repNumber: Int? = nil) -> KneeAnalysis? {
+    /// cameraAngle: The detected camera angle - knee valgus is only valid for front/back views
+    static func calculateKneeAngles(_ pose: PoseDetectionResult, repNumber: Int? = nil, cameraAngle: CameraAngle = .side) -> KneeAnalysis? {
         let (leftHip, rightHip) = PoseAnalysisHelpers.extractBilateralKeypoints(
             leftName: "leftHip",
             rightName: "rightHip",
@@ -631,15 +1657,23 @@ struct SquatAnalyzer {
         let averageAngle = (left + right) / 2
         
         // Calculate knee valgus (knees caving inward)
+        // Only valid for front/back views - skip for side views
         let kneeValgus: Double
-        if let leftKnee = leftKnee, let rightKnee = rightKnee {
-            kneeValgus = abs(Double(leftKnee.position.x - rightKnee.position.x))
-        } else {
+        let hasValgus: Bool
+        if cameraAngle == .side {
+            // Side view: cannot accurately detect knee valgus (knees are stacked)
             kneeValgus = 0
+            hasValgus = false
+        } else if let leftKnee = leftKnee, let rightKnee = rightKnee {
+            // Front/back view: calculate horizontal distance between knees
+            kneeValgus = abs(Double(leftKnee.position.x - rightKnee.position.x))
+            // Check for excessive valgus (knees too close together relative to ankles)
+            hasValgus = kneeValgus > 0.05 // Threshold in normalized coordinates
+        } else {
+            // Missing keypoints
+            kneeValgus = 0
+            hasValgus = false
         }
-        
-        // Check for excessive valgus (knees too close together relative to ankles)
-        let hasValgus = kneeValgus > 0.05 // Threshold in normalized coordinates
         
         return KneeAnalysis(
             leftAngle: left,
@@ -657,6 +1691,7 @@ struct SquatAnalyzer {
     // MARK: - Back Angle Analysis
     
     /// Calculate back angle and rounding for a single pose
+    /// For side-view videos, we can use a single shoulder and hip on the same side
     static func calculateBackAngle(_ pose: PoseDetectionResult, repNumber: Int? = nil) -> BackAnalysis? {
         let (leftShoulder, rightShoulder) = PoseAnalysisHelpers.extractBilateralKeypoints(
             leftName: "leftShoulder",
@@ -669,8 +1704,23 @@ struct SquatAnalyzer {
             from: pose
         )
         
-        guard let shoulderPos = PoseAnalysisHelpers.averagePosition(leftShoulder, rightShoulder),
-              let hipPos = PoseAnalysisHelpers.averagePosition(leftHip, rightHip) else {
+        // Try to get shoulder and hip positions
+        // Prefer average of both sides if available, otherwise use single side
+        let shoulderPos: CGPoint?
+        if let left = leftShoulder, let right = rightShoulder {
+            shoulderPos = PoseAnalysisHelpers.averagePosition(left, right)
+        } else {
+            shoulderPos = leftShoulder?.position ?? rightShoulder?.position
+        }
+        
+        let hipPos: CGPoint?
+        if let left = leftHip, let right = rightHip {
+            hipPos = PoseAnalysisHelpers.averagePosition(left, right)
+        } else {
+            hipPos = leftHip?.position ?? rightHip?.position
+        }
+        
+        guard let shoulderPos = shoulderPos, let hipPos = hipPos else {
             return nil
         }
         
@@ -681,16 +1731,18 @@ struct SquatAnalyzer {
         )
         
         // Detect back rounding
-        // Back is rounded if spine angle deviates significantly from ideal (0-15 degrees)
-        let isRounded = spineAngle > 20 // Threshold for back rounding
+        // Back is rounded if spine angle deviates significantly from ideal
+        // Normal forward lean during squats is typically 15-25 degrees, so we need higher thresholds
+        // to only flag actual problematic rounding, not normal form
+        let isRounded = spineAngle > 30 // Increased from 20 to 30 to avoid false positives
         
         // Calculate rounding severity
         let roundingSeverity: BackRoundingSeverity
-        if spineAngle > 35 {
+        if spineAngle > 45 {  // Increased from 35
             roundingSeverity = .severe
-        } else if spineAngle > 25 {
+        } else if spineAngle > 35 {  // Increased from 25
             roundingSeverity = .moderate
-        } else if spineAngle > 20 {
+        } else if spineAngle > 30 {  // Increased from 20
             roundingSeverity = .mild
         } else {
             roundingSeverity = .none
@@ -707,58 +1759,103 @@ struct SquatAnalyzer {
     
     // MARK: - Score Calculation
     
-    /// Calculate overall form score (0-100)
+    /// Calculate overall form score (0-100) based on all reps
+    /// Averages per-rep scores to reflect overall set quality
     static func calculateOverallScore(
-        depth: DepthAnalysis?,
-        knee: KneeAnalysis?,
-        back: BackAnalysis?
+        reps: [SquatRep],
+        depthMetrics: [DepthAnalysis],
+        kneeMetrics: [KneeAnalysis],
+        backMetrics: [BackAnalysis]
     ) -> Double {
-        var score = 100.0
+        guard !reps.isEmpty else {
+            return 0.0
+        }
         
-        // Depth scoring (30% weight)
-        if let depth = depth {
-            if depth.isAtDepth {
-                // Full points for proper depth
-            } else if depth.depthPercentage > 80 {
-                score -= 5 // Slightly shallow
-            } else if depth.depthPercentage > 60 {
-                score -= 15 // Moderately shallow
+        // Pre-group metrics by rep number for O(1) lookups (O(n) operation)
+        let depthByRep = Dictionary(grouping: depthMetrics, by: { $0.repNumber ?? 0 })
+        let kneeByRep = Dictionary(grouping: kneeMetrics, by: { $0.repNumber ?? 0 })
+        let backByRep = Dictionary(grouping: backMetrics, by: { $0.repNumber ?? 0 })
+        
+        var repScores: [Double] = []
+        
+        // Calculate score for each rep
+        for rep in reps {
+            var repScore = 100.0
+            
+            // Get metrics for this rep using dictionary lookup (O(1))
+            let repDepthMetrics = depthByRep[rep.repNumber] ?? []
+            let repKneeMetrics = kneeByRep[rep.repNumber] ?? []
+            let repBackMetrics = backByRep[rep.repNumber] ?? []
+            
+            // Get worst metrics for this rep (or best available)
+            let repWorstDepth = repDepthMetrics.min { $0.depthPercentage < $1.depthPercentage }
+            let repWorstKnee = repKneeMetrics.min { $0.minAngle < $1.minAngle }
+            let repWorstBack = repBackMetrics.max { $0.spineAngle > $1.spineAngle }
+            
+            // Penalize if rep is not full
+            if !rep.isFullRep {
+                repScore -= 20 // Significant penalty for incomplete range of motion
+            }
+            
+            // Depth scoring (30% weight)
+            if let depth = repWorstDepth {
+                if depth.isAtDepth {
+                    // Full points for proper depth
+                } else if depth.depthPercentage > 80 {
+                    repScore -= 5 // Slightly shallow
+                } else if depth.depthPercentage > 60 {
+                    repScore -= 15 // Moderately shallow
+                } else {
+                    repScore -= 30 // Very shallow
+                }
+            } else if !repDepthMetrics.isEmpty {
+                // Has depth metrics but none selected - use average
+                let avgDepth = repDepthMetrics.map { $0.depthPercentage }.reduce(0, +) / Double(repDepthMetrics.count)
+                if avgDepth < 60 {
+                    repScore -= 30
+                } else if avgDepth < 80 {
+                    repScore -= 15
+                } else {
+                    repScore -= 5
+                }
             } else {
-                score -= 30 // Very shallow
+                repScore -= 10 // Missing depth data
             }
-        } else {
-            score -= 10 // Missing depth data
+            
+            // Knee angle scoring (30% weight)
+            // Optional analysis - don't penalize if missing (ankles may not be detected)
+            if let knee = repWorstKnee {
+                if knee.hasValgus {
+                    repScore -= 20 // Knee valgus is dangerous
+                }
+                if knee.minAngle < 60 {
+                    repScore -= 10 // Very deep, but check if controlled
+                }
+            }
+            // No penalty for missing knee data - it's an optional analysis
+            
+            // Back rounding scoring (40% weight - most important for safety)
+            // Optional analysis - don't penalize if missing (shoulders may not be detected)
+            if let back = repWorstBack {
+                switch back.roundingSeverity {
+                case .severe:
+                    repScore -= 40 // Dangerous
+                case .moderate:
+                    repScore -= 25 // Risky
+                case .mild:
+                    repScore -= 10 // Needs attention
+                case .none:
+                    break // Good
+                }
+            }
+            // No penalty for missing back data - it's an optional analysis
+            
+            repScores.append(max(0, min(100, repScore)))
         }
         
-        // Knee angle scoring (30% weight)
-        // Optional analysis - don't penalize if missing (ankles may not be detected)
-        if let knee = knee {
-            if knee.hasValgus {
-                score -= 20 // Knee valgus is dangerous
-            }
-            if knee.minAngle < 60 {
-                score -= 10 // Very deep, but check if controlled
-            }
-        }
-        // No penalty for missing knee data - it's an optional analysis
-        
-        // Back rounding scoring (40% weight - most important for safety)
-        // Optional analysis - don't penalize if missing (shoulders may not be detected)
-        if let back = back {
-            switch back.roundingSeverity {
-            case .severe:
-                score -= 40 // Dangerous
-            case .moderate:
-                score -= 25 // Risky
-            case .mild:
-                score -= 10 // Needs attention
-            case .none:
-                break // Good
-            }
-        }
-        // No penalty for missing back data - it's an optional analysis
-        
-        return max(0, min(100, score))
+        // Average all rep scores to get overall score
+        let averageScore = repScores.reduce(0, +) / Double(repScores.count)
+        return averageScore
     }
     
     // MARK: - Rep Number Assignment Helpers
@@ -845,7 +1942,8 @@ struct SquatAnalyzer {
     
     // MARK: - Feedback Generation
     
-    /// Generate actionable feedback from analysis results
+    /// Generate aggregated feedback from analysis results
+    /// Aggregates feedback by category across all reps
     static func generateFeedback(
         phases: [SquatPhase],
         reps: [SquatRep],
@@ -855,158 +1953,300 @@ struct SquatAnalyzer {
         worstDepth: DepthAnalysis?,
         worstKnee: KneeAnalysis?,
         worstBack: BackAnalysis?,
-        startTime: Date
+        startTime: Date,
+        cameraAngle: CameraAngle
     ) -> [FormFeedback] {
         var feedback: [FormFeedback] = []
         
-        // Helper function to format rep number as ordinal
-        func formatRepNumber(_ repNumber: Int?) -> String {
-            guard let rep = repNumber else { return "" }
-            let suffix: String
-            switch rep {
-            case 1: suffix = "st"
-            case 2: suffix = "nd"
-            case 3: suffix = "rd"
-            default: suffix = "th"
+        guard !reps.isEmpty else {
+            return feedback
+        }
+        
+        // Pre-group metrics by rep number for O(1) lookups (O(n) operation)
+        let depthByRep = Dictionary(grouping: depthMetrics, by: { $0.repNumber ?? 0 })
+        let kneeByRep = Dictionary(grouping: kneeMetrics, by: { $0.repNumber ?? 0 })
+        let backByRep = Dictionary(grouping: backMetrics, by: { $0.repNumber ?? 0 })
+        
+        // Helper function to format rep numbers for feedback messages
+        // Single rep: "Rep 1"
+        // Two reps: "Reps 1 and 2"
+        // More than two: "Reps 1, 2, 3, and 4" (with Oxford comma)
+        func formatRepNumbersForFeedback(_ repNumbers: [Int]) -> String {
+            guard !repNumbers.isEmpty else { return "" }
+            let sorted = repNumbers.sorted()
+            
+            switch sorted.count {
+            case 1:
+                return "Rep \(sorted[0])"
+            case 2:
+                return "Reps \(sorted[0]) and \(sorted[1])"
+            default:
+                // More than two: use Oxford comma
+                let allButLast = sorted.dropLast().map { String($0) }.joined(separator: ", ")
+                let last = sorted.last!
+                return "Reps \(allButLast), and \(last)"
             }
-            return "\(rep)\(suffix) rep"
         }
         
-        // Helper function to format timestamp
-        func formatTimestamp(_ timestamp: TimeInterval) -> String {
-            return String(format: "%.1f seconds", timestamp)
+        // Legacy function for backward compatibility (kept for any non-feedback uses)
+        func formatRepNumbers(_ repNumbers: [Int]) -> String {
+            return formatRepNumbersForFeedback(repNumbers)
         }
         
-        // Depth feedback
-        if let depth = worstDepth {
-            let timestamp = depth.timestamp.timeIntervalSince(startTime)
-            let repContext = depth.repNumber != nil ? " on \(formatRepNumber(depth.repNumber)) (\(formatTimestamp(timestamp)))" : " (\(formatTimestamp(timestamp)))"
+        // Helper function to get average timestamp for a set of reps
+        func averageTimestamp(for repNumbers: [Int]) -> TimeInterval {
+            let startTimeInterval = startTime.timeIntervalSince1970
+            let repTimes = repNumbers.compactMap { repNum -> TimeInterval? in
+                guard let rep = reps.first(where: { $0.repNumber == repNum }) else { return nil }
+                return rep.startTime - startTimeInterval
+            }
+            guard !repTimes.isEmpty else { return 0 }
+            return repTimes.reduce(0, +) / Double(repTimes.count)
+        }
+        
+        // RANGE OF MOTION - Aggregate across all reps
+        let totalReps = reps.count
+        let fullReps = reps.filter { $0.isFullRep }
+        let partialReps = reps.filter { !$0.isFullRep }
+        let partialRepNumbers = partialReps.map { $0.repNumber }
+        
+        // Check for reps that didn't reach depth separately
+        let repsNotAtDepth = reps.filter { !$0.reachedDepth }.map { $0.repNumber }
+        
+        // Get depth metrics grouped by rep (using pre-grouped dictionary)
+        var repDepthStatus: [Int: (isAtDepth: Bool, depthPercentage: Double)] = [:]
+        for rep in reps {
+            let repDepthMetrics = depthByRep[rep.repNumber] ?? []
+            // Find the deepest point (maximum depth percentage) for this rep
+            if let deepestPoint = repDepthMetrics.max(by: { $0.depthPercentage < $1.depthPercentage }) {
+                repDepthStatus[rep.repNumber] = (deepestPoint.isAtDepth, deepestPoint.depthPercentage)
+            }
+        }
+        
+        // Count reps with good depth
+        // Only use isAtDepth for classification - depthPercentage measures position within rep's range, not knee clearance
+        let goodDepthReps = repDepthStatus.filter { $0.value.isAtDepth }.map { $0.key }
+        let shallowReps = repDepthStatus.filter { !$0.value.isAtDepth }.map { $0.key }
+        
+        // Debug: Log depth quality for each rep
+        print("🔍 Depth Quality Analysis:")
+        for rep in reps.sorted(by: { $0.repNumber < $1.repNumber }) {
+            if let depthStatus = repDepthStatus[rep.repNumber] {
+                let statusLabel = depthStatus.isAtDepth ? "EXCELLENT" : "SHALLOW"
+                print("  - Rep \(rep.repNumber): \(statusLabel) (isAtDepth=\(depthStatus.isAtDepth), depthPercentage=\(String(format: "%.1f", depthStatus.depthPercentage))%), isFullRep=\(rep.isFullRep), reachedDepth=\(rep.reachedDepth), returnedToStart=\(rep.returnedToStart)")
+            } else {
+                print("  - Rep \(rep.repNumber): NO DEPTH DATA (isFullRep=\(rep.isFullRep), reachedDepth=\(rep.reachedDepth), returnedToStart=\(rep.returnedToStart))")
+            }
+        }
+        print("🔍 Depth Quality Summary: \(goodDepthReps.count) excellent, \(shallowReps.count) shallow out of \(totalReps) total reps")
+        
+        // Generate aggregated range of motion feedback
+        // Check both isFullRep and reachedDepth separately for more specific feedback
+        
+        // Branch 1: Flag incomplete reps if any exist
+        if !partialReps.isEmpty {
+            // Some reps are incomplete (didn't return to start or didn't reach depth)
+            let fullCount = fullReps.count
+            let message: String
+            let severity: FeedbackSeverity
             
-            // Check if this rep is full
-            let isFullRep = depth.repNumber.flatMap { repNum in
-                reps.first(where: { $0.repNumber == repNum })?.isFullRep
-            } ?? true // Default to true if rep number not found
+            if fullCount == 0 {
+                message = "\(totalReps) out of \(totalReps) reps had incomplete range of motion. Incomplete reps: \(formatRepNumbersForFeedback(partialRepNumbers))"
+                severity = .critical
+            } else {
+                message = "\(fullCount) out of \(totalReps) reps had full range of motion. Incomplete reps: \(formatRepNumbersForFeedback(partialRepNumbers))"
+                severity = .warning
+            }
             
-            if !isFullRep {
-                // Rep didn't complete full range of motion
+            feedback.append(FormFeedback(
+                category: .rangeOfMotion,
+                message: message,
+                severity: severity,
+                timestamp: averageTimestamp(for: partialRepNumbers),
+                repNumber: nil // Aggregated, no single rep
+            ))
+        } else if !repsNotAtDepth.isEmpty {
+            // All reps returned to start, but some didn't reach depth
+            let message = "Some reps didn't reach full depth. \(formatRepNumbersForFeedback(repsNotAtDepth)) need to go deeper - aim to get hip crease below knee level."
+            feedback.append(FormFeedback(
+                category: .rangeOfMotion,
+                message: message,
+                severity: .warning,
+                timestamp: averageTimestamp(for: repsNotAtDepth),
+                repNumber: nil
+            ))
+        }
+        
+        // Branch 3: Always check depth quality for all reps (regardless of partial/full status)
+        let excellentDepthCount = goodDepthReps.count
+        let shallowRepNumbers = shallowReps
+        
+        if shallowRepNumbers.isEmpty {
+            // All reps had excellent depth
+            feedback.append(FormFeedback(
+                category: .rangeOfMotion,
+                message: "\(totalReps) out of \(totalReps) reps had excellent depth - hip crease below knee level. Excellent form!",
+                severity: .excellent,
+                timestamp: averageTimestamp(for: Array(1...totalReps)),
+                repNumber: nil
+            ))
+        } else if excellentDepthCount > 0 {
+            // Mix of good and shallow
+            feedback.append(FormFeedback(
+                category: .rangeOfMotion,
+                message: "\(excellentDepthCount) out of \(totalReps) reps had excellent depth. \(formatRepNumbersForFeedback(shallowRepNumbers)) need to go deeper - aim to get hip crease below knee level.",
+                severity: .good,
+                timestamp: averageTimestamp(for: shallowRepNumbers),
+                repNumber: nil
+            ))
+        } else {
+            // All reps were shallow
+            feedback.append(FormFeedback(
+                category: .rangeOfMotion,
+                message: "\(totalReps) out of \(totalReps) reps need to go deeper - hip crease should be below knee level.",
+                severity: .warning,
+                timestamp: averageTimestamp(for: Array(1...totalReps)),
+                repNumber: nil
+            ))
+        }
+        
+        // KNEE TRACKING - Aggregate across all reps (using pre-grouped dictionary)
+        // Skip knee valgus feedback for side-view videos (valgus can only be detected from front/back)
+        var valgusReps: [Int] = []
+        var goodKneeReps: [Int] = []
+        
+        if cameraAngle != .side {
+            // Only analyze knee valgus for front/back views
+            for rep in reps {
+                let repKneeMetrics = kneeByRep[rep.repNumber] ?? []
+                if let worstKnee = repKneeMetrics.min(by: { $0.minAngle < $1.minAngle }) {
+                    if worstKnee.hasValgus {
+                        valgusReps.append(rep.repNumber)
+                    } else {
+                        goodKneeReps.append(rep.repNumber)
+                    }
+                } else {
+                    // No knee data for this rep - don't count it
+                }
+            }
+        }
+        
+        if !valgusReps.isEmpty {
+            let goodCount = goodKneeReps.count
+            let totalWithKneeData = valgusReps.count + goodCount
+            
+            if goodCount == 0 {
                 feedback.append(FormFeedback(
-                    category: .rangeOfMotion,
-                    message: "Incomplete range of motion - \(formatRepNumber(depth.repNumber)) did not return to starting position\(repContext)",
-                    severity: .warning,
-                    timestamp: timestamp,
-                    repNumber: depth.repNumber
-                ))
-            } else if depth.isAtDepth {
-                feedback.append(FormFeedback(
-                    category: .rangeOfMotion,
-                    message: "Excellent depth - hip crease below knee level\(repContext)",
-                    severity: .excellent,
-                    timestamp: timestamp,
-                    repNumber: depth.repNumber
-                ))
-            } else if depth.depthPercentage > 80 {
-                feedback.append(FormFeedback(
-                    category: .rangeOfMotion,
-                    message: "Good depth, but aim to get hip crease below knee level\(repContext)",
-                    severity: .good,
-                    timestamp: timestamp,
-                    repNumber: depth.repNumber
+                    category: .safety,
+                    message: "\(totalWithKneeData)/\(totalWithKneeData) reps had knees caving inward. Reps \(formatRepNumbers(valgusReps)) need to push knees out to align with toes.",
+                    severity: .critical,
+                    timestamp: averageTimestamp(for: valgusReps),
+                    repNumber: nil
                 ))
             } else {
                 feedback.append(FormFeedback(
-                    category: .rangeOfMotion,
-                    message: "Need to go deeper - hip crease should be below knee level\(repContext)",
-                    severity: .warning,
-                    timestamp: timestamp,
-                    repNumber: depth.repNumber
-                ))
-            }
-        }
-        
-        // Add feedback for all non-full reps (even if they weren't the worst depth)
-        // This ensures all incomplete reps get feedback
-        for rep in reps where !rep.isFullRep {
-            // Check if we already added feedback for this rep
-            let alreadyHasFeedback = feedback.contains { $0.repNumber == rep.repNumber && $0.category == .rangeOfMotion }
-            
-            if !alreadyHasFeedback {
-                // rep.startTime is already a TimeInterval (seconds since 1970)
-                // startTime is a Date, so we need to convert it to TimeInterval
-                let startTimeInterval = startTime.timeIntervalSince1970
-                let repTime = rep.startTime - startTimeInterval
-                feedback.append(FormFeedback(
-                    category: .rangeOfMotion,
-                    message: "Incomplete range of motion - \(formatRepNumber(rep.repNumber)) did not complete full cycle (didn't return to starting position)",
-                    severity: .warning,
-                    timestamp: repTime,
-                    repNumber: rep.repNumber
-                ))
-            }
-        }
-        
-        // Knee feedback
-        if let knee = worstKnee {
-            let timestamp = knee.timestamp.timeIntervalSince(startTime)
-            let repContext = knee.repNumber != nil ? " on \(formatRepNumber(knee.repNumber)) (\(formatTimestamp(timestamp)))" : " (\(formatTimestamp(timestamp)))"
-            
-            if knee.hasValgus {
-                feedback.append(FormFeedback(
                     category: .safety,
-                    message: "Knees caving inward detected - push knees out to align with toes\(repContext)",
+                    message: "\(goodCount)/\(totalWithKneeData) reps had good knee tracking. Reps \(formatRepNumbers(valgusReps)) had knees caving inward - push knees out to align with toes.",
                     severity: .critical,
-                    timestamp: timestamp,
-                    repNumber: knee.repNumber
+                    timestamp: averageTimestamp(for: valgusReps),
+                    repNumber: nil
                 ))
+            }
+        } else if !goodKneeReps.isEmpty {
+            // All reps with knee data had good tracking
+            feedback.append(FormFeedback(
+                category: .stability,
+                message: "\(goodKneeReps.count)/\(goodKneeReps.count) reps had good knee tracking throughout the movement.",
+                severity: .good,
+                timestamp: averageTimestamp(for: goodKneeReps),
+                repNumber: nil
+            ))
+        }
+        
+        // BACK POSITION - Aggregate across all reps (using pre-grouped dictionary)
+        var severeBackReps: [Int] = []
+        var moderateBackReps: [Int] = []
+        var mildBackReps: [Int] = []
+        var goodBackReps: [Int] = []
+        
+        for rep in reps {
+            let repBackMetrics = backByRep[rep.repNumber] ?? []
+            if let worstBack = repBackMetrics.max(by: { $0.spineAngle < $1.spineAngle }) {
+                // Debug: Log worst back analysis for each rep
+                print("🔍 Back rounding for Rep \(rep.repNumber): worst spineAngle=\(String(format: "%.1f", worstBack.spineAngle))°, severity=\(worstBack.roundingSeverity), frameCount=\(repBackMetrics.count)")
+                
+                switch worstBack.roundingSeverity {
+                case .severe:
+                    severeBackReps.append(rep.repNumber)
+                case .moderate:
+                    moderateBackReps.append(rep.repNumber)
+                case .mild:
+                    mildBackReps.append(rep.repNumber)
+                case .none:
+                    goodBackReps.append(rep.repNumber)
+                }
             } else {
-                feedback.append(FormFeedback(
-                    category: .stability,
-                    message: "Good knee tracking throughout the movement\(repContext)",
-                    severity: .good,
-                    timestamp: timestamp,
-                    repNumber: knee.repNumber
-                ))
+                // Debug: Log when no back metrics found for a rep
+                print("⚠️ No back metrics found for Rep \(rep.repNumber)")
             }
         }
         
-        // Back feedback
-        if let back = worstBack {
-            let timestamp = back.timestamp.timeIntervalSince(startTime)
-            let repContext = back.repNumber != nil ? " on \(formatRepNumber(back.repNumber)) (\(formatTimestamp(timestamp)))" : " (\(formatTimestamp(timestamp)))"
-            
-            switch back.roundingSeverity {
-            case .severe:
-                feedback.append(FormFeedback(
-                    category: .safety,
-                    message: "Significant back rounding detected - maintain neutral spine to prevent injury\(repContext)",
-                    severity: .critical,
-                    timestamp: timestamp,
-                    repNumber: back.repNumber
-                ))
-            case .moderate:
-                feedback.append(FormFeedback(
-                    category: .posture,
-                    message: "Moderate back rounding - focus on keeping chest up and core engaged\(repContext)",
-                    severity: .warning,
-                    timestamp: timestamp,
-                    repNumber: back.repNumber
-                ))
-            case .mild:
-                feedback.append(FormFeedback(
-                    category: .posture,
-                    message: "Slight back rounding - maintain neutral spine position\(repContext)",
-                    severity: .warning,
-                    timestamp: timestamp,
-                    repNumber: back.repNumber
-                ))
-            case .none:
-                feedback.append(FormFeedback(
-                    category: .posture,
-                    message: "Excellent back position - neutral spine maintained\(repContext)",
-                    severity: .excellent,
-                    timestamp: timestamp,
-                    repNumber: back.repNumber
-                ))
-            }
+        let totalWithBackData = severeBackReps.count + moderateBackReps.count + mildBackReps.count + goodBackReps.count
+        
+        // Debug: Log back rounding summary
+        print("🔍 Back rounding summary: severe=\(severeBackReps), moderate=\(moderateBackReps), mild=\(mildBackReps), good=\(goodBackReps), totalWithData=\(totalWithBackData), totalReps=\(reps.count)")
+        
+        if !severeBackReps.isEmpty {
+            let message = "Significant back rounding detected on \(formatRepNumbersForFeedback(severeBackReps)). Maintain neutral spine to prevent injury."
+            print("📝 Generating back rounding feedback: \(message)")
+            feedback.append(FormFeedback(
+                category: .safety,
+                message: message,
+                severity: .critical,
+                timestamp: averageTimestamp(for: severeBackReps),
+                repNumber: nil
+            ))
+        } else if !moderateBackReps.isEmpty {
+            let message = "Moderate back rounding on \(formatRepNumbersForFeedback(moderateBackReps)). Focus on keeping chest up and core engaged."
+            print("📝 Generating back rounding feedback: \(message)")
+            feedback.append(FormFeedback(
+                category: .posture,
+                message: message,
+                severity: .warning,
+                timestamp: averageTimestamp(for: moderateBackReps),
+                repNumber: nil
+            ))
+        } else if !mildBackReps.isEmpty && goodBackReps.isEmpty {
+            let message = "Slight back rounding on \(formatRepNumbersForFeedback(mildBackReps)). Maintain neutral spine position."
+            print("📝 Generating back rounding feedback: \(message)")
+            feedback.append(FormFeedback(
+                category: .posture,
+                message: message,
+                severity: .warning,
+                timestamp: averageTimestamp(for: mildBackReps),
+                repNumber: nil
+            ))
+        } else if !goodBackReps.isEmpty && mildBackReps.isEmpty && moderateBackReps.isEmpty {
+            let message = "\(goodBackReps.count) out of \(totalWithBackData) reps maintained neutral spine. Excellent form!"
+            print("📝 Generating back rounding feedback: \(message)")
+            feedback.append(FormFeedback(
+                category: .posture,
+                message: message,
+                severity: .excellent,
+                timestamp: averageTimestamp(for: goodBackReps),
+                repNumber: nil
+            ))
+        } else if !goodBackReps.isEmpty {
+            // Mix of good and mild
+            let message = "\(goodBackReps.count) out of \(totalWithBackData) reps maintained neutral spine. \(formatRepNumbersForFeedback(mildBackReps)) had slight back rounding."
+            print("📝 Generating back rounding feedback: \(message)")
+            feedback.append(FormFeedback(
+                category: .posture,
+                message: message,
+                severity: .good,
+                timestamp: averageTimestamp(for: mildBackReps),
+                repNumber: nil
+            ))
         }
         
         return feedback

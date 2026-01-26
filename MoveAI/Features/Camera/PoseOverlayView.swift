@@ -30,7 +30,8 @@ struct PoseOverlayView: View {
                                 actualSize: previewSize == .zero ? geometry.size : previewSize,
                                 flipXAxis: flipXAxis,
                                 isUploadedVideo: isUploadedVideo,
-                                keypointColor: keypointColor(for: keypoint)
+                                keypointColor: keypointColor(for: keypoint),
+                                frameIndex: pose.frameIndex
                             )
                         }
                         
@@ -76,6 +77,7 @@ private struct KeypointView: View {
     let flipXAxis: Bool
     let isUploadedVideo: Bool
     let keypointColor: Color
+    let frameIndex: Int
     
     private var screenPosition: CGPoint {
         // Vision uses bottom-left origin, SwiftUI uses top-left origin
@@ -133,7 +135,11 @@ private struct KeypointView: View {
                     VideoProcessingHelpers.writeDebugLog("Coordinate transformation", data: logData, location: "PoseOverlayView.swift:38")
                 }
                 // #endregion
-                print("🎯 PoseOverlayView: \(keypoint.name) at normalized (\(String(format: "%.3f", keypoint.position.x)), \(String(format: "%.3f", keypoint.position.y))) -> screen (\(String(format: "%.1f", screenPosition.x)), \(String(format: "%.1f", screenPosition.y))) in actualSize \(actualSize) [isUploadedVideo: \(isUploadedVideo)]")
+                // Only log keypoints relevant for depth analysis
+                let depthKeypoints = ["lefthip", "righthip", "leftknee", "rightknee"]
+                if depthKeypoints.contains(keypoint.name.lowercased()) {
+                    print("🎯 PoseOverlayView: \(keypoint.name) at normalized (\(String(format: "%.3f", keypoint.position.x)), \(String(format: "%.3f", keypoint.position.y))) -> screen (\(String(format: "%.1f", screenPosition.x)), \(String(format: "%.1f", screenPosition.y))) in actualSize \(actualSize) [original frame: \(frameIndex), isUploadedVideo: \(isUploadedVideo)]")
+                }
             }
     }
 }
