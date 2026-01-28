@@ -215,45 +215,10 @@ class VideoTestRunner {
         }
         // If isLikelySideView is true, skip knee valgus validation (side views can't detect valgus)
         
-        // Validate back rounding
-        let backByRep = Dictionary(grouping: actual.backMetrics, by: { $0.repNumber ?? 0 })
-        for (repNum, expectedSeverity) in expected.backRounding {
-            guard let repBackMetrics = backByRep[repNum], !repBackMetrics.isEmpty else {
-                // No back data - skip validation
-                continue
-            }
-            
-            // Find worst back rounding in this rep
-            guard let worstBack = repBackMetrics.max(by: { $0.spineAngle < $1.spineAngle }) else {
-                continue
-            }
-            
-            let actualSeverity = mapBackRoundingSeverity(worstBack.roundingSeverity)
-            
-            if actualSeverity != expectedSeverity {
-                failures.append(TestResult.TestFailure(
-                    metric: "Rep \(repNum) Back Rounding",
-                    expected: String(describing: expectedSeverity),
-                    actual: String(describing: actualSeverity),
-                    message: "Rep \(repNum) back rounding severity mismatch: expected \(expectedSeverity), got \(actualSeverity)"
-                ))
-            }
-        }
+        // Back rounding validation removed - now handled by biomechanical deviations (formDeviations)
+        // Tests should validate formDeviations instead if needed
         
         return failures
-    }
-    
-    private static func mapBackRoundingSeverity(_ severity: BackRoundingSeverity) -> ExpectedResults.BackRoundingSeverity {
-        switch severity {
-        case .none:
-            return .none
-        case .mild:
-            return .mild
-        case .moderate:
-            return .moderate
-        case .severe:
-            return .severe
-        }
     }
     
     enum TestError: Error {

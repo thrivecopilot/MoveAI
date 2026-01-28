@@ -37,7 +37,7 @@ struct SquatAnalyzer {
                               !findMissingKeypoints(in: poseHistory, required: ["rightHip", "rightKnee"]).contains("rightKnee")
             
             if !hasLeftSide && !hasRightSide {
-                return .failure(.missingRequiredKeypoints(missing: missingKeypoints))
+            return .failure(.missingRequiredKeypoints(missing: missingKeypoints))
             }
         }
         
@@ -178,6 +178,102 @@ struct SquatAnalyzer {
             return .failure(.noMovementPhasesDetected)
         }
         
+        // MARK: - Biomechanical Analysis (New)
+        // Estimate anthropometry from pose data
+        var segmentLengths: AnthropometryEstimator.SegmentLengths? = nil
+        var formDeviations: [FormDeviationAnalyzer.FormDeviation] = []
+        
+        print("🔬 ===== BIOMECHANICAL ANALYSIS START =====")
+        print("🔬 Analyzing \(reps.count) reps with \(validPoses.count) valid poses")
+        
+        if let estimatedSegments = AnthropometryEstimator.estimateSegmentLengths(from: validPoses) {
+            segmentLengths = estimatedSegments
+            print("✅ Anthropometry estimated successfully:")
+            print("  📏 Segment lengths (normalized by shin):")
+            print("     - Shin: \(String(format: "%.3f", estimatedSegments.shinLength)) (reference = 1.0)")
+            print("     - Femur: \(String(format: "%.3f", estimatedSegments.femurLength))")
+            print("     - Torso: \(String(format: "%.3f", estimatedSegments.torsoLength))")
+            print("  📊 Ratios:")
+            print("     - Femur/Shin: \(String(format: "%.3f", estimatedSegments.femurShinRatio))")
+            print("     - Torso/Femur: \(String(format: "%.3f", estimatedSegments.torsofemurRatio))")
+            
+            // For each rep, solve ideal angles, compute observed kinematics, and analyze deviations
+            for rep in reps {
+                print("\n🔬 --- Analyzing Rep \(rep.repNumber) ---")
+                let repStartHeight = smoothedHeights[rep.startFrame]
+                let repBottomHeight = smoothedHeights[rep.bottomFrame]
+                print("  📐 Rep boundaries: start=frame \(rep.startFrame) (height \(String(format: "%.3f", repStartHeight))), bottom=frame \(rep.bottomFrame) (height \(String(format: "%.3f", repBottomHeight)))")
+                
+                // Solve ideal angles for this rep
+                print("  🎯 Solving ideal angles...")
+                let idealCurves = SquatMechanicsSolver.solveIdealAngles(
+                    segmentLengths: estimatedSegments,
+                    repStartHeight: repStartHeight,
+                    repBottomHeight: repBottomHeight
+                )
+                print("  ✅ Ideal angles solved: \(idealCurves.depths.count) depth steps")
+                if let firstDepth = idealCurves.depths.first, let lastDepth = idealCurves.depths.last,
+                   let firstTorso = idealCurves.torsoAngles.first, let lastTorso = idealCurves.torsoAngles.last {
+                    print("     - Depth range: \(String(format: "%.2f", firstDepth)) to \(String(format: "%.2f", lastDepth))")
+                    print("     - Torso angle range: \(String(format: "%.1f", firstTorso))° to \(String(format: "%.1f", lastTorso))°")
+                }
+                
+                // Compute observed kinematics
+                print("  📊 Computing observed kinematics...")
+                if let observedKinematics = KinematicAnalyzer.calculateObservedKinematics(
+                    poses: validPoses,
+                    rep: rep,
+                    smoothedHeights: smoothedHeights,
+                    repStartHeight: repStartHeight,
+                    repBottomHeight: repBottomHeight
+                ) {
+                    print("  ✅ Observed kinematics computed: \(observedKinematics.torsoAngles.count) frames")
+                    if let avgTorso = observedKinematics.torsoAngles.isEmpty ? nil : observedKinematics.torsoAngles.reduce(0, +) / Double(observedKinematics.torsoAngles.count),
+                       let maxTorso = observedKinematics.torsoAngles.max(),
+                       let minTorso = observedKinematics.torsoAngles.min() {
+                        print("     - Torso angles: avg=\(String(format: "%.1f", avgTorso))°, min=\(String(format: "%.1f", minTorso))°, max=\(String(format: "%.1f", maxTorso))°")
+                    }
+                    
+                    // Analyze deviations
+                    print("  🔍 Analyzing deviations...")
+                    let repDeviations = FormDeviationAnalyzer.analyzeDeviations(
+                        observed: observedKinematics,
+                        ideal: idealCurves,
+                        segmentLengths: estimatedSegments,
+                        rep: rep
+                    )
+                    formDeviations.append(contentsOf: repDeviations)
+                    
+                    // Debug: Log deviations for this rep
+                    if !repDeviations.isEmpty {
+                        print("  ⚠️ Rep \(rep.repNumber) deviations: \(repDeviations.count) issues detected")
+                        for (idx, deviation) in repDeviations.enumerated() {
+                            print("     \(idx + 1). \(deviation.type) - \(deviation.severity.rawValue.uppercased())")
+                            print("        Magnitude: \(String(format: "%.2f", deviation.magnitude))")
+                            print("        Message: \(deviation.message)")
+                            print("        Frames: \(deviation.frameRange.lowerBound)..<\(deviation.frameRange.upperBound)")
+                        }
+                    } else {
+                        print("  ✅ No deviations detected - form looks good!")
+                    }
+                } else {
+                    print("  ⚠️ Could not compute observed kinematics for Rep \(rep.repNumber)")
+                }
+            }
+            
+            print("\n🔬 ===== BIOMECHANICAL ANALYSIS COMPLETE =====")
+            print("🔬 Total deviations found: \(formDeviations.count)")
+            if !formDeviations.isEmpty {
+                let byType = Dictionary(grouping: formDeviations, by: { $0.type })
+                for (type, devs) in byType {
+                    print("  - \(type): \(devs.count) instances")
+                }
+            }
+        } else {
+            print("⚠️ Could not estimate anthropometry - falling back to simple back angle analysis")
+            print("   (This may happen if keypoints are missing or pose data is insufficient)")
+        }
+        
         // Helper function to determine which rep a frame belongs to
         func repNumberForFrame(_ frameIndex: Int) -> Int? {
             return reps.first(where: { frameIndex >= $0.startFrame && frameIndex <= $0.endFrame })?.repNumber
@@ -186,7 +282,6 @@ struct SquatAnalyzer {
         // Calculate metrics for each phase, associating with rep numbers
         var depthMetrics: [DepthAnalysis] = []
         var kneeMetrics: [KneeAnalysis] = []
-        var backMetrics: [BackAnalysis] = []
         
         for (index, pose) in validPoses.enumerated() {
             let repNum = repNumberForFrame(index)
@@ -219,22 +314,9 @@ struct SquatAnalyzer {
             if let knee = calculateKneeAngles(pose, repNumber: repNum, cameraAngle: cameraAngle) {
                 kneeMetrics.append(knee)
             }
-            if let back = calculateBackAngle(pose, repNumber: repNum) {
-                backMetrics.append(back)
-                
-                // Debug: Log back analysis at bottom of each rep
-                if let repNum = repNum, let rep = reps.first(where: { $0.repNumber == repNum }) {
-                    let isRepBottom = (pose.frameIndex == rep.bottomFrame)
-                    if isRepBottom {
-                        print("🔍 calculateBackAngle at Rep \(repNum) bottom (frame \(pose.frameIndex)): spineAngle=\(String(format: "%.1f", back.spineAngle))°, isRounded=\(back.isRounded), severity=\(back.roundingSeverity)")
-                    }
-                }
-            } else if let repNum = repNum, let rep = reps.first(where: { $0.repNumber == repNum }) {
-                let isRepBottom = (pose.frameIndex == rep.bottomFrame)
-                if isRepBottom {
-                    print("⚠️ calculateBackAngle returned nil at Rep \(repNum) bottom (frame \(pose.frameIndex)) - missing shoulder or hip keypoints")
-                }
-            }
+            
+            // Back analysis is now handled entirely by biomechanical deviations (formDeviations)
+            // No simple angle-based analysis is performed
         }
         
         // Validate we have enough metrics
@@ -248,13 +330,11 @@ struct SquatAnalyzer {
         // This ensures all feedback items will have rep numbers for proper rep counting
         let depthMetricsWithReps = depthMetrics.filter { $0.repNumber != nil }
         let kneeMetricsWithReps = kneeMetrics.filter { $0.repNumber != nil }
-        let backMetricsWithReps = backMetrics.filter { $0.repNumber != nil }
         
         // Find worst-case scenarios from metrics that have rep numbers
         // If no metrics with rep numbers exist, fall back to all metrics and assign rep numbers
         let worstDepthCandidate = (depthMetricsWithReps.isEmpty ? depthMetrics : depthMetricsWithReps).min { $0.depthPercentage < $1.depthPercentage }
         let worstKneeAngleCandidate = (kneeMetricsWithReps.isEmpty ? kneeMetrics : kneeMetricsWithReps).min { $0.minAngle < $1.minAngle }
-        let worstBackAngleCandidate = (backMetricsWithReps.isEmpty ? backMetrics : backMetricsWithReps).max { $0.spineAngle > $1.spineAngle }
         
         // Ensure all worst metrics have rep numbers (assign to nearest rep if missing)
         let worstDepth = worstDepthCandidate.flatMap { depth in
@@ -263,16 +343,13 @@ struct SquatAnalyzer {
         let worstKneeAngle = worstKneeAngleCandidate.flatMap { knee in
             knee.repNumber != nil ? knee : assignRepNumberToKneeMetric(knee, reps: reps)
         }
-        let worstBackAngle = worstBackAngleCandidate.flatMap { back in
-            back.repNumber != nil ? back : assignRepNumberToBackMetric(back, reps: reps)
-        }
         
         // Calculate overall score based on all reps (not just worst case)
         let score = calculateOverallScore(
             reps: reps,
             depthMetrics: depthMetricsWithReps.isEmpty ? depthMetrics : depthMetricsWithReps,
             kneeMetrics: kneeMetricsWithReps.isEmpty ? kneeMetrics : kneeMetricsWithReps,
-            backMetrics: backMetricsWithReps.isEmpty ? backMetrics : backMetricsWithReps
+            formDeviations: formDeviations
         )
         
         // Generate feedback (using relative timestamps from start of recording)
@@ -282,12 +359,11 @@ struct SquatAnalyzer {
             reps: reps,
             depthMetrics: depthMetrics,
             kneeMetrics: kneeMetrics,
-            backMetrics: backMetrics,
             worstDepth: worstDepth,
             worstKnee: worstKneeAngle,
-            worstBack: worstBackAngle,
             startTime: startTime,
-            cameraAngle: cameraAngle
+            cameraAngle: cameraAngle,
+            formDeviations: formDeviations
         )
         
         let result = SquatAnalysisResult(
@@ -295,10 +371,8 @@ struct SquatAnalyzer {
             reps: reps,
             depthMetrics: depthMetrics,
             kneeMetrics: kneeMetrics,
-            backMetrics: backMetrics,
             worstDepth: worstDepth,
             worstKneeAngle: worstKneeAngle,
-            worstBackAngle: worstBackAngle,
             overallScore: score,
             feedback: feedback
         )
@@ -1688,75 +1762,6 @@ struct SquatAnalyzer {
         )
     }
     
-    // MARK: - Back Angle Analysis
-    
-    /// Calculate back angle and rounding for a single pose
-    /// For side-view videos, we can use a single shoulder and hip on the same side
-    static func calculateBackAngle(_ pose: PoseDetectionResult, repNumber: Int? = nil) -> BackAnalysis? {
-        let (leftShoulder, rightShoulder) = PoseAnalysisHelpers.extractBilateralKeypoints(
-            leftName: "leftShoulder",
-            rightName: "rightShoulder",
-            from: pose
-        )
-        let (leftHip, rightHip) = PoseAnalysisHelpers.extractBilateralKeypoints(
-            leftName: "leftHip",
-            rightName: "rightHip",
-            from: pose
-        )
-        
-        // Try to get shoulder and hip positions
-        // Prefer average of both sides if available, otherwise use single side
-        let shoulderPos: CGPoint?
-        if let left = leftShoulder, let right = rightShoulder {
-            shoulderPos = PoseAnalysisHelpers.averagePosition(left, right)
-        } else {
-            shoulderPos = leftShoulder?.position ?? rightShoulder?.position
-        }
-        
-        let hipPos: CGPoint?
-        if let left = leftHip, let right = rightHip {
-            hipPos = PoseAnalysisHelpers.averagePosition(left, right)
-        } else {
-            hipPos = leftHip?.position ?? rightHip?.position
-        }
-        
-        guard let shoulderPos = shoulderPos, let hipPos = hipPos else {
-            return nil
-        }
-        
-        // Calculate spine angle (angle of shoulder-hip line relative to vertical)
-        let spineAngle = PoseAnalysisHelpers.calculateVerticalAngle(
-            from: shoulderPos,
-            to: hipPos
-        )
-        
-        // Detect back rounding
-        // Back is rounded if spine angle deviates significantly from ideal
-        // Normal forward lean during squats is typically 15-25 degrees, so we need higher thresholds
-        // to only flag actual problematic rounding, not normal form
-        let isRounded = spineAngle > 30 // Increased from 20 to 30 to avoid false positives
-        
-        // Calculate rounding severity
-        let roundingSeverity: BackRoundingSeverity
-        if spineAngle > 45 {  // Increased from 35
-            roundingSeverity = .severe
-        } else if spineAngle > 35 {  // Increased from 25
-            roundingSeverity = .moderate
-        } else if spineAngle > 30 {  // Increased from 20
-            roundingSeverity = .mild
-        } else {
-            roundingSeverity = .none
-        }
-        
-        return BackAnalysis(
-            spineAngle: spineAngle,
-            isRounded: isRounded,
-            roundingSeverity: roundingSeverity,
-            timestamp: pose.timestamp,
-            repNumber: repNumber
-        )
-    }
-    
     // MARK: - Score Calculation
     
     /// Calculate overall form score (0-100) based on all reps
@@ -1765,7 +1770,7 @@ struct SquatAnalyzer {
         reps: [SquatRep],
         depthMetrics: [DepthAnalysis],
         kneeMetrics: [KneeAnalysis],
-        backMetrics: [BackAnalysis]
+        formDeviations: [FormDeviationAnalyzer.FormDeviation] = []
     ) -> Double {
         guard !reps.isEmpty else {
             return 0.0
@@ -1774,7 +1779,7 @@ struct SquatAnalyzer {
         // Pre-group metrics by rep number for O(1) lookups (O(n) operation)
         let depthByRep = Dictionary(grouping: depthMetrics, by: { $0.repNumber ?? 0 })
         let kneeByRep = Dictionary(grouping: kneeMetrics, by: { $0.repNumber ?? 0 })
-        let backByRep = Dictionary(grouping: backMetrics, by: { $0.repNumber ?? 0 })
+        let deviationsByRep = Dictionary(grouping: formDeviations, by: { $0.repNumber })
         
         var repScores: [Double] = []
         
@@ -1785,12 +1790,10 @@ struct SquatAnalyzer {
             // Get metrics for this rep using dictionary lookup (O(1))
             let repDepthMetrics = depthByRep[rep.repNumber] ?? []
             let repKneeMetrics = kneeByRep[rep.repNumber] ?? []
-            let repBackMetrics = backByRep[rep.repNumber] ?? []
             
             // Get worst metrics for this rep (or best available)
             let repWorstDepth = repDepthMetrics.min { $0.depthPercentage < $1.depthPercentage }
             let repWorstKnee = repKneeMetrics.min { $0.minAngle < $1.minAngle }
-            let repWorstBack = repBackMetrics.max { $0.spineAngle > $1.spineAngle }
             
             // Penalize if rep is not full
             if !rep.isFullRep {
@@ -1835,9 +1838,26 @@ struct SquatAnalyzer {
             // No penalty for missing knee data - it's an optional analysis
             
             // Back rounding scoring (40% weight - most important for safety)
-            // Optional analysis - don't penalize if missing (shoulders may not be detected)
-            if let back = repWorstBack {
-                switch back.roundingSeverity {
+            // Only use torsoBias deviations for scoring (torsoInstability, hipShoot, balanceDrift excluded for troubleshooting)
+            // Optional analysis - don't penalize if missing (no deviations detected)
+            let repDeviations = deviationsByRep[rep.repNumber] ?? []
+            let torsoBiasDeviations = repDeviations.filter { $0.type == .torsoBias }
+            let worstDeviation = torsoBiasDeviations.max { deviation1, deviation2 in
+                // Compare severities: severe > moderate > mild > none
+                switch (deviation1.severity, deviation2.severity) {
+                case (.severe, _): return false
+                case (_, .severe): return true
+                case (.moderate, _): return false
+                case (_, .moderate): return true
+                case (.mild, _): return false
+                case (_, .mild): return true
+                case (.none, _): return false
+                }
+            }
+            
+            if let deviation = worstDeviation {
+                // Use biomechanical deviation severity (only torsoBias affects score)
+                switch deviation.severity {
                 case .severe:
                     repScore -= 40 // Dangerous
                 case .moderate:
@@ -1849,6 +1869,8 @@ struct SquatAnalyzer {
                 }
             }
             // No penalty for missing back data - it's an optional analysis
+            // If no torsoBias deviations exist, back rounding is not analyzed (no penalty)
+            // Note: Other deviation types (torsoInstability, hipShoot, balanceDrift) are still logged and shown in feedback
             
             repScores.append(max(0, min(100, repScore)))
         }
@@ -1916,31 +1938,39 @@ struct SquatAnalyzer {
     }
     
     /// Assign rep number to a back metric based on nearest rep timestamp
-    static func assignRepNumberToBackMetric(_ metric: BackAnalysis, reps: [SquatRep]) -> BackAnalysis? {
-        guard metric.repNumber == nil, !reps.isEmpty else {
-            return metric
+    // MARK: - Feedback Generation
+    
+    /// Map deviation type to appropriate feedback category
+    private static func mapDeviationTypeToCategory(_ type: FormDeviationAnalyzer.DeviationType, severity: BackRoundingSeverity) -> FeedbackCategory {
+        switch type {
+        case .torsoBias:
+            // Torso bias is a posture issue, but severe cases are safety concerns
+            return severity == .severe ? .safety : .posture
+        case .torsoInstability:
+            // Torso instability is dangerous jerky movement - always safety
+            return .safety
+        case .hipShoot:
+            // Hip shoot is a movement control/stability issue
+            return .stability
+        case .balanceDrift:
+            // Balance drift is a stability issue
+            return .stability
         }
-        
-        // Find the rep whose time range contains or is closest to the metric's timestamp
-        let metricTime = metric.timestamp.timeIntervalSince1970
-        let nearestRep = reps.min { rep1, rep2 in
-            let dist1 = abs(metricTime - rep1.bottomTime)
-            let dist2 = abs(metricTime - rep2.bottomTime)
-            return dist1 < dist2
-        }
-        
-        guard let rep = nearestRep else { return metric }
-        
-        return BackAnalysis(
-            spineAngle: metric.spineAngle,
-            isRounded: metric.isRounded,
-            roundingSeverity: metric.roundingSeverity,
-            timestamp: metric.timestamp,
-            repNumber: rep.repNumber
-        )
     }
     
-    // MARK: - Feedback Generation
+    /// Map deviation severity to feedback severity
+    private static func mapDeviationSeverityToFeedbackSeverity(_ severity: BackRoundingSeverity) -> FeedbackSeverity {
+        switch severity {
+        case .severe:
+            return .critical
+        case .moderate:
+            return .warning
+        case .mild:
+            return .warning
+        case .none:
+            return .good // Shouldn't happen, but handle gracefully
+        }
+    }
     
     /// Generate aggregated feedback from analysis results
     /// Aggregates feedback by category across all reps
@@ -1949,12 +1979,11 @@ struct SquatAnalyzer {
         reps: [SquatRep],
         depthMetrics: [DepthAnalysis],
         kneeMetrics: [KneeAnalysis],
-        backMetrics: [BackAnalysis],
         worstDepth: DepthAnalysis?,
         worstKnee: KneeAnalysis?,
-        worstBack: BackAnalysis?,
         startTime: Date,
-        cameraAngle: CameraAngle
+        cameraAngle: CameraAngle,
+        formDeviations: [FormDeviationAnalyzer.FormDeviation] = []
     ) -> [FormFeedback] {
         var feedback: [FormFeedback] = []
         
@@ -1965,7 +1994,7 @@ struct SquatAnalyzer {
         // Pre-group metrics by rep number for O(1) lookups (O(n) operation)
         let depthByRep = Dictionary(grouping: depthMetrics, by: { $0.repNumber ?? 0 })
         let kneeByRep = Dictionary(grouping: kneeMetrics, by: { $0.repNumber ?? 0 })
-        let backByRep = Dictionary(grouping: backMetrics, by: { $0.repNumber ?? 0 })
+        let deviationsByRep = Dictionary(grouping: formDeviations, by: { $0.repNumber })
         
         // Helper function to format rep numbers for feedback messages
         // Single rep: "Rep 1"
@@ -2117,16 +2146,16 @@ struct SquatAnalyzer {
         
         if cameraAngle != .side {
             // Only analyze knee valgus for front/back views
-            for rep in reps {
-                let repKneeMetrics = kneeByRep[rep.repNumber] ?? []
-                if let worstKnee = repKneeMetrics.min(by: { $0.minAngle < $1.minAngle }) {
-                    if worstKnee.hasValgus {
-                        valgusReps.append(rep.repNumber)
-                    } else {
-                        goodKneeReps.append(rep.repNumber)
-                    }
+        for rep in reps {
+            let repKneeMetrics = kneeByRep[rep.repNumber] ?? []
+            if let worstKnee = repKneeMetrics.min(by: { $0.minAngle < $1.minAngle }) {
+                if worstKnee.hasValgus {
+                    valgusReps.append(rep.repNumber)
                 } else {
-                    // No knee data for this rep - don't count it
+                    goodKneeReps.append(rep.repNumber)
+                }
+            } else {
+                // No knee data for this rep - don't count it
                 }
             }
         }
@@ -2163,19 +2192,32 @@ struct SquatAnalyzer {
             ))
         }
         
-        // BACK POSITION - Aggregate across all reps (using pre-grouped dictionary)
+        // Debug: Log back rounding summary (for troubleshooting, but don't generate aggregated feedback)
         var severeBackReps: [Int] = []
         var moderateBackReps: [Int] = []
         var mildBackReps: [Int] = []
         var goodBackReps: [Int] = []
         
         for rep in reps {
-            let repBackMetrics = backByRep[rep.repNumber] ?? []
-            if let worstBack = repBackMetrics.max(by: { $0.spineAngle < $1.spineAngle }) {
-                // Debug: Log worst back analysis for each rep
-                print("🔍 Back rounding for Rep \(rep.repNumber): worst spineAngle=\(String(format: "%.1f", worstBack.spineAngle))°, severity=\(worstBack.roundingSeverity), frameCount=\(repBackMetrics.count)")
+            let repDeviations = deviationsByRep[rep.repNumber] ?? []
+            let worstDeviation = repDeviations.max { deviation1, deviation2 in
+                // Compare severities: severe > moderate > mild > none
+                switch (deviation1.severity, deviation2.severity) {
+                case (.severe, _): return false
+                case (_, .severe): return true
+                case (.moderate, _): return false
+                case (_, .moderate): return true
+                case (.mild, _): return false
+                case (_, .mild): return true
+                case (.none, _): return false
+                }
+            }
+            
+            if let deviation = worstDeviation {
+                // Log for troubleshooting
+                print("🔬 Back rounding for Rep \(rep.repNumber): Using biomechanical analysis - \(deviation.type) (\(deviation.severity.rawValue)), magnitude=\(String(format: "%.1f", deviation.magnitude))")
                 
-                switch worstBack.roundingSeverity {
+                switch deviation.severity {
                 case .severe:
                     severeBackReps.append(rep.repNumber)
                 case .moderate:
@@ -2185,68 +2227,62 @@ struct SquatAnalyzer {
                 case .none:
                     goodBackReps.append(rep.repNumber)
                 }
-            } else {
-                // Debug: Log when no back metrics found for a rep
-                print("⚠️ No back metrics found for Rep \(rep.repNumber)")
             }
         }
         
         let totalWithBackData = severeBackReps.count + moderateBackReps.count + mildBackReps.count + goodBackReps.count
-        
-        // Debug: Log back rounding summary
         print("🔍 Back rounding summary: severe=\(severeBackReps), moderate=\(moderateBackReps), mild=\(mildBackReps), good=\(goodBackReps), totalWithData=\(totalWithBackData), totalReps=\(reps.count)")
         
-        if !severeBackReps.isEmpty {
-            let message = "Significant back rounding detected on \(formatRepNumbersForFeedback(severeBackReps)). Maintain neutral spine to prevent injury."
-            print("📝 Generating back rounding feedback: \(message)")
-            feedback.append(FormFeedback(
-                category: .safety,
-                message: message,
-                severity: .critical,
-                timestamp: averageTimestamp(for: severeBackReps),
-                repNumber: nil
-            ))
-        } else if !moderateBackReps.isEmpty {
-            let message = "Moderate back rounding on \(formatRepNumbersForFeedback(moderateBackReps)). Focus on keeping chest up and core engaged."
-            print("📝 Generating back rounding feedback: \(message)")
-            feedback.append(FormFeedback(
-                category: .posture,
-                message: message,
-                severity: .warning,
-                timestamp: averageTimestamp(for: moderateBackReps),
-                repNumber: nil
-            ))
-        } else if !mildBackReps.isEmpty && goodBackReps.isEmpty {
-            let message = "Slight back rounding on \(formatRepNumbersForFeedback(mildBackReps)). Maintain neutral spine position."
-            print("📝 Generating back rounding feedback: \(message)")
-            feedback.append(FormFeedback(
-                category: .posture,
-                message: message,
-                severity: .warning,
-                timestamp: averageTimestamp(for: mildBackReps),
-                repNumber: nil
-            ))
-        } else if !goodBackReps.isEmpty && mildBackReps.isEmpty && moderateBackReps.isEmpty {
-            let message = "\(goodBackReps.count) out of \(totalWithBackData) reps maintained neutral spine. Excellent form!"
-            print("📝 Generating back rounding feedback: \(message)")
-            feedback.append(FormFeedback(
-                category: .posture,
-                message: message,
-                severity: .excellent,
-                timestamp: averageTimestamp(for: goodBackReps),
-                repNumber: nil
-            ))
-        } else if !goodBackReps.isEmpty {
-            // Mix of good and mild
-            let message = "\(goodBackReps.count) out of \(totalWithBackData) reps maintained neutral spine. \(formatRepNumbersForFeedback(mildBackReps)) had slight back rounding."
-            print("📝 Generating back rounding feedback: \(message)")
-            feedback.append(FormFeedback(
-                category: .posture,
-                message: message,
-                severity: .good,
-                timestamp: averageTimestamp(for: mildBackReps),
-                repNumber: nil
-            ))
+        // INDIVIDUAL FORM DEVIATION FEEDBACK
+        // Add specific feedback for each deviation type detected
+        // Filter to only include torsoBias and balanceDrift (exclude torsoInstability and hipShoot for troubleshooting)
+        for rep in reps {
+            let repDeviations = deviationsByRep[rep.repNumber] ?? []
+            // Filter to only include torsoBias and balanceDrift
+            let filteredDeviations = repDeviations.filter { deviation in
+                deviation.type == .torsoBias || deviation.type == .balanceDrift
+            }
+            for deviation in filteredDeviations {
+                let category = mapDeviationTypeToCategory(deviation.type, severity: deviation.severity)
+                let feedbackSeverity = mapDeviationSeverityToFeedbackSeverity(deviation.severity)
+                
+                // Calculate timestamp for this deviation (use midpoint of frame range)
+                // Frame indices in deviation.frameRange are absolute frame indices
+                // Rep timestamps are absolute (timeIntervalSince1970), so calculate relative to video start
+                let repStartTimeRelative = rep.startTime - startTime.timeIntervalSince1970
+                let repEndTimeRelative = rep.endTime - startTime.timeIntervalSince1970
+                let repDuration = repEndTimeRelative - repStartTimeRelative
+                let repFrameCount = rep.endFrame - rep.startFrame + 1
+                
+                // Calculate midpoint of deviation frame range
+                // Clamp to rep's frame range to ensure valid interpolation
+                let deviationFrameMid = (deviation.frameRange.lowerBound + deviation.frameRange.upperBound) / 2
+                let clampedFrameMid = max(rep.startFrame, min(rep.endFrame, deviationFrameMid))
+                let deviationFrameRelative = clampedFrameMid - rep.startFrame
+                
+                // Interpolate timestamp within rep duration (relative to video start)
+                // Ensure we don't divide by zero and clamp result to valid range
+                guard repFrameCount > 0 && repDuration > 0 else {
+                    // Fallback to rep start time if duration is invalid
+                    continue
+                }
+                let deviationTimestamp = repStartTimeRelative + (Double(deviationFrameRelative) / Double(repFrameCount)) * repDuration
+                
+                // Ensure timestamp is non-negative and within reasonable bounds
+                guard deviationTimestamp >= 0 else {
+                    continue
+                }
+                
+                print("📝 Adding individual deviation feedback: Rep \(rep.repNumber) - \(deviation.type) (\(deviation.severity.rawValue)): \(deviation.message)")
+                
+                feedback.append(FormFeedback(
+                    category: category,
+                    message: deviation.message,
+                    severity: feedbackSeverity,
+                    timestamp: max(0, deviationTimestamp),
+                    repNumber: rep.repNumber
+                ))
+            }
         }
         
         return feedback
@@ -2423,10 +2459,8 @@ struct SquatAnalysisResult: Codable {
     let reps: [SquatRep]
     let depthMetrics: [DepthAnalysis]
     let kneeMetrics: [KneeAnalysis]
-    let backMetrics: [BackAnalysis]
     let worstDepth: DepthAnalysis?
     let worstKneeAngle: KneeAnalysis?
-    let worstBackAngle: BackAnalysis?
     let overallScore: Double
     let feedback: [FormFeedback]
 }
@@ -2501,14 +2535,6 @@ struct KneeAnalysis: Codable {
     let averageAngle: Double
     let kneeValgus: Double
     let hasValgus: Bool
-    let timestamp: Date
-    let repNumber: Int?  // Which rep this metric belongs to
-}
-
-struct BackAnalysis: Codable {
-    let spineAngle: Double
-    let isRounded: Bool
-    let roundingSeverity: BackRoundingSeverity
     let timestamp: Date
     let repNumber: Int?  // Which rep this metric belongs to
 }

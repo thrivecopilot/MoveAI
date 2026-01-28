@@ -387,14 +387,74 @@ struct AnalysisResultsView: View {
         return (totalReps: totalReps, goodReps: goodReps, warningReps: warningReps)
     }
     
+    @State private var expandedCategories: [FeedbackCategory: Bool] = [:]
+    
     private func feedbackSection(_ feedback: [FormFeedback]) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
+        let grouped = Dictionary(grouping: feedback, by: { $0.category })
+        
+        return VStack(alignment: .leading, spacing: 16) {
             Text("Form Feedback")
                 .font(.headline)
             
-            ForEach(feedback) { item in
-                FeedbackCard(feedback: item)
+            ForEach(FeedbackCategory.allCases, id: \.self) { category in
+                if let categoryFeedback = grouped[category], !categoryFeedback.isEmpty {
+                    DisclosureGroup(
+                        isExpanded: Binding(
+                            get: { expandedCategories[category] ?? false },
+                            set: { expandedCategories[category] = $0 }
+                        )
+                    ) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(categoryFeedback) { item in
+                                FeedbackCard(feedback: item)
+                            }
+                        }
+                        .padding(.leading, 8)
+                    } label: {
+                        HStack {
+                            Image(systemName: category.icon)
+                                .foregroundColor(categoryColor(categoryFeedback))
+                                .frame(width: 24)
+                            
+                            Text(category.displayName)
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            
+                            Spacer()
+                            
+                            Text("(\(categoryFeedback.count))")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
             }
+        }
+    }
+    
+    private func categoryColor(_ feedback: [FormFeedback]) -> Color {
+        // Use the worst severity color for the category icon
+        let worstSeverity = feedback.map { $0.severity }.max { severity1, severity2 in
+            switch (severity1, severity2) {
+            case (.critical, _): return false
+            case (_, .critical): return true
+            case (.warning, _): return false
+            case (_, .warning): return true
+            case (.good, _): return false
+            case (_, .good): return true
+            case (.excellent, _): return false
+            }
+        }
+        
+        switch worstSeverity {
+        case .excellent, .good:
+            return .green
+        case .warning:
+            return .orange
+        case .critical:
+            return .red
+        case .none:
+            return .gray  // Default color when no severity found
         }
     }
     
