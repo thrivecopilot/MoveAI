@@ -25,13 +25,15 @@ struct VideoPlayerView: View {
     @State private var showControls = true
     @State private var playerStatus: AVPlayerItem.Status = .unknown
     @StateObject private var statusObserver = PlayerStatusObserver()
+    @Binding var seekToTime: TimeInterval?
     var onFullScreenToggle: (() -> Void)?
     var isFullScreenMode: Bool = false
     
-    init(videoURL: URL, poseData: [PoseDetectionResult]?, isRecordedLive: Bool = false, onFullScreenToggle: (() -> Void)? = nil, isFullScreenMode: Bool = false) {
+    init(videoURL: URL, poseData: [PoseDetectionResult]?, isRecordedLive: Bool = false, seekToTime: Binding<TimeInterval?> = .constant(nil), onFullScreenToggle: (() -> Void)? = nil, isFullScreenMode: Bool = false) {
         self.videoURL = videoURL
         self.poseData = poseData
         self.isRecordedLive = isRecordedLive
+        self._seekToTime = seekToTime
         self.onFullScreenToggle = onFullScreenToggle
         self.isFullScreenMode = isFullScreenMode
     }
@@ -52,6 +54,12 @@ struct VideoPlayerView: View {
         }
         .onReceive(statusObserver.$status) { newStatus in
             playerStatus = newStatus
+        }
+        .onChange(of: seekToTime) { newValue in
+            if let time = newValue {
+                performSeek(to: time)
+                seekToTime = nil
+            }
         }
     }
     
@@ -189,7 +197,7 @@ struct VideoPlayerView: View {
                         value: Binding(
                             get: { currentTime },
                             set: { newTime in
-                                seekToTime(newTime)
+                                performSeek(to: newTime)
                             }
                         ),
                         in: 0...duration
@@ -349,7 +357,7 @@ struct VideoPlayerView: View {
         isPlaying.toggle()
     }
     
-    private func seekToTime(_ time: Double) {
+    private func performSeek(to time: Double) {
         guard let player = player else { return }
         
         let cmTime = CMTime(seconds: time, preferredTimescale: 600)
@@ -359,6 +367,7 @@ struct VideoPlayerView: View {
         // Update frame index based on current time
         updateFrameIndex()
     }
+    
     
     private func updateCurrentTime() {
         guard let player = player, isPlaying else { return }

@@ -1,5 +1,5 @@
 rep_number,start_frame,bottom_frame,end_frame,depth_quality,full_vs_partial,knee_valgus,back_rounding
 1,20,93,157,EXCELLENT,Full,None,None
 2,157,235,285,EXCELLENT,Full,None,None
-3,300,350,430,EXCELLENT,Full,None,None
+3,300,350,430,EXCELLENT,Full,None,Severe
 4,480,517,540,SHALLOW,Full,None,None

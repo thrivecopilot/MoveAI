@@ -11,11 +11,11 @@ import CoreVideo
 import CoreImage
 
 /// Helper functions for video processing and frame extraction
-enum VideoProcessingHelpers {
+public enum VideoProcessingHelpers {
     
     // MARK: - Debug Logging Helper
     
-    static func writeDebugLog(_ message: String, data: [String: Any], location: String) {
+    public static func writeDebugLog(_ message: String, data: [String: Any], location: String) {
         let logPath = "/Users/davemathew/Documents/MoveAI/.cursor/debug.log"
         let logEntry: [String: Any] = [
             "location": location,
@@ -43,7 +43,7 @@ enum VideoProcessingHelpers {
     // MARK: - Video Validation
     
     /// Validate that a video file exists and is readable
-    static func validateVideo(at url: URL) throws {
+    public static func validateVideo(at url: URL) throws {
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw VideoProcessingError.videoNotFound
         }
@@ -63,13 +63,13 @@ enum VideoProcessingHelpers {
     }
     
     /// Get video duration
-    static func getVideoDuration(_ asset: AVAsset) async throws -> TimeInterval {
+    public static func getVideoDuration(_ asset: AVAsset) async throws -> TimeInterval {
         let duration = try await asset.load(.duration)
         return CMTimeGetSeconds(duration)
     }
     
     /// Get video frame rate
-    static func getVideoFrameRate(_ asset: AVAsset) async throws -> Double {
+    public static func getVideoFrameRate(_ asset: AVAsset) async throws -> Double {
         guard let videoTrack = try await asset.loadTracks(withMediaType: .video).first else {
             throw VideoProcessingError.noVideoTrack
         }
@@ -87,7 +87,7 @@ enum VideoProcessingHelpers {
     ///   - frameHandler: Optional async closure to process each frame as it's extracted (for streaming)
     ///   - progressHandler: Optional progress callback (0.0 to 1.0)
     /// - Returns: Array of CVPixelBuffers representing video frames (only if frameHandler is nil)
-    static func extractFrames(
+    public static func extractFrames(
         from asset: AVAsset,
         targetFPS: Double = 30.0,
         frameHandler: ((CVPixelBuffer, Int) async throws -> Void)? = nil,
@@ -199,7 +199,7 @@ enum VideoProcessingHelpers {
     ///   - maxWidth: Maximum width (default 640)
     ///   - maxHeight: Maximum height (default 480)
     /// - Returns: Downscaled pixel buffer, or nil if scaling fails
-    static func downscalePixelBuffer(
+    public static func downscalePixelBuffer(
         _ pixelBuffer: CVPixelBuffer,
         maxWidth: Int = 640,
         maxHeight: Int = 480
@@ -297,14 +297,14 @@ enum VideoProcessingHelpers {
     // MARK: - Video Format Support
     
     /// Check if video format is supported
-    static func isVideoFormatSupported(_ url: URL) -> Bool {
+    public static func isVideoFormatSupported(_ url: URL) -> Bool {
         let supportedFormats = ["mp4", "mov", "m4v", "avi"]
         let fileExtension = url.pathExtension.lowercased()
         return supportedFormats.contains(fileExtension)
     }
     
     /// Get video file size in MB
-    static func getVideoFileSize(_ url: URL) -> Double? {
+    public static func getVideoFileSize(_ url: URL) -> Double? {
         guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
               let fileSize = attributes[.size] as? Int64 else {
             return nil
@@ -315,7 +315,7 @@ enum VideoProcessingHelpers {
 
 // MARK: - Video Processing Errors
 
-enum VideoProcessingError: LocalizedError {
+public enum VideoProcessingError: LocalizedError {
     case videoNotFound
     case videoNotReadable
     case noVideoTrack
@@ -323,7 +323,7 @@ enum VideoProcessingError: LocalizedError {
     case unsupportedFormat
     case processingFailed(String)
     
-    var errorDescription: String? {
+    public var errorDescription: String? {
         switch self {
         case .videoNotFound:
             return "Video file not found"

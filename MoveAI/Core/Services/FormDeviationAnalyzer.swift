@@ -103,13 +103,13 @@ struct FormDeviationAnalyzer {
         
         // Only flag if bias is significantly positive (excessive forward lean)
         // Don't penalize for being too upright (negative bias)
-        guard meanBias > 5.0 else { return nil }
+        guard meanBias > 10.0 else { return nil }
         
         // Determine severity based on how much forward lean exceeds ideal
         let severity: BackRoundingSeverity
         if meanBias > 20.0 {
             severity = .severe
-        } else if meanBias > 12.0 {
+        } else if meanBias > 15.0 {
             severity = .moderate
         } else {
             severity = .mild

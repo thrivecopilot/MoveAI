@@ -1996,51 +1996,14 @@ struct SquatAnalyzer {
         let kneeByRep = Dictionary(grouping: kneeMetrics, by: { $0.repNumber ?? 0 })
         let deviationsByRep = Dictionary(grouping: formDeviations, by: { $0.repNumber })
         
-        // Helper function to format rep numbers for feedback messages
-        // Single rep: "Rep 1"
-        // Two reps: "Reps 1 and 2"
-        // More than two: "Reps 1, 2, 3, and 4" (with Oxford comma)
-        func formatRepNumbersForFeedback(_ repNumbers: [Int]) -> String {
-            guard !repNumbers.isEmpty else { return "" }
-            let sorted = repNumbers.sorted()
-            
-            switch sorted.count {
-            case 1:
-                return "Rep \(sorted[0])"
-            case 2:
-                return "Reps \(sorted[0]) and \(sorted[1])"
-            default:
-                // More than two: use Oxford comma
-                let allButLast = sorted.dropLast().map { String($0) }.joined(separator: ", ")
-                let last = sorted.last!
-                return "Reps \(allButLast), and \(last)"
-            }
+        // Helper to convert Date (from metrics) to seconds since video start
+        func relativeTimestamp(from date: Date) -> TimeInterval {
+            date.timeIntervalSince1970 - startTime.timeIntervalSince1970
         }
         
-        // Legacy function for backward compatibility (kept for any non-feedback uses)
-        func formatRepNumbers(_ repNumbers: [Int]) -> String {
-            return formatRepNumbersForFeedback(repNumbers)
-        }
-        
-        // Helper function to get average timestamp for a set of reps
-        func averageTimestamp(for repNumbers: [Int]) -> TimeInterval {
-            let startTimeInterval = startTime.timeIntervalSince1970
-            let repTimes = repNumbers.compactMap { repNum -> TimeInterval? in
-                guard let rep = reps.first(where: { $0.repNumber == repNum }) else { return nil }
-                return rep.startTime - startTimeInterval
-            }
-            guard !repTimes.isEmpty else { return 0 }
-            return repTimes.reduce(0, +) / Double(repTimes.count)
-        }
-        
-        // RANGE OF MOTION - Aggregate across all reps
+        // RANGE OF MOTION - Per-rep feedback with exact timestamps
         let totalReps = reps.count
-        let fullReps = reps.filter { $0.isFullRep }
         let partialReps = reps.filter { !$0.isFullRep }
-        let partialRepNumbers = partialReps.map { $0.repNumber }
-        
-        // Check for reps that didn't reach depth separately
-        let repsNotAtDepth = reps.filter { !$0.reachedDepth }.map { $0.repNumber }
         
         // Get depth metrics grouped by rep (using pre-grouped dictionary)
         var repDepthStatus: [Int: (isAtDepth: Bool, depthPercentage: Double)] = [:]
@@ -2069,127 +2032,58 @@ struct SquatAnalyzer {
         }
         print("🔍 Depth Quality Summary: \(goodDepthReps.count) excellent, \(shallowReps.count) shallow out of \(totalReps) total reps")
         
-        // Generate aggregated range of motion feedback
-        // Check both isFullRep and reachedDepth separately for more specific feedback
-        
-        // Branch 1: Flag incomplete reps if any exist
-        if !partialReps.isEmpty {
-            // Some reps are incomplete (didn't return to start or didn't reach depth)
-            let fullCount = fullReps.count
-            let message: String
-            let severity: FeedbackSeverity
-            
-            if fullCount == 0 {
-                message = "\(totalReps) out of \(totalReps) reps had incomplete range of motion. Incomplete reps: \(formatRepNumbersForFeedback(partialRepNumbers))"
-                severity = .critical
-            } else {
-                message = "\(fullCount) out of \(totalReps) reps had full range of motion. Incomplete reps: \(formatRepNumbersForFeedback(partialRepNumbers))"
-                severity = .warning
-            }
-            
-            feedback.append(FormFeedback(
-                category: .rangeOfMotion,
-                message: message,
-                severity: severity,
-                timestamp: averageTimestamp(for: partialRepNumbers),
-                repNumber: nil // Aggregated, no single rep
-            ))
-        } else if !repsNotAtDepth.isEmpty {
-            // All reps returned to start, but some didn't reach depth
-            let message = "Some reps didn't reach full depth. \(formatRepNumbersForFeedback(repsNotAtDepth)) need to go deeper - aim to get hip crease below knee level."
-            feedback.append(FormFeedback(
-                category: .rangeOfMotion,
-                message: message,
-                severity: .warning,
-                timestamp: averageTimestamp(for: repsNotAtDepth),
-                repNumber: nil
-            ))
-        }
-        
-        // Branch 3: Always check depth quality for all reps (regardless of partial/full status)
-        let excellentDepthCount = goodDepthReps.count
-        let shallowRepNumbers = shallowReps
-        
-        if shallowRepNumbers.isEmpty {
-            // All reps had excellent depth
-            feedback.append(FormFeedback(
-                category: .rangeOfMotion,
-                message: "\(totalReps) out of \(totalReps) reps had excellent depth - hip crease below knee level. Excellent form!",
-                severity: .excellent,
-                timestamp: averageTimestamp(for: Array(1...totalReps)),
-                repNumber: nil
-            ))
-        } else if excellentDepthCount > 0 {
-            // Mix of good and shallow
-            feedback.append(FormFeedback(
-                category: .rangeOfMotion,
-                message: "\(excellentDepthCount) out of \(totalReps) reps had excellent depth. \(formatRepNumbersForFeedback(shallowRepNumbers)) need to go deeper - aim to get hip crease below knee level.",
-                severity: .good,
-                timestamp: averageTimestamp(for: shallowRepNumbers),
-                repNumber: nil
-            ))
-        } else {
-            // All reps were shallow
-            feedback.append(FormFeedback(
-                category: .rangeOfMotion,
-                message: "\(totalReps) out of \(totalReps) reps need to go deeper - hip crease should be below knee level.",
-                severity: .warning,
-                timestamp: averageTimestamp(for: Array(1...totalReps)),
-                repNumber: nil
-            ))
-        }
-        
-        // KNEE TRACKING - Aggregate across all reps (using pre-grouped dictionary)
-        // Skip knee valgus feedback for side-view videos (valgus can only be detected from front/back)
-        var valgusReps: [Int] = []
-        var goodKneeReps: [Int] = []
-        
-        if cameraAngle != .side {
-            // Only analyze knee valgus for front/back views
+        // Per-rep range of motion feedback: one FormFeedback per rep with exact timestamp
         for rep in reps {
-            let repKneeMetrics = kneeByRep[rep.repNumber] ?? []
-            if let worstKnee = repKneeMetrics.min(by: { $0.minAngle < $1.minAngle }) {
-                if worstKnee.hasValgus {
-                    valgusReps.append(rep.repNumber)
-                } else {
-                    goodKneeReps.append(rep.repNumber)
-                }
+            let repDepthMetrics = depthByRep[rep.repNumber] ?? []
+            let deepestPoint = repDepthMetrics.max(by: { $0.depthPercentage < $1.depthPercentage })
+            let timestamp: TimeInterval
+            if let deepest = deepestPoint {
+                timestamp = relativeTimestamp(from: deepest.timestamp)
             } else {
-                // No knee data for this rep - don't count it
-                }
+                timestamp = rep.bottomTime - startTime.timeIntervalSince1970
             }
+            
+            if partialReps.contains(where: { $0.repNumber == rep.repNumber }) {
+                // Incomplete ROM takes precedence
+                feedback.append(FormFeedback(
+                    category: .rangeOfMotion,
+                    message: "Incomplete range of motion - return to start or reach full depth",
+                    severity: totalReps == 1 ? .critical : .warning,
+                    timestamp: max(0, timestamp),
+                    repNumber: rep.repNumber
+                ))
+            } else if shallowReps.contains(rep.repNumber) {
+                feedback.append(FormFeedback(
+                    category: .rangeOfMotion,
+                    message: "Need to go deeper - aim to get hip crease below knee level",
+                    severity: .warning,
+                    timestamp: max(0, timestamp),
+                    repNumber: rep.repNumber
+                ))
+            }
+            // Skip positive feedback for reps with excellent depth
         }
         
-        if !valgusReps.isEmpty {
-            let goodCount = goodKneeReps.count
-            let totalWithKneeData = valgusReps.count + goodCount
-            
-            if goodCount == 0 {
-                feedback.append(FormFeedback(
-                    category: .safety,
-                    message: "\(totalWithKneeData)/\(totalWithKneeData) reps had knees caving inward. Reps \(formatRepNumbers(valgusReps)) need to push knees out to align with toes.",
-                    severity: .critical,
-                    timestamp: averageTimestamp(for: valgusReps),
-                    repNumber: nil
-                ))
-            } else {
-                feedback.append(FormFeedback(
-                    category: .safety,
-                    message: "\(goodCount)/\(totalWithKneeData) reps had good knee tracking. Reps \(formatRepNumbers(valgusReps)) had knees caving inward - push knees out to align with toes.",
-                    severity: .critical,
-                    timestamp: averageTimestamp(for: valgusReps),
-                    repNumber: nil
-                ))
+        // KNEE TRACKING - Per-rep feedback with exact timestamps
+        // Skip knee valgus feedback for side-view videos (valgus can only be detected from front/back)
+        if cameraAngle != .side {
+            for rep in reps {
+                let repKneeMetrics = kneeByRep[rep.repNumber] ?? []
+                guard let worstKnee = repKneeMetrics.min(by: { $0.minAngle < $1.minAngle }) else { continue }
+                
+                let timestamp = relativeTimestamp(from: worstKnee.timestamp)
+                
+                if worstKnee.hasValgus {
+                    feedback.append(FormFeedback(
+                        category: .safety,
+                        message: "Knees caving inward - push knees out to align with toes",
+                        severity: .critical,
+                        timestamp: max(0, timestamp),
+                        repNumber: rep.repNumber
+                    ))
+                }
+                // Skip positive feedback for reps with good knee tracking
             }
-        } else if !goodKneeReps.isEmpty {
-            // All reps with knee data had good tracking
-            feedback.append(FormFeedback(
-                category: .stability,
-                message: "\(goodKneeReps.count)/\(goodKneeReps.count) reps had good knee tracking throughout the movement.",
-                severity: .good,
-                timestamp: averageTimestamp(for: goodKneeReps),
-                repNumber: nil
-            ))
         }
         
         // Debug: Log back rounding summary (for troubleshooting, but don't generate aggregated feedback)

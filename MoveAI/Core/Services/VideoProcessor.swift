@@ -122,6 +122,14 @@ class VideoProcessor: ObservableObject {
             throw VideoProcessingError.noFramesExtracted
         }
         
+        // Reassign pose timestamps to align with video time (extraction uses 30fps)
+        // Frame index i = video time i/30 seconds; clamp to duration for edge cases
+        let posesWithVideoTimestamps = poseResults.map { pose in
+            let videoTime = min(Double(pose.frameIndex) / 30.0, duration)
+            let timestamp = Date(timeIntervalSince1970: videoTime)
+            return PoseDetectionResult(keypoints: pose.keypoints, frameIndex: pose.frameIndex, timestamp: timestamp)
+        }
+        
         // Update to analyzing step for final processing
         currentStep = .analyzingPoses
         
@@ -134,7 +142,7 @@ class VideoProcessor: ObservableObject {
             movementType: movementType,
             videoURL: url,
             duration: duration,
-            poseData: poseResults
+            poseData: posesWithVideoTimestamps
         )
         
         return recording

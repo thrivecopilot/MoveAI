@@ -13,8 +13,100 @@ import AVFoundation
 @MainActor
 class VideoTestRunner {
     
-    /// Run a single test case
-    static func runTest(_ testCase: VideoTestCase) async throws -> TestResult {
+    /// Extract poses only and cache them (for testing pose extraction separately)
+    static func extractPosesOnly(_ testCase: VideoTestCase, testVideosDirectory: URL) async throws -> MovementRecording {
+        print("🎬 Extracting poses from video: \(testCase.videoURL.lastPathComponent)")
+        
+        // Step 1: Process video to extract pose data
+        let videoProcessor = VideoProcessor()
+        let recording = try await videoProcessor.processVideo(
+            testCase.videoURL,
+            movementType: .squat
+        )
+        
+        // Step 2: Cache the pose data
+        guard let poseData = recording.poseData, !poseData.isEmpty else {
+            throw TestError.noPoseData
+        }
+        
+        try PoseCacheManager.savePoseData(poseData, for: testCase.name, testVideosDirectory: testVideosDirectory)
+        
+        print("✅ Extracted and cached \(poseData.count) poses")
+        
+        return recording
+    }
+    
+    /// Analyze using cached poses (fast, for iteration)
+    static func analyzeWithCachedPoses(_ testCase: VideoTestCase, testVideosDirectory: URL) async throws -> SquatAnalysisResult {
+        print("📂 Loading cached poses for: \(testCase.name)")
+        
+        // Load cached poses
+        guard let poseData = try PoseCacheManager.loadPoseData(for: testCase.name, testVideosDirectory: testVideosDirectory) else {
+            throw TestError.noCachedPoseData
+        }
+        
+        print("✅ Loaded \(poseData.count) cached poses")
+        
+        // Run analysis
+        let analysisResult = SquatAnalyzer.analyzeFullSequence(poseData)
+        
+        guard case .success(let squatResult) = analysisResult else {
+            throw TestError.analysisFailed
+        }
+        
+        return squatResult
+    }
+    
+    /// Run test with caching support (uses cache if available, otherwise extracts)
+    static func runTestWithCache(_ testCase: VideoTestCase, testVideosDirectory: URL, useCache: Bool = true) async throws -> TestResult {
+        var poseData: [PoseDetectionResult]
+        
+        // Try to use cache if requested
+        if useCache, let cached = try PoseCacheManager.loadPoseData(for: testCase.name, testVideosDirectory: testVideosDirectory) {
+            print("📂 Using cached poses (\(cached.count) frames)")
+            poseData = cached
+        } else {
+            // Extract poses
+            print("🎬 Extracting poses from video...")
+            let videoProcessor = VideoProcessor()
+            let recording = try await videoProcessor.processVideo(
+                testCase.videoURL,
+                movementType: .squat
+            )
+            
+            guard let extracted = recording.poseData, !extracted.isEmpty else {
+                throw TestError.noPoseData
+            }
+            
+            poseData = extracted
+            
+            // Cache for future use
+            try PoseCacheManager.savePoseData(poseData, for: testCase.name, testVideosDirectory: testVideosDirectory)
+        }
+        
+        // Run analysis
+        let analysisResult = SquatAnalyzer.analyzeFullSequence(poseData)
+        
+        guard case .success(let squatResult) = analysisResult else {
+            throw TestError.analysisFailed
+        }
+        
+        // Validate results
+        let failures = validateResults(
+            expected: testCase.expectedResults,
+            actual: squatResult
+        )
+        
+        return TestResult(
+            testCase: testCase,
+            passed: failures.isEmpty,
+            failures: failures,
+            analysisResult: squatResult
+        )
+    }
+    
+    /// Run a single test case (original method, kept for backward compatibility)
+    static func runTest(_ testCase: VideoTestCase, useCache: Bool = false) async throws -> TestResult {
         // Step 1: Process video to extract pose data
         let videoProcessor = VideoProcessor()
         let recording = try await videoProcessor.processVideo(
@@ -225,5 +317,6 @@ class VideoTestRunner {
         case noPoseData
         case analysisFailed
         case videoProcessingFailed
+        case noCachedPoseData
     }
 }

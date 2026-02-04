@@ -213,6 +213,7 @@ struct SessionDetailView: View {
     @State private var notes: String = ""
     @State private var isEditingNotes = false
     @State private var isVideoFullScreen = false
+    @State private var seekToTime: TimeInterval? = nil
     
     var body: some View {
         NavigationStack {
@@ -223,6 +224,7 @@ struct SessionDetailView: View {
                         videoURL: session.videoURL,
                         poseData: session.poseData,
                         isRecordedLive: session.isRecordedLive,
+                        seekToTime: $seekToTime,
                         onFullScreenToggle: {
                             isVideoFullScreen = true
                         }
@@ -240,7 +242,8 @@ struct SessionDetailView: View {
                             sessionId: session.id,
                             sessionManager: sessionManager,
                             existingAnalysisResult: analysisResult,
-                            isEmbeddedInSessionDetail: true
+                            isEmbeddedInSessionDetail: true,
+                            onSeekToTime: { time in seekToTime = time }
                         )
                     } else {
                         pendingAnalysisSection

@@ -13,6 +13,7 @@ struct AnalysisResultsView: View {
     let sessionManager: SessionManager
     let existingAnalysisResult: AnalysisResult?  // Optional existing analysis to display
     let isEmbeddedInSessionDetail: Bool  // True when shown in SessionDetailView (hide duplicate info)
+    let onSeekToTime: ((TimeInterval) -> Void)?  // Optional callback to scrub video to timestamp (SessionDetailView only)
     
     @State private var analysisResult: AnalysisResult?
     @State private var isLoading = true
@@ -22,12 +23,13 @@ struct AnalysisResultsView: View {
     
     @Environment(\.dismiss) private var dismiss
     
-    init(recording: MovementRecording, sessionId: UUID? = nil, sessionManager: SessionManager, existingAnalysisResult: AnalysisResult? = nil, isEmbeddedInSessionDetail: Bool = false) {
+    init(recording: MovementRecording, sessionId: UUID? = nil, sessionManager: SessionManager, existingAnalysisResult: AnalysisResult? = nil, isEmbeddedInSessionDetail: Bool = false, onSeekToTime: ((TimeInterval) -> Void)? = nil) {
         self.recording = recording
         self.sessionId = sessionId
         self.sessionManager = sessionManager
         self.existingAnalysisResult = existingAnalysisResult
         self.isEmbeddedInSessionDetail = isEmbeddedInSessionDetail
+        self.onSeekToTime = onSeekToTime
     }
     
     private let analysisService: AnalysisServiceProtocol = {
@@ -406,7 +408,7 @@ struct AnalysisResultsView: View {
                     ) {
                         VStack(alignment: .leading, spacing: 8) {
                             ForEach(categoryFeedback) { item in
-                                FeedbackCard(feedback: item)
+                                FeedbackCard(feedback: item, onSeekToTime: onSeekToTime)
                             }
                         }
                         .padding(.leading, 8)
@@ -759,6 +761,7 @@ struct ScoreInfoSheet: View {
 
 struct FeedbackCard: View {
     let feedback: FormFeedback
+    var onSeekToTime: ((TimeInterval) -> Void)? = nil
     
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -768,7 +771,7 @@ struct FeedbackCard: View {
             
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text(feedback.category.displayName)
+                    Text(feedback.repNumber != nil ? "\(feedback.category.displayName) (Rep \(feedback.repNumber!))" : feedback.category.displayName)
                         .font(.subheadline)
                         .fontWeight(.medium)
                     
@@ -788,10 +791,21 @@ struct FeedbackCard: View {
                     .foregroundColor(.secondary)
                 
                 // Only show timestamp for rep-specific feedback (not aggregated)
+                // When onSeekToTime is provided, make it a tappable link to scrub video
                 if feedback.repNumber != nil {
-                    Text("at \(formatTimestamp(feedback.timestamp))")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    if let onSeekToTime = onSeekToTime {
+                        Button(action: { onSeekToTime(feedback.timestamp) }) {
+                            Text("at \(formatTimestamp(feedback.timestamp))")
+                                .font(.caption)
+                                .foregroundColor(.accentColor)
+                                .underline()
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        Text("at \(formatTimestamp(feedback.timestamp))")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
         }

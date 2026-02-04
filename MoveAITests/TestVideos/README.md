@@ -8,6 +8,14 @@ Each test case consists of:
 - `test_case_N.mp4` - The test video file
 - `test_case_N_expected.csv` - Expected results in CSV format
 
+### Cache and Results Directories
+
+The testing framework automatically creates:
+- `.cache/` - Cached pose extraction results (JSON files) - **ignored by git**
+- `.results/` - Test result summaries and JSON outputs - **ignored by git**
+
+These directories are created automatically when running tests and allow for faster iteration by caching expensive pose extraction.
+
 ## Adding a New Test Case
 
 1. **Add your video file**: Place your test video as `test_case_N.mp4` in this directory
@@ -62,6 +70,117 @@ func testCaseN() async throws {
 ```bash
 swift test
 ```
+
+## Autonomous Testing Workflow (CLI)
+
+This workflow uses a **standalone macOS command-line tool** (`Tools/MoveAICLI`) - no Xcode, no simulator, no app required. Vision and AVFoundation work natively on macOS.
+
+### Prerequisites
+
+- macOS 13+
+- Swift 5.9+ (Xcode command-line tools or Xcode)
+- Video file in `MoveAITests/TestVideos/` (e.g., `test_case_1.MOV`)
+
+### Workflow: Upload Video and Extract
+
+1. **Upload video**: Add `test_case_N.MOV` (or `.mp4`, `.mov`) to this directory
+2. **Extract poses**: Run `./scripts/run-test.sh extract test_case_N` or `./scripts/extract-all-videos.sh` to extract all new videos
+3. **Cache location**: Poses are stored at `MoveAITests/TestVideos/.cache/test_case_N_poses.json`
+4. **Cache format**: JSON array; each element has `keypoints` (array of `{name, position: {x,y}, confidence}`), `frameIndex`, `timestamp`
+5. **Downstream**: Poses in cache are consumed by `analyze` and future solvers/formulas for form feedback
+
+### Verification
+
+Run `cd Tools/MoveAICLI && swift test` to verify the extraction pipeline. Tests run extract and validate the cache file is readable and has valid pose structure.
+
+### Step 1: Extract Poses Once (Slow - 2-5 minutes)
+
+Run this once to extract and cache poses:
+
+```bash
+# From project root directory
+./scripts/run-test.sh extract test_case_1
+```
+
+This runs `swift run MoveAICLI extract` and saves poses to `.cache/test_case_1_poses.json`.
+
+**What happens:**
+- Video is processed frame-by-frame using AVFoundation
+- Poses are extracted using Vision framework (macOS native)
+- Results are saved to `.cache/` for future use
+
+### Step 2: Iterate on Solver (Fast - seconds)
+
+After making changes to solver code (e.g., `SquatMechanicsSolver.swift`, `SquatMechanicsConfig.swift` in `Tools/MoveAICLI/Sources/MoveAICore/` or the main app):
+
+```bash
+./scripts/run-test.sh analyze test_case_1
+```
+
+This loads cached poses and runs analysis in seconds. Results are saved to `.results/` directory.
+
+**What happens:**
+- Cached poses are loaded (instant)
+- Analysis runs with your solver changes
+- Results are printed to console and saved to files
+- Key metrics are highlighted for quick sanity checking
+
+### Step 3: Review Results
+
+**Console Output:**
+- Key solver metrics (score, reps, issues)
+- Detailed summary with all metrics
+- File paths where results are saved
+
+**Saved Files:**
+- `MoveAITests/TestVideos/.results/test_case_1_summary.txt` - Human-readable summary
+- `MoveAITests/TestVideos/.results/test_case_1_results.json` - Machine-readable JSON
+
+### Direct CLI Usage
+
+You can also run the CLI directly:
+
+```bash
+# Extract (with custom output path)
+swift run MoveAICLI extract MoveAITests/TestVideos/test_case_1.MOV \
+  --output MoveAITests/TestVideos/.cache/test_case_1_poses.json
+
+# Analyze (with custom directories)
+swift run MoveAICLI analyze test_case_1 \
+  --cache-dir MoveAITests/TestVideos/.cache \
+  --results-dir MoveAITests/TestVideos/.results
+```
+
+### Key Metrics to Check
+
+When iterating on solver changes, check:
+
+1. **Torso angle ranges** - Should vary with depth (not constant)
+2. **Rep detection** - Correct number of reps detected
+3. **Deviations detected** - Form issues found (torso bias, instability, hip shoot, balance drift)
+4. **Overall score** - Reasonable score based on form quality
+
+### Example Workflow
+
+```bash
+# One-time setup: Extract poses (slow, run once)
+./scripts/run-test.sh extract test_case_1
+
+# Iterate on solver changes (fast!)
+# 1. Edit SquatMechanicsSolver.swift or SquatMechanicsConfig.swift
+# 2. Run analysis:
+./scripts/run-test.sh analyze test_case_1
+# 3. Check console output and .results/ directory
+# 4. Repeat steps 1-3 as needed
+```
+
+### Benefits
+
+- **Fully autonomous**: No Xcode, no simulator, no app - pure command line
+- **Direct file access**: Cache and results persist in project paths
+- **Fast iteration**: Analysis in seconds
+- **Reproducible**: Same commands, same results
+- **Easy to automate**: Can be run by AI agents or CI/CD
 
 ## Frame Range Tolerance
 

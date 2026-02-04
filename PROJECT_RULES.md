@@ -217,6 +217,16 @@ struct OnboardingView: View {
 }
 ```
 
+## Workflow & Task Management
+
+- **Plan First**: Write plan to `tasks/todo.md` with checkable items
+- **Verify Plan**: Check in before starting implementation
+- **Track Progress**: Mark items complete as you go
+- **Document Results**: Add review section to `tasks/todo.md`
+- **Capture Lessons**: Update `tasks/lessons.md` after corrections
+
+See `tasks/` for templates and operational details.
+
 ## Testing Strategy
 
 ### Reducer Tests

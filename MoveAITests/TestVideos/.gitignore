@@ -1,0 +1,7 @@
+# Ignore cache and results directories
+.cache/
+.results/
+
+# But keep the directories themselves
+!.cache/.gitkeep
+!.results/.gitkeep

@@ -2,14 +2,14 @@ import Foundation
 import Vision
 
 // MARK: - Pose Keypoint Model
-struct PoseKeypoint: Identifiable, Codable, Equatable {
-    let id: UUID
-    let name: String
-    let position: CGPoint
-    let confidence: Float
-    let timestamp: Date
+public struct PoseKeypoint: Identifiable, Codable, Equatable {
+    public let id: UUID
+    public let name: String
+    public let position: CGPoint
+    public let confidence: Float
+    public let timestamp: Date
     
-    init(name: String, position: CGPoint, confidence: Float, timestamp: Date = Date()) {
+    public init(name: String, position: CGPoint, confidence: Float, timestamp: Date = Date()) {
         self.id = UUID()
         self.name = name
         self.position = position
@@ -19,14 +19,14 @@ struct PoseKeypoint: Identifiable, Codable, Equatable {
 }
 
 // MARK: - Pose Detection Result
-struct PoseDetectionResult: Codable, Equatable {
-    let keypoints: [PoseKeypoint]
-    let timestamp: Date
-    let frameIndex: Int
+public struct PoseDetectionResult: Codable, Equatable {
+    public let keypoints: [PoseKeypoint]
+    public let timestamp: Date
+    public let frameIndex: Int
     
-    init(keypoints: [PoseKeypoint], frameIndex: Int) {
+    public init(keypoints: [PoseKeypoint], frameIndex: Int, timestamp: Date? = nil) {
         self.keypoints = keypoints
-        self.timestamp = Date()
+        self.timestamp = timestamp ?? Date()
         self.frameIndex = frameIndex
     }
 }
