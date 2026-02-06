@@ -207,7 +207,7 @@ struct MovementMasteryHomeView: View {
             } else {
                 VStack(spacing: 8) {
                     ForEach(sessionManager.recentSessions(limit: 3)) { session in
-                        NavigationLink(destination: SessionDetailView(session: session, sessionManager: sessionManager)) {
+                        NavigationLink(destination: SessionDetailView(session: session, sessionManager: sessionManager, onExit: nil)) {
                             RecentSessionCard(session: session)
                         }
                         .buttonStyle(PlainButtonStyle())
@@ -474,4 +474,5 @@ struct RecentSessionCard: View {
 
 #Preview {
     MovementMasteryHomeView()
+        .environmentObject(TabBarVisibility())
 }

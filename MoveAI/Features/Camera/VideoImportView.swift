@@ -16,16 +16,15 @@ struct VideoImportView: View {
     
     @StateObject private var videoProcessor = VideoProcessor()
     @State private var selectedItem: PhotosPickerItem?
-    @State private var showingAnalysis = false
-    @State private var processedRecording: MovementRecording?
-    @State private var sessionId: UUID?
+    @State private var showingSessionDetail = false
+    @State private var createdSession: Session?
     @State private var errorMessage: String?
     @State private var showingError = false
     
     @Environment(\.dismiss) private var dismiss
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 if videoProcessor.isProcessing {
                     processingView
@@ -57,24 +56,16 @@ struct VideoImportView: View {
                     Text(errorMessage)
                 }
             }
-            .sheet(isPresented: $showingAnalysis) {
-                if let recording = processedRecording {
-                    NavigationView {
-                        AnalysisResultsView(
-                            recording: recording,
-                            sessionId: sessionId,
-                            sessionManager: sessionManager
-                        )
-                        .navigationTitle("Analysis Results")
-                        .navigationBarTitleDisplayMode(.inline)
-                        .toolbar {
-                            ToolbarItem(placement: .navigationBarTrailing) {
-                                Button("Done") {
-                                    showingAnalysis = false
-                                }
-                            }
+            .navigationDestination(isPresented: $showingSessionDetail) {
+                if let session = createdSession {
+                    SessionDetailView(
+                        session: session,
+                        sessionManager: sessionManager,
+                        onExit: {
+                            showingSessionDetail = false
+                            dismiss()
                         }
-                    }
+                    )
                 }
             }
         }
@@ -226,8 +217,6 @@ struct VideoImportView: View {
             
             // Create session and show analysis results
             await MainActor.run {
-                processedRecording = recording
-                
                 // Create a session from the processed video (uploaded, not live-recorded)
                 let session = Session(
                     movementType: recording.movementType,
@@ -237,17 +226,14 @@ struct VideoImportView: View {
                     isRecordedLive: false  // Uploaded video, not live-recorded
                 )
                 
-                // Store session ID for passing to AnalysisResultsView
-                sessionId = session.id
-                
                 // Add to session manager
                 sessionManager.addSession(session)
                 
                 // Call the callback
                 onVideoProcessed(recording)
                 
-                // Show analysis results
-                showingAnalysis = true
+                createdSession = session
+                showingSessionDetail = true
             }
             
         } catch {
@@ -266,4 +252,3 @@ struct VideoImportView: View {
         onVideoProcessed: { _ in }
     )
 }
-

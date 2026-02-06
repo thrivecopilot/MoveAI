@@ -13,29 +13,51 @@ struct VideoPlayerView: View {
     let videoURL: URL
     let poseData: [PoseDetectionResult]?
     let isRecordedLive: Bool  // true for live camera recordings, false for uploaded videos
-    @State private var player: AVPlayer?
-    @State private var isPlaying = false
-    @State private var currentTime: Double = 0
-    @State private var duration: Double = 0
+    var analysisResult: AnalysisResult?
+    var highlightedFeedbackIds: Set<UUID> = []
+    /// When set (e.g. in review layout), the video + controls area is constrained to this height.
+    var constrainedHeight: CGFloat?
+    /// Maximum visible portion of the video height (0...1). Default keeps a top-cropped cinematic feel.
+    var maxVisibleHeightRatio: CGFloat = 0.85
+    
     @State private var showingPoseOverlay = true
     @State private var currentFrameIndex = 0
     @State private var videoSize: CGSize = CGSize(width: 1920, height: 1080)
     @State private var videoFrameRate: Double = 30.0
     @State private var poseFrameRate: Double = 30.0
     @State private var showControls = true
-    @State private var playerStatus: AVPlayerItem.Status = .unknown
-    @StateObject private var statusObserver = PlayerStatusObserver()
     @Binding var seekToTime: TimeInterval?
     var onFullScreenToggle: (() -> Void)?
     var isFullScreenMode: Bool = false
+    @ObservedObject var playback: PlaybackController
+    /// Called when user taps exit in fullscreen (e.g. dismiss sheet). Takes precedence over onFullScreenToggle in fullscreen.
+    var onExitFullScreen: (() -> Void)?
+    /// Title shown in fullscreen top bar (e.g. movement name).
+    var fullScreenTitle: String?
     
-    init(videoURL: URL, poseData: [PoseDetectionResult]?, isRecordedLive: Bool = false, seekToTime: Binding<TimeInterval?> = .constant(nil), onFullScreenToggle: (() -> Void)? = nil, isFullScreenMode: Bool = false) {
+    private let telemetryBackground = Color(red: 0.04, green: 0.05, blue: 0.07)
+    private let telemetryPanel = Color(red: 0.08, green: 0.11, blue: 0.16)
+    private let telemetryPanelStroke = Color.white.opacity(0.10)
+    private let telemetryAccent = Color(red: 0.24, green: 0.86, blue: 1.0)
+    private let telemetryGood = Color(red: 0.16, green: 0.97, blue: 0.65)
+    private let telemetryIssue = Color(red: 1.0, green: 0.42, blue: 0.42)
+    private let telemetryText = Color(red: 0.90, green: 0.93, blue: 0.97)
+    private let telemetryMuted = Color.white.opacity(0.65)
+    
+    init(videoURL: URL, poseData: [PoseDetectionResult]?, isRecordedLive: Bool = false, analysisResult: AnalysisResult? = nil, highlightedFeedbackIds: Set<UUID> = [], constrainedHeight: CGFloat? = nil, maxVisibleHeightRatio: CGFloat = 0.85, seekToTime: Binding<TimeInterval?> = .constant(nil), onFullScreenToggle: (() -> Void)? = nil, isFullScreenMode: Bool = false, playback: PlaybackController, onExitFullScreen: (() -> Void)? = nil, fullScreenTitle: String? = nil) {
         self.videoURL = videoURL
         self.poseData = poseData
         self.isRecordedLive = isRecordedLive
+        self.analysisResult = analysisResult
+        self.highlightedFeedbackIds = highlightedFeedbackIds
+        self.constrainedHeight = constrainedHeight
+        self.maxVisibleHeightRatio = maxVisibleHeightRatio
         self._seekToTime = seekToTime
         self.onFullScreenToggle = onFullScreenToggle
         self.isFullScreenMode = isFullScreenMode
+        self.playback = playback
+        self.onExitFullScreen = onExitFullScreen
+        self.fullScreenTitle = fullScreenTitle
     }
     
     var body: some View {
@@ -47,47 +69,68 @@ struct VideoPlayerView: View {
             }
         }
         .onAppear {
-            setupPlayer()
+            playback.setup()
         }
         .onReceive(Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()) { _ in
-            updateCurrentTime()
-        }
-        .onReceive(statusObserver.$status) { newStatus in
-            playerStatus = newStatus
+            playback.updateCurrentTime()
+            updateFrameIndex()
         }
         .onChange(of: seekToTime) { newValue in
             if let time = newValue {
-                performSeek(to: time)
+                playback.performSeek(to: time)
                 seekToTime = nil
             }
         }
     }
     
-    // MARK: - Fullscreen View
+    // MARK: - Fullscreen View (original: fill screen, pose overlay matches video frame)
     private var fullscreenView: some View {
         ZStack {
-            // Video Player
-            if let player = player {
-                VideoPlayer(player: player)
+            if let player = playback.player {
+                PlayerContainerView(player: player)
                     .aspectRatio(DeviceInfo.screenWidth / DeviceInfo.screenHeight, contentMode: .fill)
                     .clipped()
                     .overlay(poseOverlay)
             } else {
                 Rectangle()
-                    .fill(Color.black)
+                    .fill(telemetryBackground)
                     .aspectRatio(DeviceInfo.screenWidth / DeviceInfo.screenHeight, contentMode: .fill)
                     .overlay(loadingOverlay)
             }
             
-            // Controls Overlay
             if showControls {
-                VStack {
+                VStack(spacing: 0) {
+                    // Top bar: Done + title (fullscreen only, shown on tap)
+                    if isFullScreenMode, onExitFullScreen != nil {
+                        HStack {
+                            Button(action: { onExitFullScreen?() }) {
+                                Label("Done", systemImage: "xmark.circle.fill")
+                                    .font(.title3)
+                                    .foregroundColor(.white)
+                                    .shadow(color: .black.opacity(0.5), radius: 1)
+                            }
+                            if let title = fullScreenTitle, !title.isEmpty {
+                                Text(title)
+                                    .font(.headline)
+                                    .foregroundColor(.white)
+                                    .shadow(color: .black.opacity(0.5), radius: 1)
+                                    .lineLimit(1)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.top, 12)
+                        .padding(.bottom, 10)
+                        .background(
+                            LinearGradient(
+                                colors: [Color.black.opacity(0.6), Color.black.opacity(0)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                    }
                     Spacer()
-                    controlsView
-                        .padding(.horizontal)
-                        .padding(.bottom, 20)
-                        .background(Color.black.opacity(0.7))
-                        .cornerRadius(12)
+                    Spacer()
                 }
             }
         }
@@ -100,57 +143,58 @@ struct VideoPlayerView: View {
     
     // MARK: - Normal View
     private var normalView: some View {
-        VStack(spacing: 0) {
-            // Video Player with Pose Overlay (Instagram-style: fills width, vertical 9:16 aspect ratio)
+        let videoHeight: CGFloat = {
+            if let h = constrainedHeight {
+                return max(0, h)
+            }
+            return UIScreen.main.bounds.width * 16 / 9 * 0.85
+        }()
+        
+        return VStack(spacing: 0) {
             GeometryReader { geometry in
-                let availableWidth = geometry.size.width  // Accounts for parent padding
-                let fullVideoHeight = availableWidth * 16 / 9  // Full 9:16 aspect ratio (portrait iPhone video)
-                let visibleHeight = fullVideoHeight * 0.85  // Show only 85% vertically (crop top/bottom)
+                let availableWidth = geometry.size.width
+                let fullVideoHeight = availableWidth * 16 / 9
+                let visibleHeight = min(videoHeight, fullVideoHeight * maxVisibleHeightRatio)
                 
-                if let player = player {
+                if let player = playback.player {
                     ZStack(alignment: .topLeading) {
-                        VideoPlayer(player: player)
-                            .frame(width: availableWidth, height: fullVideoHeight)  // Full dimensions
-                            .aspectRatio(9/16, contentMode: .fill)  // 9:16 vertical video, fill and crop
-                            .frame(width: availableWidth, height: visibleHeight, alignment: .top)  // Crop from top, show 85%
+                        PlayerContainerView(player: player)
+                            .frame(width: availableWidth, height: fullVideoHeight)
+                            .aspectRatio(9/16, contentMode: .fill)
+                            .frame(width: availableWidth, height: visibleHeight, alignment: .top)
                             .clipped()
-                            .cornerRadius(8)
+                            .cornerRadius(12)
                         
-                        // Pose overlay matches FULL video dimensions (not visible/cropped area)
-                        // Then clipped to match the same visible region as the video
                         if showingPoseOverlay, let poseData = poseData, !poseData.isEmpty {
                             PoseOverlayView(
                                 pose: currentPose,
-                                previewSize: CGSize(width: availableWidth, height: fullVideoHeight),  // Use FULL dimensions for coordinates
-                                flipXAxis: true,  // Flip X-axis for video playback
-                                isUploadedVideo: !isRecordedLive  // Use camera feed transformation for live recordings
+                                previewSize: CGSize(width: availableWidth, height: fullVideoHeight),
+                                flipXAxis: true,
+                                isUploadedVideo: !isRecordedLive,
+                                style: .telemetry
                             )
-                            .frame(width: availableWidth, height: visibleHeight, alignment: .top)  // Clip from top, matching video
+                            .frame(width: availableWidth, height: visibleHeight, alignment: .top)
                             .clipped()
                             .allowsHitTesting(false)
                         }
+                        
                     }
                     .frame(width: availableWidth, height: visibleHeight)
-                    .cornerRadius(8)
+                    .cornerRadius(12)
                 } else {
                     Rectangle()
-                        .fill(Color.black)
+                        .fill(telemetryBackground)
                         .frame(width: availableWidth, height: visibleHeight)
                         .overlay(loadingOverlay)
-                        .cornerRadius(8)
+                        .cornerRadius(12)
                 }
             }
-            .frame(maxWidth: .infinity)  // Fill available width
-            .frame(height: UIScreen.main.bounds.width * 16 / 9 * 0.85)  // Explicit height to prevent expansion
-            .fixedSize(horizontal: false, vertical: true)  // Prevent vertical expansion
-            
-            // Controls Below Video
-            controlsView
-                .padding(.horizontal)
-                .padding(.top, 8)
+            .frame(maxWidth: .infinity)
+            .frame(height: videoHeight)
         }
-        .fixedSize(horizontal: false, vertical: false)  // Allow natural sizing
+        .modifier(ConstrainedHeightModifier(height: constrainedHeight))
     }
+    
     
     // MARK: - Pose Overlay
     private var poseOverlay: some View {
@@ -161,7 +205,8 @@ struct VideoPlayerView: View {
                         pose: currentPose,
                         previewSize: geometry.size,
                         flipXAxis: true,  // Flip X-axis for video playback
-                        isUploadedVideo: !isRecordedLive  // Use camera feed transformation for live recordings
+                        isUploadedVideo: !isRecordedLive,  // Use camera feed transformation for live recordings
+                        style: .telemetry
                     )
                     .allowsHitTesting(false)
                 }
@@ -172,7 +217,7 @@ struct VideoPlayerView: View {
     // MARK: - Loading Overlay
     private var loadingOverlay: some View {
         VStack {
-            if playerStatus == .failed {
+            if playback.playerStatus == .failed {
                 Image(systemName: "exclamationmark.triangle")
                     .font(.system(size: 40))
                     .foregroundColor(.red)
@@ -182,100 +227,18 @@ struct VideoPlayerView: View {
                 ProgressView()
                     .scaleEffect(1.5)
                 Text("Loading video...")
-                    .foregroundColor(.white)
+                    .foregroundColor(telemetryText)
             }
         }
     }
     
-    // MARK: - Controls View
-    private var controlsView: some View {
-        VStack(spacing: 8) {
-            // Progress Bar
-            if duration > 0 {
-                VStack(spacing: 4) {
-                    Slider(
-                        value: Binding(
-                            get: { currentTime },
-                            set: { newTime in
-                                performSeek(to: newTime)
-                            }
-                        ),
-                        in: 0...duration
-                    )
-                    .accentColor(.blue)
-                    
-                    HStack {
-                        Text(timeString(currentTime))
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        
-                        Spacer()
-                        
-                        Text(timeString(duration))
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
-            }
-            
-            // Control Buttons
-            HStack(spacing: 16) {
-                // Play/Pause Button
-                Button(action: togglePlayPause) {
-                    Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                        .font(.system(size: 32))
-                        .foregroundColor(.blue)
-                }
-                .disabled(playerStatus != .readyToPlay)
-                
-                // Fullscreen Button
-                if let onFullScreenToggle = onFullScreenToggle {
-                    Button(action: onFullScreenToggle) {
-                        Image(systemName: "arrow.up.left.and.arrow.down.right")
-                            .font(.system(size: 24))
-                            .foregroundColor(.blue)
-                    }
-                }
-                
-                Spacer()
-                
-                // Pose Overlay Toggle
-                if poseData != nil && !poseData!.isEmpty {
-                    Button(action: togglePoseOverlay) {
-                        HStack(spacing: 4) {
-                            Image(systemName: showingPoseOverlay ? "figure.stand" : "figure.stand.line.dotted.figure.stand")
-                                .font(.title3)
-                            Text(showingPoseOverlay ? "Hide" : "Show")
-                                .font(.caption)
-                        }
-                        .foregroundColor(.blue)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.blue.opacity(0.1))
-                        .cornerRadius(16)
-                    }
-                }
-            }
-            
-            // Frame Info
-            if let poseData = poseData, !poseData.isEmpty {
-                Text("Frame \(currentFrameIndex + 1)/\(poseData.count) • \(String(format: "%.1f", poseFrameRate))fps • \(String(format: "%.1f", currentTime))s")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color(.systemGray6))
-                    .cornerRadius(6)
-            }
-        }
-    }
     
     // MARK: - Computed Properties
     private var currentPose: PoseDetectionResult? {
         guard let poseData = poseData, !poseData.isEmpty else { return nil }
         
         // Calculate pose frame rate dynamically
-        let calculatedPoseFrameRate = duration > 0 ? Double(poseData.count) / duration : 30.0
+        let calculatedPoseFrameRate = playback.duration > 0 ? Double(poseData.count) / playback.duration : 30.0
         let effectivePoseFrameRate = calculatedPoseFrameRate > 0 ? calculatedPoseFrameRate : 30.0
         
         // Update pose frame rate if it's significantly different
@@ -284,71 +247,129 @@ struct VideoPlayerView: View {
         }
         
         // Calculate frame index based on actual pose frame rate
-        let targetFrameIndex = Int(currentTime * poseFrameRate)
+        let targetFrameIndex = Int(playback.currentTime * poseFrameRate)
         let frameIndex = min(max(targetFrameIndex, 0), poseData.count - 1)
         
         return poseData[frameIndex]
     }
     
-    // MARK: - Methods
-    private func setupPlayer() {
-        player = AVPlayer(url: videoURL)
+    private func updateFrameIndex() {
+        guard let poseData = poseData, !poseData.isEmpty, playback.duration > 0 else { return }
         
-        // Observe player status
-        if let player = player, let playerItem = player.currentItem {
+        // Calculate pose frame rate dynamically
+        let calculatedPoseFrameRate = Double(poseData.count) / playback.duration
+        let effectivePoseFrameRate = calculatedPoseFrameRate > 0 ? calculatedPoseFrameRate : 30.0
+        
+        // Update pose frame rate if it's significantly different
+        if abs(poseFrameRate - effectivePoseFrameRate) > 1.0 {
+            poseFrameRate = effectivePoseFrameRate
+        }
+        
+        // Calculate frame index based on actual pose frame rate
+        let targetFrameIndex = Int(playback.currentTime * poseFrameRate)
+        currentFrameIndex = min(max(targetFrameIndex, 0), poseData.count - 1)
+    }
+}
+
+// MARK: - Constrained Height Modifier
+private struct ConstrainedHeightModifier: ViewModifier {
+    let height: CGFloat?
+    func body(content: Content) -> some View {
+        if let h = height {
+            content.frame(height: h)
+        } else {
+            content
+        }
+    }
+}
+
+// MARK: - AVPlayer Container (controls disabled)
+private struct PlayerContainerView: UIViewControllerRepresentable {
+    let player: AVPlayer
+    
+    func makeUIViewController(context: Context) -> AVPlayerViewController {
+        let controller = AVPlayerViewController()
+        controller.player = player
+        controller.showsPlaybackControls = false
+        controller.videoGravity = .resizeAspectFill
+        return controller
+    }
+    
+    func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {
+        if uiViewController.player !== player {
+            uiViewController.player = player
+        }
+        uiViewController.showsPlaybackControls = false
+    }
+}
+
+// MARK: - Shared Playback Controller
+@MainActor
+final class PlaybackController: ObservableObject {
+    @Published var player: AVPlayer?
+    @Published var isPlaying = false
+    @Published var currentTime: Double = 0
+    @Published var duration: Double = 0
+    @Published var playerStatus: AVPlayerItem.Status = .unknown
+    
+    private let videoURL: URL
+    private let statusObserver = PlayerStatusObserver()
+    private var didSetup = false
+    
+    init(videoURL: URL) {
+        self.videoURL = videoURL
+    }
+    
+    func setup() {
+        guard !didSetup else { return }
+        didSetup = true
+        
+        let player = AVPlayer(url: videoURL)
+        self.player = player
+        
+        if let playerItem = player.currentItem {
             statusObserver.observePlayerItem(playerItem)
-            
-            // Get video duration and dimensions
-            Task {
-                if let duration = try? await player.currentItem?.asset.load(.duration) {
-                    await MainActor.run {
-                        self.duration = CMTimeGetSeconds(duration)
-                    }
-                }
-                
-                // Get video dimensions and frame rate
-                if let asset = player.currentItem?.asset {
-                    let tracks = try? await asset.loadTracks(withMediaType: .video)
-                    if let videoTrack = tracks?.first {
-                        let size = try? await videoTrack.load(.naturalSize)
-                        let frameRate = try? await videoTrack.load(.nominalFrameRate)
-                        let preferredTransform = try? await videoTrack.load(.preferredTransform)
-                        // #region agent log
-                        let logData: [String: Any] = [
-                            "hypothesisId": "H2,H3",
-                            "naturalSize": size != nil ? "\(size!.width)x\(size!.height)" : "nil",
-                            "preferredTransform": preferredTransform != nil ? "\(preferredTransform!)" : "nil",
-                            "frameRate": frameRate != nil ? Double(frameRate!) : 0
-                        ]
-                        VideoProcessingHelpers.writeDebugLog("Video player track info", data: logData, location: "VideoPlayerView.swift:305")
-                        // #endregion
-                        await MainActor.run {
-                            if let size = size {
-                                self.videoSize = size
-                            }
-                            if let frameRate = frameRate {
-                                self.videoFrameRate = Double(frameRate)
-                            }
-                        }
-                    }
-                }
+            statusObserver.onStatusChange = { [weak self] status in
+                self?.playerStatus = status
+            }
+        }
+        
+        Task {
+            if let duration = try? await player.currentItem?.asset.load(.duration) {
+                self.duration = CMTimeGetSeconds(duration)
             }
             
-            // Add observer for playback end
-            NotificationCenter.default.addObserver(
-                forName: .AVPlayerItemDidPlayToEndTime,
-                object: player.currentItem,
-                queue: .main
-            ) { _ in
-                isPlaying = false
-                player.seek(to: .zero)
+            if let asset = player.currentItem?.asset {
+                let tracks = try? await asset.loadTracks(withMediaType: .video)
+                if let videoTrack = tracks?.first {
+                    let size = try? await videoTrack.load(.naturalSize)
+                    let frameRate = try? await videoTrack.load(.nominalFrameRate)
+                    let preferredTransform = try? await videoTrack.load(.preferredTransform)
+                    // #region agent log
+                    let logData: [String: Any] = [
+                        "hypothesisId": "H2,H3",
+                        "naturalSize": size != nil ? "\(size!.width)x\(size!.height)" : "nil",
+                        "preferredTransform": preferredTransform != nil ? "\(preferredTransform!)" : "nil",
+                        "frameRate": frameRate != nil ? Double(frameRate!) : 0
+                    ]
+                    VideoProcessingHelpers.writeDebugLog("Video player track info", data: logData, location: "VideoPlayerView.swift:PlaybackController")
+                    // #endregion
+                }
             }
+        }
+        
+        NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: player.currentItem,
+            queue: .main
+        ) { [weak self] _ in
+            self?.isPlaying = false
+            player.seek(to: .zero)
         }
     }
     
-    private func togglePlayPause() {
-        guard let player = player, playerStatus == .readyToPlay else { return }
-        
+    func togglePlayPause() {
+        guard let player, playerStatus == .readyToPlay else { return }
         if isPlaying {
             player.pause()
         } else {
@@ -357,50 +378,22 @@ struct VideoPlayerView: View {
         isPlaying.toggle()
     }
     
-    private func performSeek(to time: Double) {
-        guard let player = player else { return }
-        
+    func performSeek(to time: Double) {
+        guard let player else { return }
         let cmTime = CMTime(seconds: time, preferredTimescale: 600)
         player.seek(to: cmTime)
         currentTime = time
-        
-        // Update frame index based on current time
-        updateFrameIndex()
     }
     
-    
-    private func updateCurrentTime() {
-        guard let player = player, isPlaying else { return }
-        
+    func updateCurrentTime() {
+        guard let player, isPlaying else { return }
         let time = CMTimeGetSeconds(player.currentTime())
         if !time.isNaN && !time.isInfinite {
             currentTime = time
-            updateFrameIndex()
         }
     }
     
-    private func updateFrameIndex() {
-        guard let poseData = poseData, !poseData.isEmpty, duration > 0 else { return }
-        
-        // Calculate pose frame rate dynamically
-        let calculatedPoseFrameRate = Double(poseData.count) / duration
-        let effectivePoseFrameRate = calculatedPoseFrameRate > 0 ? calculatedPoseFrameRate : 30.0
-        
-        // Update pose frame rate if it's significantly different
-        if abs(poseFrameRate - effectivePoseFrameRate) > 1.0 {
-            poseFrameRate = effectivePoseFrameRate
-        }
-        
-        // Calculate frame index based on actual pose frame rate
-        let targetFrameIndex = Int(currentTime * poseFrameRate)
-        currentFrameIndex = min(max(targetFrameIndex, 0), poseData.count - 1)
-    }
-    
-    private func togglePoseOverlay() {
-        showingPoseOverlay.toggle()
-    }
-    
-    private func timeString(_ time: Double) -> String {
+    func timeString(_ time: Double) -> String {
         let minutes = Int(time) / 60
         let seconds = Int(time) % 60
         return String(format: "%d:%02d", minutes, seconds)
@@ -410,6 +403,7 @@ struct VideoPlayerView: View {
 // MARK: - Player Status Observer
 class PlayerStatusObserver: NSObject, ObservableObject {
     @Published var status: AVPlayerItem.Status = .unknown
+    var onStatusChange: ((AVPlayerItem.Status) -> Void)?
     
     func observePlayerItem(_ playerItem: AVPlayerItem) {
         playerItem.addObserver(self, forKeyPath: "status", options: [.new], context: nil)
@@ -420,6 +414,7 @@ class PlayerStatusObserver: NSObject, ObservableObject {
             if let playerItem = object as? AVPlayerItem {
                 DispatchQueue.main.async {
                     self.status = playerItem.status
+                    self.onStatusChange?(playerItem.status)
                     if playerItem.status == .readyToPlay {
                         print("🎬 VideoPlayerView: Player is ready to play")
                     } else if playerItem.status == .failed {
@@ -597,6 +592,7 @@ struct PoseOverlayViewCALayer: UIViewRepresentable {
 #Preview {
     VideoPlayerView(
         videoURL: URL(fileURLWithPath: "/path/to/video.mp4"),
-        poseData: nil
+        poseData: nil,
+        playback: PlaybackController(videoURL: URL(fileURLWithPath: "/path/to/video.mp4"))
     )
 }

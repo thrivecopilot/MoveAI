@@ -231,6 +231,8 @@ struct CameraCaptureView: View {
                         }
                     }
                 }
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
             }
         }
     }

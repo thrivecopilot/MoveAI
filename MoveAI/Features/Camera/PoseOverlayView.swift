@@ -2,20 +2,27 @@ import SwiftUI
 import Vision
 import AVFoundation
 
+enum PoseOverlayStyle {
+    case standard
+    case telemetry
+}
+
 struct PoseOverlayView: View {
     let pose: PoseDetectionResult?
     let previewSize: CGSize
     let flipXAxis: Bool
     let isUploadedVideo: Bool  // Distinguish between camera feed and uploaded videos
+    let style: PoseOverlayStyle
     
     // Transform Vision coordinates to display coordinates
     // Vision coordinates are normalized (0-1) in the raw video frame
     
-    init(pose: PoseDetectionResult?, previewSize: CGSize, flipXAxis: Bool, isUploadedVideo: Bool = false) {
+    init(pose: PoseDetectionResult?, previewSize: CGSize, flipXAxis: Bool, isUploadedVideo: Bool = false, style: PoseOverlayStyle = .standard) {
         self.pose = pose
         self.previewSize = previewSize
         self.flipXAxis = flipXAxis
         self.isUploadedVideo = isUploadedVideo
+        self.style = style
     }
     
     var body: some View {
@@ -31,12 +38,13 @@ struct PoseOverlayView: View {
                                 flipXAxis: flipXAxis,
                                 isUploadedVideo: isUploadedVideo,
                                 keypointColor: keypointColor(for: keypoint),
-                                frameIndex: pose.frameIndex
+                                frameIndex: pose.frameIndex,
+                                style: style
                             )
                         }
                         
                 // Draw skeleton connections
-                SkeletonView(pose: pose, previewSize: previewSize == .zero ? geometry.size : previewSize, flipXAxis: flipXAxis, isUploadedVideo: isUploadedVideo)
+                SkeletonView(pose: pose, previewSize: previewSize == .zero ? geometry.size : previewSize, flipXAxis: flipXAxis, isUploadedVideo: isUploadedVideo, style: style)
                     }
                 } else {
                     // Show a subtle indicator when no pose is detected yet - NO ROTATION
@@ -61,12 +69,23 @@ struct PoseOverlayView: View {
     
     private func keypointColor(for keypoint: PoseKeypoint) -> Color {
         // Color based on confidence level
-        if keypoint.confidence > 0.7 {
-            return .green
-        } else if keypoint.confidence > 0.4 {
-            return .yellow
-        } else {
-            return .red
+        switch style {
+        case .standard:
+            if keypoint.confidence > 0.7 {
+                return .green
+            } else if keypoint.confidence > 0.4 {
+                return .yellow
+            } else {
+                return .red
+            }
+        case .telemetry:
+            if keypoint.confidence > 0.7 {
+                return Color(red: 0.24, green: 0.86, blue: 1.0)
+            } else if keypoint.confidence > 0.4 {
+                return Color(red: 1.0, green: 0.78, blue: 0.35)
+            } else {
+                return Color(red: 1.0, green: 0.42, blue: 0.42)
+            }
         }
     }
 }
@@ -78,6 +97,7 @@ private struct KeypointView: View {
     let isUploadedVideo: Bool
     let keypointColor: Color
     let frameIndex: Int
+    let style: PoseOverlayStyle
     
     private var screenPosition: CGPoint {
         // Vision uses bottom-left origin, SwiftUI uses top-left origin
@@ -112,7 +132,12 @@ private struct KeypointView: View {
     var body: some View {
         Circle()
             .fill(keypointColor)
-            .frame(width: 8, height: 8)
+            .frame(width: style == .telemetry ? 7 : 8, height: style == .telemetry ? 7 : 8)
+            .overlay(
+                Circle()
+                    .stroke(Color.white.opacity(style == .telemetry ? 0.6 : 0.3), lineWidth: style == .telemetry ? 1.2 : 1)
+            )
+            .shadow(color: style == .telemetry ? keypointColor.opacity(0.6) : .clear, radius: style == .telemetry ? 4 : 0)
             .position(x: screenPosition.x, y: screenPosition.y)
             .onAppear {
                 // #region agent log
@@ -149,6 +174,7 @@ struct SkeletonView: View {
     let previewSize: CGSize
     let flipXAxis: Bool
     let isUploadedVideo: Bool
+    let style: PoseOverlayStyle
     
     var body: some View {
         Canvas { context, size in
@@ -249,8 +275,8 @@ struct SkeletonView: View {
             
             context.stroke(
                 path,
-                with: .color(.white),
-                lineWidth: 2
+                with: .color(style == .telemetry ? Color(red: 0.24, green: 0.86, blue: 1.0) : .white),
+                lineWidth: style == .telemetry ? 2.6 : 2
             )
         }
     }

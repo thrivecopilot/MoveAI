@@ -199,132 +199,135 @@ struct AnalysisResultsView: View {
     
     private func resultsView(_ result: AnalysisResult) -> some View {
         ScrollView {
-            VStack(spacing: 24) {
-                // Overall Score (only show if not embedded in session detail)
+            VStack(spacing: 28) {
+                compactScoreSection(result.score)
+                compactRepSummary(result.feedback)
+                compactFeedbackSection(result.feedback)
                 if !isEmbeddedInSessionDetail {
-                    scoreCard(result.score)
-                }
-                
-                // Rep Counter
-                repCounterCard(result.feedback)
-                
-                // Feedback Items
-                feedbackSection(result.feedback)
-                
-                // Recording Info (only show if not embedded in session detail)
-                if !isEmbeddedInSessionDetail {
-                    recordingInfoCard()
+                    compactRecordingInfo()
                 }
             }
-            .padding()
+            .padding(.horizontal, 20)
+            .padding(.vertical, 24)
         }
-    }
-    
-    private func scoreCard(_ score: Double) -> some View {
-        VStack(spacing: 16) {
-            HStack {
-                Text("Overall Score")
-                    .font(.headline)
-                
-                Spacer()
-                
-                Button(action: {
-                    showScoreInfo = true
-                }) {
-                    Image(systemName: "info.circle")
-                        .foregroundColor(.blue)
-                        .font(.system(size: 18))
-                }
-            }
-            
-            ZStack {
-                Circle()
-                    .stroke(Color.gray.opacity(0.3), lineWidth: 8)
-                    .frame(width: 120, height: 120)
-                
-                Circle()
-                    .trim(from: 0, to: score / 100)
-                    .stroke(scoreColor(score), lineWidth: 8)
-                    .frame(width: 120, height: 120)
-                    .rotationEffect(.degrees(-90))
-                
-                Text("\(Int(score))")
-                    .font(.system(size: 36, weight: .bold))
-                    .foregroundColor(scoreColor(score))
-            }
-            
-            Text(scoreDescription(score))
-                .font(.caption)
-                .foregroundColor(.secondary)
-        }
-        .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(16)
         .sheet(isPresented: $showScoreInfo) {
             ScoreInfoSheet()
         }
     }
     
-    @ViewBuilder
-    private func repCounterCard(_ feedback: [FormFeedback]) -> some View {
+    private func compactScoreSection(_ score: Double) -> some View {
+        VStack(spacing: 6) {
+            Button(action: { showScoreInfo = true }) {
+                Text("\(Int(score))")
+                    .font(.system(size: 56, weight: .semibold))
+                    .foregroundColor(scoreColor(score))
+            }
+            .buttonStyle(.plain)
+            Text("Score")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+    
+    private func compactRepSummary(_ feedback: [FormFeedback]) -> some View {
         let repStats = calculateRepStatistics(feedback, reps: analysisResult?.reps, depthMetrics: analysisResult?.depthMetrics)
-        
-        // Only show rep counter if we have rep data
-        if repStats.totalReps > 0 {
-            VStack(spacing: 16) {
-                Text("Rep Summary")
-                    .font(.headline)
-                
-                HStack(spacing: 24) {
-                    // Total Reps
-                    VStack(spacing: 8) {
-                        Text("\(repStats.totalReps)")
-                            .font(.system(size: 32, weight: .bold))
-                            .foregroundColor(.primary)
-                        Text("Total Reps")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    Divider()
-                        .frame(height: 50)
-                    
-                    // Good Reps
-                    VStack(spacing: 8) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundColor(.green)
-                            Text("\(repStats.goodReps)")
-                                .font(.system(size: 32, weight: .bold))
-                                .foregroundColor(.green)
+        guard repStats.totalReps > 0 else { return AnyView(EmptyView()) }
+        return AnyView(
+            VStack(alignment: .leading, spacing: 8) {
+                Text("REP SUMMARY")
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundColor(.secondary)
+                Text("\(repStats.totalReps) total  ·  \(repStats.goodReps) good  ·  \(repStats.warningReps) need attention")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        )
+    }
+    
+    private func compactFeedbackSection(_ feedback: [FormFeedback]) -> some View {
+        let issues = feedback.filter { $0.severity == .warning || $0.severity == .critical }
+        let wins = feedback.filter { $0.severity == .excellent || $0.severity == .good }
+        if issues.isEmpty && wins.isEmpty { return AnyView(EmptyView()) }
+        return AnyView(
+            VStack(alignment: .leading, spacing: 12) {
+                Text("TOP FIXES")
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundColor(.secondary)
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(issues.prefix(3)) { item in
+                        compactFeedbackRow(item)
+                        if item.id != issues.prefix(3).last?.id {
+                            Divider().padding(.vertical, 8)
                         }
-                        Text("Good Reps")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
                     }
-                    
-                    Divider()
-                        .frame(height: 50)
-                    
-                    // Warning Reps
-                    VStack(spacing: 8) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundColor(repStats.warningReps > 0 ? .yellow : .gray)
-                            Text("\(repStats.warningReps)")
-                                .font(.system(size: 32, weight: .bold))
-                                .foregroundColor(repStats.warningReps > 0 ? .yellow : .gray)
-                        }
-                        Text("Need Attention")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                    ForEach(wins.prefix(2)) { item in
+                        if !issues.prefix(3).isEmpty { Divider().padding(.vertical, 8) }
+                        compactFeedbackRow(item)
                     }
                 }
             }
-            .padding()
-            .background(Color(.systemGray6))
-            .cornerRadius(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        )
+    }
+    
+    private func compactFeedbackRow(_ item: FormFeedback) -> some View {
+        let icon: String
+        let color: Color
+        switch item.severity {
+        case .excellent, .good: icon = "checkmark.circle.fill"; color = .green
+        case .warning, .critical: icon = "exclamationmark.triangle.fill"; color = .orange
         }
+        return HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon)
+                .font(.caption)
+                .foregroundColor(color)
+                .frame(width: 20, alignment: .center)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.message)
+                    .font(.subheadline)
+                    .foregroundColor(.primary)
+                if let onSeek = onSeekToTime, let _ = item.repNumber {
+                    Button(action: { onSeek(item.timestamp) }) {
+                        Text(formatTimestampForFeedback(item.timestamp))
+                            .font(.caption)
+                            .foregroundColor(.accentColor)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+    }
+    
+    private func formatTimestampForFeedback(_ t: TimeInterval) -> String {
+        let m = Int(t) / 60
+        let s = Int(t) % 60
+        return String(format: "%d:%02d", m, s)
+    }
+    
+    private func compactRecordingInfo() -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("RECORDING")
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundColor(.secondary)
+            Text(recording.movementType.displayName)
+                .font(.subheadline)
+            Text(formatDurationForRecording(recording.duration))
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    
+    private func formatDurationForRecording(_ duration: TimeInterval) -> String {
+        let m = Int(duration) / 60
+        let s = Int(duration) % 60
+        return String(format: "%d:%02d", m, s)
     }
     
     private func calculateRepStatistics(_ feedback: [FormFeedback], reps: [SquatRep]? = nil, depthMetrics: [DepthAnalysis]? = nil) -> (totalReps: Int, goodReps: Int, warningReps: Int) {
