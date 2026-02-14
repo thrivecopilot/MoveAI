@@ -224,7 +224,7 @@ struct OnboardingView: View {
 - **Track Progress**: Mark items complete as you go
 - **Document Results**: Add review section to `tasks/todo.md`
 - **Capture Lessons**: Update `tasks/lessons.md` after corrections
-- **UI validation**: An agent must execute the screenshot workflow end-to-end (the user does not run anything). Always run from the git repo root for correct context: `cd "$(git rev-parse --show-toplevel)" && bash scripts/capture_screenshots.sh`. Then list `Screenshots/latest/<timestamp>/` and open and interpret at least one PNG. Success = script completes with "Extracted N screenshots", agent sees PNGs, and agent can open and interpret one. See **docs/Screenshots.md** for success criteria and full instructions.
+- **UI validation**: An agent must execute the screenshot workflow end-to-end (the user does not run anything). Use `bash scripts/capture_screenshots.sh --only <filter>` to capture only the screens you changed (`session-history` or `video-review`), or omit `--only` for all. Read `manifest.json` to find relevant PNGs, then read and interpret them. Previous runs are auto-cleaned. See **docs/Screenshots.md** for full instructions.
 
 See `tasks/` for templates and operational details.
 

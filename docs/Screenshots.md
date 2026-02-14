@@ -1,110 +1,96 @@
 # Screenshots
 
-## Success criteria (agent workflow)
-An **agent** must be able to execute the workflow **end to end**; the user does not run anything. This includes:
-1. Running the capture script from the repo root.
-2. The script completing with "Extracted N screenshots to ...".
-3. The agent listing `Screenshots/latest/<newest_timestamp>/` and seeing multiple `.png` files.
-4. The agent **opening** at least one PNG (e.g. a VideoReview screenshot) and **interpreting** it (e.g. reading it with the Read tool and describing the image content).
+## Quick Reference (agent workflow)
 
-Verification is achieved only when an agent succeeds at all of the above.
+```sh
+# Edit code, then capture only the relevant screens:
+bash scripts/capture_screenshots.sh --only session-history   # 12 PNGs, ~1 min
+bash scripts/capture_screenshots.sh --only video-review      #  9 PNGs, ~1 min
+bash scripts/capture_screenshots.sh                          # 21 PNGs, ~2 min (all)
 
-## For agents: run and view results
-- **Run context**: Always run from the git repo root so the correct context is used. Use:
-  ```sh
-  cd "$(git rev-parse --show-toplevel)" && bash scripts/capture_screenshots.sh
-  ```
-  If your run environment does not have a full clone (no `.git`), this will fail; see **Run environment** below. Requires Xcode and an available iOS Simulator; you may need to run outside sandbox.
-- **Alternative** (if you are already at repo root): `bash scripts/capture_screenshots.sh` or `bash run_screenshots.sh`.
-- **Output**: PNGs are written to `Screenshots/latest/<YYYY-MM-DD_HH-mm-ss>/` under the workspace. File names follow `screenshot__<Scenario>__<appearance>__<textSize>.png` (e.g. `screenshot__VideoReview_overview_collapsed__light__default.png`). The latest run is the folder with the newest timestamp.
-- **View results**: Read the PNG files in that folder (e.g. `Screenshots/latest/<timestamp>/*.png`) to validate UI. For VideoReview work, check the `VideoReview_overview_*` screenshots; for SessionHistory, the `SessionHistory_*` ones.
-- If extraction fails, see **Troubleshooting** below.
+# Read results:
+# 1. Parse manifest.json to map UUID filenames → human-readable names
+# 2. Read PNGs to validate your change visually
+```
 
-### Verification steps (agent must complete end-to-end)
-1. **Run** the capture script from the repo root (use this so the correct context is used):
-   ```sh
-   cd "$(git rev-parse --show-toplevel)" && bash scripts/capture_screenshots.sh
-   ```
-   Confirm the log shows "Extracted N screenshots to ...".
-2. **List** `Screenshots/latest/` and identify the newest timestamp folder (e.g. `Screenshots/latest/2026-02-13_12-00-00/`).
-3. **List** the PNGs in that folder (e.g. `Screenshots/latest/<timestamp>/*.png`).
-4. **Open and interpret** at least one PNG: read the file (e.g. with the Read tool) and describe the image (layout, UI elements, text). Only then is the workflow verified.
-5. If no PNGs appear, check the script output for "No screenshots extracted" and the logged `OUTPUT_DIR` and any `[capture][python]` xcresulttool error; refer to **Troubleshooting** below.
+Previous screenshots are auto-cleaned on each run. Temp `.xcresult` bundles are auto-cleaned after extraction.
+
+### Claude Code agents: path workaround
+
+The repo lives under an iCloud path with special characters that the Read tool can't handle directly. Create a symlink once per session:
+
+```sh
+ln -sf "$(pwd)" /tmp/moveai_worktree
+```
+
+Then read files via `/tmp/moveai_worktree/Screenshots/latest/<timestamp>/...`.
+
+---
+
+## Success criteria
+
+An **agent** must execute the workflow **end to end** (the user does not run anything):
+1. Run the capture script from the repo root.
+2. Script completes with "Extracted N screenshots to ...".
+3. Agent reads `manifest.json` to find the relevant PNGs.
+4. Agent reads at least one PNG and describes the image content.
+
+## Partitioned captures
+
+Use `--only` to run only the test method relevant to your change:
+
+| Flag | Test method | Scenarios | PNGs |
+|------|------------|-----------|------|
+| `--only session-history` | `testSessionHistoryScreenshots` | loaded, empty, error, longText | 12 |
+| `--only video-review` | `testVideoReviewScreenshots` | collapsed, medium, expanded | 9 |
+| *(omitted)* | All `ScreenshotTests` | All 7 scenarios | 21 |
+
+Each scenario produces 3 variants: light default, dark default, light large text.
+
+## Auto-cleanup
+
+- **Previous runs**: Each capture deletes all previous timestamp folders in `Screenshots/latest/` before starting. Use `--keep-previous` to opt out.
+- **Temp xcresult**: Deleted from `.screenshot_tmp/` after successful extraction.
+- **Net storage**: Only one set of screenshots exists at a time (~3-6 MB).
 
 ## How it works
-- The app checks for `-uiScenario <Name>` at launch (Debug-only). When present, it bypasses normal onboarding/navigation and routes directly to a deterministic screen with fixture data.
-- UI tests launch the app with scenario + appearance (`-uiAppearance`) + text size (`-uiTextSize`) arguments and disable animations (`-uiDisableAnimations`) before capturing `XCTAttachment` screenshots with stable, predictable names.
-- The capture script runs the screenshot tests via `xcodebuild` (writing the `.xcresult` bundle to a repo-local path with no spaces, `.screenshot_tmp/`, to avoid extraction issues), then exports screenshot attachments into `Screenshots/latest/<timestamp>/` using `xcrun xcresulttool get --legacy` (required on current Xcode).
+
+1. The app checks for `-uiScenario <Name>` at launch (Debug-only). When present, `ScenarioRouter` bypasses normal onboarding/navigation and routes to a deterministic screen with fixture data.
+2. UI tests in `ScreenshotTests.swift` launch the app with scenario + appearance + text size arguments, wait for a stable accessibility identifier, and capture `XCTAttachment` screenshots.
+3. `capture_screenshots.sh` runs `xcodebuild test` targeting `ScreenshotTests`, then `xcrun xcresulttool export attachments` to extract PNGs + `manifest.json`.
+
+## Current scenarios
+
+- `SessionHistory_loaded`, `SessionHistory_empty`, `SessionHistory_error`, `SessionHistory_longText`
+- `VideoReview_overview_collapsed`, `VideoReview_overview_medium`, `VideoReview_overview_expanded`
 
 ## Add a new scenario in 3 steps
-1. Add the scenario name + fixture data in `MoveAI/Support/ScenarioRouter.swift`. Add a new case to `UIScenario`, add a fixture in `ScenarioFixtures`, and map the case to a view in `ScenarioViews`.
-2. Ensure the target view has a stable accessibility identifier so tests can wait for it (example in `MoveAI/Features/Sessions/SessionHistoryView.swift`).
-3. Add the scenario to `MoveAIUITests/ScreenshotTests.swift` with the correct `waitForId`.
 
-Current scenarios:
-- `SessionHistory_loaded`
-- `SessionHistory_empty`
-- `SessionHistory_error`
-- `SessionHistory_longText`
-- `VideoReview_overview_collapsed`
-- `VideoReview_overview_medium`
-- `VideoReview_overview_expanded`
+1. Add the scenario name + fixture data in `MoveAI/Support/ScenarioRouter.swift`. Add a new case to `UIScenario`, a fixture in `ScenarioFixtures`, and map the case to a view in `ScenarioViews`.
+2. Ensure the target view has a stable accessibility identifier (`ScenarioRoot_<name>`) so tests can wait for it.
+3. Add the scenario to `MoveAIUITests/ScreenshotTests.swift` in the relevant test method (or create a new one and add an `--only` mapping in `capture_screenshots.sh`).
 
-## Run
-**Agents: always run from the git repo root** so the correct context is used:
+## Extract PNGs from an existing xcresult
+
+If a run produced an xcresult but no PNGs:
 ```sh
-cd "$(git rev-parse --show-toplevel)" && bash scripts/capture_screenshots.sh
+bash scripts/extract_latest_screenshots.sh
 ```
-Or from the root wrapper:
-```sh
-cd "$(git rev-parse --show-toplevel)" && bash run_screenshots.sh
-```
-If you are already at repo root: `bash scripts/capture_screenshots.sh` or `bash run_screenshots.sh`.
-
-**From the IDE**: Run the **Capture screenshots** task (e.g. Run Task > Capture screenshots). The task is defined in `.vscode/tasks.json` with `cwd: ${workspaceFolder}` so it runs in the correct context. Use this when the agent's shell does not see the full repo.
-
-Outputs land in:
-- `Screenshots/latest/<YYYY-MM-DD_HH-mm-ss>/` — PNG files only. The raw xcresult for the current run is written to `.screenshot_tmp/` in the repo (gitignored) and is not committed.
-
-## Extract PNGs from an existing xcresult (agent)
-If a run produced an xcresult bundle but no PNGs (e.g. `Screenshots/latest/<timestamp>/MoveAI_Screenshots.xcresult` exists, no `*.png` in that folder), the **agent** should run from the repo root (for correct context):
-```sh
-cd "$(git rev-parse --show-toplevel)" && python3 scripts/extract_screenshots_from_xcresult.py "Screenshots/latest/<timestamp>/MoveAI_Screenshots.xcresult" "Screenshots/latest/<timestamp>"
-```
-Replace `<timestamp>` with the folder name (e.g. `2026-02-13_15-06-54`). PNGs are written into that folder. Requires the run environment to see the full repo (see **Run environment** below).
-
-## Run environment (required for agents)
-The **user does not run commands**; an agent must be able to run the full workflow. For that to work, the **execution environment** (the shell the agent uses) must see the **full repo**: `scripts/`, `MoveAI/`, `.git`, and after a run, `Screenshots/latest/<timestamp>/`. If the agent's shell only sees a subset (e.g. only `tasks/` and no `scripts/`), commands like `bash scripts/capture_screenshots.sh` or `python3 scripts/extract_screenshots_from_xcresult.py ...` fail with "No such file or directory" and the workflow cannot complete. There is no workaround inside the repo; the run context (Cursor or host) must provide the full workspace to the shell. If the workflow fails for this reason, try re-opening the repo root as the workspace, re-cloning into a new folder and opening that, or checking Cursor/IDE settings for how the agent's terminal working directory and filesystem view are set.
+This finds the latest `Screenshots/latest/<timestamp>/` and re-runs `xcrun xcresulttool export attachments`.
 
 ## Troubleshooting
-- **No PNGs extracted**: The script writes the xcresult to `.screenshot_tmp/` (repo-local, no spaces) so `xcrun xcresulttool get --legacy` can read it reliably. The script logs `xcresult bundle (temp):` and on failure `[capture][python]` lines with xcresulttool stderr. If extraction still fails in a run where the agent can see the repo, the agent can run `xcrun xcresulttool get --legacy --format json --path <path-to-xcresult>` to inspect the error. Without `--legacy`, newer Xcode returns an error. The script falls back to `xcrun simctl io booted screenshot` and saves `fallback_booted.png` (requires a booted simulator).
-- If `xcodebuild` fails, the result bundle path is logged (e.g. `.screenshot_tmp/MoveAI_Screenshots_<timestamp>.xcresult`).
-- Simulator device selection prefers `iPhone 16 Pro` if available, otherwise uses any booted iPhone simulator, and falls back to the first available iPhone simulator.
 
-## Simulator Recovery (Agents)
-The capture script will automatically attempt to restart CoreSimulator if `simctl` reports “Connection invalid” or “Unable to locate device set”. If it still fails, use this manual fallback:
+- **No PNGs extracted**: Check script output for "No screenshots extracted". The script falls back to `xcrun simctl io booted screenshot` for a single fallback PNG.
+- **xcodebuild fails**: Result bundle path is logged at `.screenshot_tmp/MoveAI_Screenshots_<timestamp>.xcresult`.
+- **Simulator not found**: The script prefers iPhone 16 Pro (by UUID), falls back to any booted iPhone, then any available iPhone.
+- **simctl connection invalid**: The script auto-retries by restarting CoreSimulator. Manual fallback:
+  ```sh
+  xcrun simctl shutdown all
+  killall -9 com.apple.CoreSimulator.CoreSimulatorService
+  open -a Simulator
+  xcrun simctl list devices available
+  ```
 
-1. Quit Simulator (if the agent cannot, the environment owner may need to).
-2. Agent runs:
-```sh
-xcrun simctl shutdown all
-killall -9 com.apple.CoreSimulator.CoreSimulatorService
-```
-3. Relaunch Simulator:
-```sh
-open -a Simulator
-```
-4. Verify:
-```sh
-xcrun simctl list devices available
-```
-5. Re-run:
-```sh
-./scripts/capture_screenshots.sh
-```
+## Run environment
 
-If `open -a Simulator` fails, Xcode (and the Simulator app) may not be installed or is not accessible. Confirm:
-```sh
-xcode-select -p
-```
-and ensure it points at your Xcode install (for example, `/Applications/Xcode.app/Contents/Developer`).
+The agent's shell must see the full repo (`scripts/`, `MoveAI/`, `MoveAIUITests/`). If commands fail with "No such file or directory", ensure the working directory is the repo root (or a worktree that contains all source files).

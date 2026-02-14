@@ -1,2 +1,5 @@
 # Screenshot capture temp xcresult bundles (repo-local, not committed)
 .screenshot_tmp/
+
+# Extracted screenshot PNGs (generated, not committed)
+Screenshots/

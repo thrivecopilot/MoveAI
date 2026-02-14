@@ -5,6 +5,50 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCHEME="MoveAI"
 PROJECT="$ROOT_DIR/MoveAI.xcodeproj"
 
+# ---------------------------------------------------------------------------
+# Usage: capture_screenshots.sh [--only <filter>] [--keep-previous]
+#
+#   --only session-history   Run only testSessionHistoryScreenshots (12 PNGs)
+#   --only video-review      Run only testVideoReviewScreenshots   ( 9 PNGs)
+#   (omitted)                Run all ScreenshotTests               (21 PNGs)
+#
+#   --keep-previous          Don't delete previous screenshot folders
+# ---------------------------------------------------------------------------
+
+ONLY_FILTER=""
+KEEP_PREVIOUS=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --only)
+      ONLY_FILTER="$2"
+      shift 2
+      ;;
+    --keep-previous)
+      KEEP_PREVIOUS=true
+      shift
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      echo "Usage: capture_screenshots.sh [--only session-history|video-review] [--keep-previous]" >&2
+      exit 1
+      ;;
+  esac
+done
+
+# Map --only value to xcodebuild -only-testing target
+TEST_TARGET="MoveAIUITests/ScreenshotTests"
+case "$ONLY_FILTER" in
+  "")                TEST_TARGET="MoveAIUITests/ScreenshotTests" ;;
+  session-history)   TEST_TARGET="MoveAIUITests/ScreenshotTests/testSessionHistoryScreenshots" ;;
+  video-review)      TEST_TARGET="MoveAIUITests/ScreenshotTests/testVideoReviewScreenshots" ;;
+  *)
+    echo "Unknown --only filter: $ONLY_FILTER" >&2
+    echo "Valid values: session-history, video-review" >&2
+    exit 1
+    ;;
+esac
+
 log() {
   echo "[capture] $*"
 }
@@ -70,6 +114,17 @@ OUTPUT_DIR="$ROOT_DIR/Screenshots/latest/$TIMESTAMP"
 SCREENSHOT_TMP_DIR="${ROOT_DIR}/.screenshot_tmp"
 mkdir -p "$SCREENSHOT_TMP_DIR"
 RESULT_BUNDLE_TMP="${SCREENSHOT_TMP_DIR}/MoveAI_Screenshots_${TIMESTAMP}.xcresult"
+
+# Clean up previous screenshot folders BEFORE creating the new output dir
+LATEST_DIR="$ROOT_DIR/Screenshots/latest"
+if [[ "$KEEP_PREVIOUS" == false && -d "$LATEST_DIR" ]]; then
+  PREV_COUNT=$(find "$LATEST_DIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
+  if [[ "$PREV_COUNT" -gt 0 ]]; then
+    log "Cleaning up $PREV_COUNT previous screenshot folder(s)"
+    find "$LATEST_DIR" -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} +
+  fi
+fi
+
 mkdir -p "$OUTPUT_DIR"
 
 ensure_simctl_ready
@@ -96,6 +151,7 @@ else
 fi
 
 log "Running screenshot tests on: $DESTINATION"
+log "Test target: $TEST_TARGET"
 log "Results will be saved to: $OUTPUT_DIR"
 log "xcresult bundle (temp): $RESULT_BUNDLE_TMP"
 
@@ -106,7 +162,7 @@ xcodebuild test \
   -destination "$DESTINATION" \
   -parallel-testing-enabled NO \
   -parallel-testing-worker-count 1 \
-  -only-testing:MoveAIUITests/ScreenshotTests \
+  "-only-testing:$TEST_TARGET" \
   -resultBundlePath "$RESULT_BUNDLE_TMP"
 XCODE_STATUS=$?
 set -e
@@ -151,3 +207,12 @@ if [[ "$COUNT" -eq 0 ]]; then
 else
   log "Extracted $COUNT screenshots to $OUTPUT_DIR"
 fi
+
+# Clean up temp xcresult bundle (already copied into output dir)
+if [[ -d "$RESULT_BUNDLE_TMP" ]]; then
+  rm -rf "$RESULT_BUNDLE_TMP"
+  log "Cleaned up temp xcresult: $RESULT_BUNDLE_TMP"
+fi
+
+# Clean up any other stale xcresult bundles in .screenshot_tmp/
+find "$SCREENSHOT_TMP_DIR" -name "*.xcresult" -type d -exec rm -rf {} + 2>/dev/null || true
