@@ -3,6 +3,7 @@
 //  MoveAI
 //
 //  Created by Dave Mathew on 10/11/25.
+//  Requirements: docs/screens/video-review.md
 //
 
 import SwiftUI
@@ -19,6 +20,8 @@ struct VideoPlayerView: View {
     var constrainedHeight: CGFloat?
     /// Maximum visible portion of the video height (0...1). Default keeps a top-cropped cinematic feel.
     var maxVisibleHeightRatio: CGFloat = 0.85
+    /// When true, ignore aspect ratio height constraints and fill the container.
+    var isFullBleed: Bool = false
     
     @State private var showingPoseOverlay = true
     @State private var currentFrameIndex = 0
@@ -30,6 +33,8 @@ struct VideoPlayerView: View {
     var onFullScreenToggle: (() -> Void)?
     var isFullScreenMode: Bool = false
     @ObservedObject var playback: PlaybackController
+    var cueOverlay: CoachingCueOverlay?
+    var cueTopPadding: CGFloat = 12
     /// Called when user taps exit in fullscreen (e.g. dismiss sheet). Takes precedence over onFullScreenToggle in fullscreen.
     var onExitFullScreen: (() -> Void)?
     /// Title shown in fullscreen top bar (e.g. movement name).
@@ -44,7 +49,7 @@ struct VideoPlayerView: View {
     private let telemetryText = Color(red: 0.90, green: 0.93, blue: 0.97)
     private let telemetryMuted = Color.white.opacity(0.65)
     
-    init(videoURL: URL, poseData: [PoseDetectionResult]?, isRecordedLive: Bool = false, analysisResult: AnalysisResult? = nil, highlightedFeedbackIds: Set<UUID> = [], constrainedHeight: CGFloat? = nil, maxVisibleHeightRatio: CGFloat = 0.85, seekToTime: Binding<TimeInterval?> = .constant(nil), onFullScreenToggle: (() -> Void)? = nil, isFullScreenMode: Bool = false, playback: PlaybackController, onExitFullScreen: (() -> Void)? = nil, fullScreenTitle: String? = nil) {
+    init(videoURL: URL, poseData: [PoseDetectionResult]?, isRecordedLive: Bool = false, analysisResult: AnalysisResult? = nil, highlightedFeedbackIds: Set<UUID> = [], constrainedHeight: CGFloat? = nil, maxVisibleHeightRatio: CGFloat = 0.85, seekToTime: Binding<TimeInterval?> = .constant(nil), onFullScreenToggle: (() -> Void)? = nil, isFullScreenMode: Bool = false, playback: PlaybackController, cueOverlay: CoachingCueOverlay? = nil, cueTopPadding: CGFloat = 12, isFullBleed: Bool = false, onExitFullScreen: (() -> Void)? = nil, fullScreenTitle: String? = nil) {
         self.videoURL = videoURL
         self.poseData = poseData
         self.isRecordedLive = isRecordedLive
@@ -56,6 +61,9 @@ struct VideoPlayerView: View {
         self.onFullScreenToggle = onFullScreenToggle
         self.isFullScreenMode = isFullScreenMode
         self.playback = playback
+        self.cueOverlay = cueOverlay
+        self.cueTopPadding = cueTopPadding
+        self.isFullBleed = isFullBleed
         self.onExitFullScreen = onExitFullScreen
         self.fullScreenTitle = fullScreenTitle
     }
@@ -133,6 +141,14 @@ struct VideoPlayerView: View {
                     Spacer()
                 }
             }
+            
+            if let cueOverlay {
+                CueOverlayView(overlay: cueOverlay)
+                    .padding(.top, cueTopPadding)
+                    .padding(.horizontal, 16)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .transition(.opacity)
+            }
         }
         .onTapGesture {
             withAnimation(.easeInOut(duration: 0.3)) {
@@ -153,40 +169,55 @@ struct VideoPlayerView: View {
         return VStack(spacing: 0) {
             GeometryReader { geometry in
                 let availableWidth = geometry.size.width
-                let fullVideoHeight = availableWidth * 16 / 9
-                let visibleHeight = min(videoHeight, fullVideoHeight * maxVisibleHeightRatio)
+                let containerHeight = geometry.size.height
+                let baseVideoHeight = availableWidth * 16 / 9
+                let visibleHeight = isFullBleed ? containerHeight : min(videoHeight, baseVideoHeight * maxVisibleHeightRatio)
+                let scale = isFullBleed ? max(1.0, visibleHeight / baseVideoHeight) : 1.0
                 
                 if let player = playback.player {
-                    ZStack(alignment: .topLeading) {
+                    let baseSize = CGSize(width: availableWidth, height: baseVideoHeight)
+                    
+                    let videoLayer = ZStack(alignment: .topLeading) {
                         PlayerContainerView(player: player)
-                            .frame(width: availableWidth, height: fullVideoHeight)
-                            .aspectRatio(9/16, contentMode: .fill)
-                            .frame(width: availableWidth, height: visibleHeight, alignment: .top)
-                            .clipped()
-                            .cornerRadius(12)
+                            .frame(width: baseSize.width, height: baseSize.height)
                         
                         if showingPoseOverlay, let poseData = poseData, !poseData.isEmpty {
                             PoseOverlayView(
                                 pose: currentPose,
-                                previewSize: CGSize(width: availableWidth, height: fullVideoHeight),
+                                previewSize: baseSize,
                                 flipXAxis: true,
                                 isUploadedVideo: !isRecordedLive,
                                 style: .telemetry
                             )
-                            .frame(width: availableWidth, height: visibleHeight, alignment: .top)
-                            .clipped()
+                            .frame(width: baseSize.width, height: baseSize.height)
                             .allowsHitTesting(false)
                         }
+                    }
+                    .frame(width: baseSize.width, height: baseSize.height)
+                    .scaleEffect(scale, anchor: .top)
+                    .frame(width: availableWidth, height: visibleHeight, alignment: .top)
+                    .clipped()
+                    .cornerRadius(isFullBleed ? 0 : 12)
+                    
+                    ZStack(alignment: .topLeading) {
+                        videoLayer
                         
+                        if let cueOverlay {
+                            CueOverlayView(overlay: cueOverlay)
+                                .padding(.top, cueTopPadding)
+                                .padding(.horizontal, 12)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                                .transition(.opacity)
+                        }
                     }
                     .frame(width: availableWidth, height: visibleHeight)
-                    .cornerRadius(12)
+                    .cornerRadius(isFullBleed ? 0 : 12)
                 } else {
                     Rectangle()
                         .fill(telemetryBackground)
                         .frame(width: availableWidth, height: visibleHeight)
                         .overlay(loadingOverlay)
-                        .cornerRadius(12)
+                        .cornerRadius(isFullBleed ? 0 : 12)
                 }
             }
             .frame(maxWidth: .infinity)
@@ -311,6 +342,7 @@ final class PlaybackController: ObservableObject {
     @Published var currentTime: Double = 0
     @Published var duration: Double = 0
     @Published var playerStatus: AVPlayerItem.Status = .unknown
+    @Published var nominalFrameRate: Double = 30.0
     
     private let videoURL: URL
     private let statusObserver = PlayerStatusObserver()
@@ -354,6 +386,11 @@ final class PlaybackController: ObservableObject {
                     ]
                     VideoProcessingHelpers.writeDebugLog("Video player track info", data: logData, location: "VideoPlayerView.swift:PlaybackController")
                     // #endregion
+                    if let frameRate, frameRate > 0 {
+                        await MainActor.run {
+                            self.nominalFrameRate = Double(frameRate)
+                        }
+                    }
                 }
             }
         }

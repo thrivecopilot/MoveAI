@@ -17,10 +17,12 @@ final class LayoutTests: XCTestCase {
     func testVideoPlayerViewNormalModeHasConstrainedHeight() throws {
         // Given: A VideoPlayerView in normal mode
         let videoURL = URL(fileURLWithPath: "/test/video.mp4")
+        let playback = PlaybackController(videoURL: videoURL)
         let videoView = VideoPlayerView(
             videoURL: videoURL,
             poseData: nil,
-            isFullScreenMode: false
+            isFullScreenMode: false,
+            playback: playback
         )
         
         // When: View is rendered
@@ -64,10 +66,12 @@ final class LayoutTests: XCTestCase {
     func testVideoPlayerViewFillsAvailableWidth() throws {
         // Given: A VideoPlayerView in normal mode
         let videoURL = URL(fileURLWithPath: "/test/video.mp4")
+        let playback = PlaybackController(videoURL: videoURL)
         let videoView = VideoPlayerView(
             videoURL: videoURL,
             poseData: nil,
-            isFullScreenMode: false
+            isFullScreenMode: false,
+            playback: playback
         )
         
         // When: View is rendered with a container width
@@ -97,7 +101,7 @@ final class LayoutTests: XCTestCase {
         )
         
         let sessionManager = SessionManager()
-        let detailView = SessionDetailView(session: mockSession, sessionManager: sessionManager)
+        let detailView = SessionDetailView(session: mockSession, sessionManager: sessionManager, onExit: nil)
         
         // When: View is rendered
         let viewController = UIHostingController(rootView: detailView)
@@ -119,10 +123,12 @@ final class LayoutTests: XCTestCase {
     func testVideoPlayerViewHasControlsBelowVideo() throws {
         // Given: A VideoPlayerView in normal mode
         let videoURL = URL(fileURLWithPath: "/test/video.mp4")
+        let playback = PlaybackController(videoURL: videoURL)
         let videoView = VideoPlayerView(
             videoURL: videoURL,
             poseData: nil,
-            isFullScreenMode: false
+            isFullScreenMode: false,
+            playback: playback
         )
         
         // When: View is rendered
@@ -185,10 +191,12 @@ final class LayoutTests: XCTestCase {
     func testVideoPlayerViewDoesNotExpandInfinitely() throws {
         // Regression test: VideoPlayerView should not expand to fill entire ScrollView
         let videoURL = URL(fileURLWithPath: "/test/video.mp4")
+        let playback = PlaybackController(videoURL: videoURL)
         let videoView = VideoPlayerView(
             videoURL: videoURL,
             poseData: nil,
-            isFullScreenMode: false
+            isFullScreenMode: false,
+            playback: playback
         )
         
         // Create a ScrollView container (like SessionDetailView uses)
@@ -238,4 +246,3 @@ final class LayoutTests: XCTestCase {
                             "There should be a height difference indicating cropping")
     }
 }
-

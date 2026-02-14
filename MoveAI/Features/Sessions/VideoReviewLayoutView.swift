@@ -5,6 +5,7 @@
 //  Video + timeline + tabs (Overview / Issues / Notes). Designed to be
 //  presented in the native system sheet (same as first-results after upload)
 //  so the sheet’s presentationDetents provide the draggable behavior.
+//  Requirements: docs/screens/video-review.md
 //
 
 import SwiftUI
@@ -21,83 +22,121 @@ struct VideoReviewLayoutView: View {
     @State private var sheetState: AnalysisSheetState = .medium
     @State private var dragOffset: CGFloat = 0
     @State private var seekToTime: TimeInterval?
-    @State private var isVideoFullScreen = false
     @State private var notes: String = ""
     @State private var isEditingNotes = false
     @State private var isAnalyzing = false
     @State private var analysisErrorMessage: String?
+    @State private var cueOverlay: CoachingCueOverlay?
+    @State private var pausedCueTask: Task<Void, Never>?
+    @State private var playbackBarHeight: CGFloat = 0
+    @State private var minCollapsedHeight: CGFloat = DragHandleMetrics.minCollapsedHeight
     
     @StateObject private var playback: PlaybackController
+    @StateObject private var reviewModel: SessionReviewViewModel
     
     private let backgroundColor = Color(red: 0.04, green: 0.05, blue: 0.07)
-    @State private var controlsBarHeight: CGFloat = 0
     private let analysisService: AnalysisServiceProtocol = PoseBasedAnalysisService()
     
-    init(session: Session, sessionManager: SessionManager, onExit: (() -> Void)? = nil) {
+    init(
+        session: Session,
+        sessionManager: SessionManager,
+        onExit: (() -> Void)? = nil,
+        initialSheetState: AnalysisSheetState = .medium,
+        initialTab: AnalysisSheetTab = .overview
+    ) {
         self.session = session
         self.sessionManager = sessionManager
         self.onExit = onExit
+        _sheetState = State(initialValue: initialSheetState)
+        _selectedTab = State(initialValue: initialTab)
         _playback = StateObject(wrappedValue: PlaybackController(videoURL: session.videoURL))
+        _reviewModel = StateObject(wrappedValue: SessionReviewViewModel(analysisResult: session.analysisResult))
     }
     
     var body: some View {
         NavigationStack {
             GeometryReader { geometry in
                 let totalHeight = geometry.size.height
-                let currentSheetHeight = sheetHeight(for: sheetState, totalHeight: totalHeight)
-                let collapsedHeight = sheetHeight(for: .collapsed, totalHeight: totalHeight)
-                let expandedHeight = sheetHeight(for: .expanded, totalHeight: totalHeight)
+                let topInset = geometry.safeAreaInsets.top
+                let bottomInset = geometry.safeAreaInsets.bottom
+                let fullHeight = totalHeight + topInset + bottomInset
+                let topBarHeight: CGFloat = 54
+                let estimatedBarHeight: CGFloat = 72
+                let playbackHeight = max(playbackBarHeight, estimatedBarHeight)
+                let availableSheetHeight = max(0, totalHeight - playbackHeight)
+                let collapsedHeight = sheetHeight(for: .collapsed, availableHeight: availableSheetHeight)
+                let mediumHeight = sheetHeight(for: .medium, availableHeight: availableSheetHeight)
+                let expandedHeight = sheetHeight(for: .expanded, availableHeight: availableSheetHeight)
+                let currentSheetHeight = sheetHeight(for: sheetState, availableHeight: availableSheetHeight)
                 let maxUp = -(expandedHeight - currentSheetHeight)
                 let maxDown = max(0, currentSheetHeight - collapsedHeight)
+                let detentHeights: [AnalysisSheetState: CGFloat] = [
+                    .collapsed: collapsedHeight,
+                    .medium: mediumHeight,
+                    .expanded: expandedHeight
+                ]
+                
+                let effectiveSheetHeight = max(0, currentSheetHeight - dragOffset)
                 
                 ZStack(alignment: .bottom) {
                     backgroundColor
                         .ignoresSafeArea()
                     
-                    videoSection(constrainedHeight: totalHeight)
-                        .frame(height: totalHeight)
-                        .frame(maxWidth: .infinity)
+                    videoSection(constrainedHeight: fullHeight, cueTopPadding: topInset + topBarHeight + 12)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        .offset(y: -topInset)
                         .ignoresSafeArea()
                     
-                    if dragOffset != 0 {
-                        Color(red: 0.06, green: 0.08, blue: 0.11)
-                            .frame(height: currentSheetHeight)
+                    VStack(spacing: 0) {
+                        analysisSheet(
+                            maxUp: maxUp,
+                            maxDown: maxDown,
+                            currentHeight: currentSheetHeight,
+                            detentHeights: detentHeights
+                        )
+                            .frame(height: effectiveSheetHeight)
                             .frame(maxWidth: .infinity)
-                            .offset(y: dragOffset)
-                            .padding(.bottom, controlsBarHeight)
+                            .accessibilityIdentifier("VideoReviewSheet")
+                            .accessibilityElement(children: .contain)
+                            .animation(.interactiveSpring(), value: sheetState)
                     }
-                    
-                    analysisSheet(maxUp: maxUp, maxDown: maxDown)
-                    .frame(height: currentSheetHeight)
                     .frame(maxWidth: .infinity)
-                    .animation(.interactiveSpring(), value: sheetState)
-                    .padding(.bottom, controlsBarHeight)
                 }
-                .overlay(alignment: .top) {
-                    topBar
+            }
+            .safeAreaInset(edge: .top) {
+                topBar(topInset: 0)
+            }
+            .safeAreaInset(edge: .bottom) {
+                PlaybackControlsBar(
+                    playback: playback,
+                    analysisResult: session.analysisResult,
+                    issueMarkers: reviewModel.markers().map {
+                        VideoTimelineView.IssueMarker(
+                            id: $0.id,
+                            timestamp: $0.time,
+                            label: nil,
+                            severity: $0.severity
+                        )
+                    },
+                    highlightedFeedbackIds: reviewModel.highlightedMarkerIds(),
+                    onMarkerTap: handleMarkerTap(_:)
+                )
+                .background(
+                    GeometryReader { proxy in
+                        Color.clear.preference(key: PlaybackBarHeightKey.self, value: proxy.size.height)
+                    }
+                )
+            }
+            .onPreferenceChange(PlaybackBarHeightKey.self) { newValue in
+                if newValue > 0 {
+                    playbackBarHeight = newValue
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .navigationBar)
             .toolbar(.hidden, for: .tabBar)
-            .overlay(alignment: .bottom) {
-                PlaybackControlsBar(
-                    playback: playback,
-                    analysisResult: session.analysisResult,
-                    highlightedFeedbackIds: [],
-                    onFullScreenToggle: { isVideoFullScreen = true }
-                )
-                .background(
-                    GeometryReader { proxy in
-                        Color.clear
-                            .preference(key: ControlsBarHeightKey.self, value: proxy.size.height)
-                    }
-                )
-            }
-            .onPreferenceChange(ControlsBarHeightKey.self) { newValue in
-                controlsBarHeight = newValue
-            }
         }
+        .accessibilityIdentifier("VideoReviewLayoutView")
         .onAppear {
             notes = session.notes ?? ""
             tabBarVisibility.isHidden = true
@@ -105,36 +144,52 @@ struct VideoReviewLayoutView: View {
         .onDisappear {
             tabBarVisibility.isHidden = false
         }
+        .onReceive(playback.$currentTime) { newTime in
+            reviewModel.updatePlayback(
+                currentTime: newTime,
+                isPlaying: playback.isPlaying,
+                fps: playback.nominalFrameRate
+            )
+            schedulePausedCueCheck()
+        }
+        .onReceive(playback.$isPlaying) { _ in
+            reviewModel.updatePlayback(
+                currentTime: playback.currentTime,
+                isPlaying: playback.isPlaying,
+                fps: playback.nominalFrameRate
+            )
+            if playback.isPlaying {
+                cueOverlay = nil
+            }
+            schedulePausedCueCheck()
+        }
+        .onChange(of: session.analysisResult?.score ?? -1) { _ in
+            reviewModel.setAnalysisResult(session.analysisResult)
+        }
         .task(id: session.analysisResult?.score ?? -1) {
             await maybeStartAnalysis()
         }
-        .fullScreenCover(isPresented: $isVideoFullScreen) {
-            FullScreenVideoView(
-                videoURL: session.videoURL,
-                poseData: session.poseData,
-                isRecordedLive: session.isRecordedLive,
-                sessionTitle: session.displayName,
-                playback: playback
-            )
-        }
     }
     
-    private func videoSection(constrainedHeight: CGFloat) -> some View {
+    private func videoSection(constrainedHeight: CGFloat, cueTopPadding: CGFloat) -> some View {
         VideoPlayerView(
             videoURL: session.videoURL,
             poseData: session.poseData,
             isRecordedLive: session.isRecordedLive,
             analysisResult: session.analysisResult,
             constrainedHeight: constrainedHeight,
-            maxVisibleHeightRatio: sheetState == .hidden ? 1.0 : 0.85,
+            maxVisibleHeightRatio: 1.0,
             seekToTime: $seekToTime,
-            onFullScreenToggle: { isVideoFullScreen = true },
-            playback: playback
+            onFullScreenToggle: { sheetState = .collapsed },
+            playback: playback,
+            cueOverlay: visibleCueOverlay,
+            cueTopPadding: cueTopPadding,
+            isFullBleed: true
         )
         .clipped()
     }
 
-    private var topBar: some View {
+    private func topBar(topInset: CGFloat) -> some View {
         HStack(spacing: 12) {
             Button(action: {
                 if let onExit = onExit {
@@ -157,6 +212,7 @@ struct VideoReviewLayoutView: View {
                 .font(.headline)
                 .foregroundColor(.white)
                 .lineLimit(1)
+                .shadow(color: .black.opacity(0.4), radius: 2, x: 0, y: 1)
             
             Spacer()
             
@@ -164,36 +220,46 @@ struct VideoReviewLayoutView: View {
                 .frame(width: 32, height: 32)
         }
         .padding(.horizontal, 16)
-        .padding(.top, 10)
-        .padding(.bottom, 12)
+        .padding(.top, topInset)
+        .padding(.bottom, 8)
         .background(
             LinearGradient(
-                colors: [Color.black.opacity(0.65), Color.black.opacity(0.0)],
+                colors: [Color.black.opacity(0.6), Color.black.opacity(0.0)],
                 startPoint: .top,
                 endPoint: .bottom
             )
         )
     }
 
-    private func analysisSheet(maxUp: CGFloat, maxDown: CGFloat) -> some View {
+    private func analysisSheet(
+        maxUp: CGFloat,
+        maxDown: CGFloat,
+        currentHeight: CGFloat,
+        detentHeights: [AnalysisSheetState: CGFloat]
+    ) -> some View {
         DraggableAnalysisSheet(
             sheetState: $sheetState,
             selectedTab: $selectedTab,
             dragOffset: $dragOffset,
+            minCollapsedHeight: $minCollapsedHeight,
+            currentHeight: currentHeight,
+            detentHeights: detentHeights,
             maxUp: maxUp,
             maxDown: maxDown,
             overviewContent: { overviewTabContent },
             issuesContent: {
-                if let result = session.analysisResult {
-                    GroupedIssuesTabView(
-                        analysisResult: result,
-                        onSeekToTime: { seekToTime = $0 }
-                    )
-                } else {
-                    Text("No analysis yet")
-                        .foregroundColor(.secondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
+                IssueSummaryTabView(
+                    issues: reviewModel.issues,
+                    selectedIssueId: reviewModel.selectedIssueId,
+                    onSelectIssue: { issue in
+                        reviewModel.selectIssue(issue)
+                        handleIssueSelection(issue)
+                    },
+                    onSelectOccurrence: { issue, occurrence in
+                        reviewModel.selectOccurrence(occurrence, issueId: issue.id)
+                        handleOccurrenceSelection(issue: issue, occurrence: occurrence, fromExplicitTap: true)
+                    }
+                )
             },
             notesContent: {
                 NotesTabView(
@@ -232,6 +298,56 @@ struct VideoReviewLayoutView: View {
             isRecordedLive: session.isRecordedLive
         )
         sessionManager.updateSession(updated)
+    }
+
+    private func handleIssueSelection(_ issue: IssueSummary) {
+        let time = issue.worstOccurrence.time
+        playback.performSeek(to: time)
+        reviewModel.seek(to: time, fps: playback.nominalFrameRate)
+        cueOverlay = reviewModel.cueOverlay(for: issue)
+    }
+    
+    private func handleOccurrenceSelection(issue: IssueSummary, occurrence: IssueOccurrence, fromExplicitTap: Bool) {
+        playback.performSeek(to: occurrence.time)
+        reviewModel.seek(to: occurrence.time, fps: playback.nominalFrameRate)
+        if fromExplicitTap {
+            cueOverlay = reviewModel.cueOverlay(for: issue, occurrence: occurrence)
+        }
+    }
+    
+    private func handleMarkerTap(_ marker: VideoTimelineView.IssueMarker) {
+        playback.performSeek(to: marker.timestamp)
+        reviewModel.seek(to: marker.timestamp, fps: playback.nominalFrameRate)
+        if let match = reviewModel.occurrence(at: marker.timestamp, tolerance: 0.2) {
+            reviewModel.selectOccurrence(match.occurrence, issueId: match.issue.id)
+            cueOverlay = reviewModel.cueOverlay(for: match.issue, occurrence: match.occurrence)
+        }
+    }
+    
+    private func schedulePausedCueCheck() {
+        pausedCueTask?.cancel()
+        guard !playback.isPlaying else { return }
+        let pausedTime = playback.currentTime
+        
+        pausedCueTask = Task {
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            await MainActor.run {
+                guard !playback.isPlaying else { return }
+                guard abs(playback.currentTime - pausedTime) < 0.05 else { return }
+                if let match = reviewModel.occurrence(at: pausedTime, tolerance: 0.2) {
+                    cueOverlay = reviewModel.cueOverlay(for: match.issue, occurrence: match.occurrence)
+                }
+            }
+        }
+    }
+
+    private var visibleCueOverlay: CoachingCueOverlay? {
+        switch sheetState {
+        case .collapsed:
+            return cueOverlay
+        case .medium, .expanded:
+            return nil
+        }
     }
     
     private var analysisLoadingView: some View {
@@ -310,17 +426,26 @@ struct VideoReviewLayoutView: View {
         }
     }
     
-    private func sheetHeight(for state: AnalysisSheetState, totalHeight: CGFloat) -> CGFloat {
-        if state == .hidden {
-            return 30
+    private func sheetHeight(for state: AnalysisSheetState, availableHeight: CGFloat) -> CGFloat {
+        let maxHeight = availableHeight * 0.95
+        let baseHeight = availableHeight * state.sheetFraction
+        let handleMinHeight = minCollapsedHeight
+        
+        switch state {
+        case .collapsed:
+            let safeMin = max(handleMinHeight, DragHandleMetrics.minCollapsedHeight)
+            return min(maxHeight, safeMin)
+        case .medium:
+            return min(maxHeight, max(220, baseHeight))
+        case .expanded:
+            return min(maxHeight, max(320, baseHeight))
         }
-        let baseHeight = totalHeight * state.sheetFraction
-        return max(180, min(totalHeight * 0.9, baseHeight))
     }
 }
 
-private struct ControlsBarHeightKey: PreferenceKey {
+private struct PlaybackBarHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
+    
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = max(value, nextValue())
     }

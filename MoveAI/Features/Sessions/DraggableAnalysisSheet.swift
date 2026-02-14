@@ -2,46 +2,28 @@
 //  DraggableAnalysisSheet.swift
 //  MoveAI
 //
-//  Apple Maps–style draggable sheet with three states: collapsed (video-first),
+//  Apple Maps–style draggable sheet with three states: collapsed (handle-only),
 //  medium (analysis default), and expanded (reading/study).
+//  Requirements: docs/screens/video-review.md
 //
 
 import SwiftUI
 
 /// Sheet presentation state. Video height is the complement of sheet height.
 enum AnalysisSheetState: Int, CaseIterable {
-    case hidden     // Handle only (video full height)
-    case collapsed  // Video ~80%, sheet shows tab bar only
-    case medium     // Video ~55%, sheet shows cards (default)
-    case expanded   // Video ~20%, sheet shows full content
+    /// Handle only; always visible so user can drag up.
+    case collapsed
+    /// Score, rep summary, and top fixes (Overview-style).
+    case medium
+    /// Full content: all tabs, scrollable.
+    case expanded
     
     /// Fraction of content area given to the sheet (0...1). Video gets (1 - fraction).
     var sheetFraction: Double {
         switch self {
-        case .hidden:    return 0.0
         case .collapsed: return 0.20
         case .medium:   return 0.45
         case .expanded: return 0.80
-        }
-    }
-    
-    /// Next state when dragging up (expand).
-    var nextUp: AnalysisSheetState? {
-        switch self {
-        case .hidden:    return .collapsed
-        case .collapsed: return .medium
-        case .medium:    return .expanded
-        case .expanded:  return nil
-        }
-    }
-    
-    /// Next state when dragging down (collapse).
-    var nextDown: AnalysisSheetState? {
-        switch self {
-        case .hidden:    return nil
-        case .collapsed: return .hidden
-        case .medium:    return .collapsed
-        case .expanded:  return .medium
         }
     }
 }
@@ -55,11 +37,24 @@ enum AnalysisSheetTab: String, CaseIterable {
 
 // MARK: - Draggable Analysis Sheet
 
+enum DragHandleMetrics {
+    static let height: CGFloat = 4
+    static let paddingTop: CGFloat = 10
+    static let paddingBottom: CGFloat = 8
+    /// Minimum height so the handle isn’t clipped by the sheet’s top corner radius (20pt).
+    /// Need room below the curve for padding + handle + padding.
+    static let minCollapsedHeight: CGFloat = 52
+}
+
 struct DraggableAnalysisSheet<OverviewContent: View, IssuesContent: View, NotesContent: View>: View {
+
     @Binding var sheetState: AnalysisSheetState
     @Binding var selectedTab: AnalysisSheetTab
     /// Optional: parent can bind to read current drag offset for layout (e.g. video height).
     @Binding var dragOffset: CGFloat
+    @Binding var minCollapsedHeight: CGFloat
+    let currentHeight: CGFloat
+    let detentHeights: [AnalysisSheetState: CGFloat]
     let maxUp: CGFloat
     let maxDown: CGFloat
     
@@ -69,8 +64,12 @@ struct DraggableAnalysisSheet<OverviewContent: View, IssuesContent: View, NotesC
     
     @GestureState private var isDragging = false
     
-    private let snapThreshold: CGFloat = 30
-    private let dragHandleHeight: CGFloat = 24
+    /// Smaller radius when collapsed so the handle stays in flat area and is always visible.
+    private var sheetCornerRadius: CGFloat { sheetState == .collapsed ? 12 : 20 }
+    
+    private let dragHandleHeight: CGFloat = DragHandleMetrics.height
+    private let dragHandlePaddingTop: CGFloat = DragHandleMetrics.paddingTop
+    private let dragHandlePaddingBottom: CGFloat = DragHandleMetrics.paddingBottom
     
     private let sheetBackground = Color(red: 0.06, green: 0.08, blue: 0.11)
     private let sheetSurface = Color(red: 0.09, green: 0.12, blue: 0.17)
@@ -82,6 +81,9 @@ struct DraggableAnalysisSheet<OverviewContent: View, IssuesContent: View, NotesC
         sheetState: Binding<AnalysisSheetState>,
         selectedTab: Binding<AnalysisSheetTab>,
         dragOffset: Binding<CGFloat> = .constant(0),
+        minCollapsedHeight: Binding<CGFloat> = .constant(0),
+        currentHeight: CGFloat = 0,
+        detentHeights: [AnalysisSheetState: CGFloat] = [:],
         maxUp: CGFloat = -240,
         maxDown: CGFloat = 240,
         @ViewBuilder overviewContent: @escaping () -> OverviewContent,
@@ -91,6 +93,9 @@ struct DraggableAnalysisSheet<OverviewContent: View, IssuesContent: View, NotesC
         self._sheetState = sheetState
         self._selectedTab = selectedTab
         self._dragOffset = dragOffset
+        self._minCollapsedHeight = minCollapsedHeight
+        self.currentHeight = currentHeight
+        self.detentHeights = detentHeights
         self.maxUp = maxUp
         self.maxDown = maxDown
         self.overviewContent = overviewContent
@@ -101,7 +106,7 @@ struct DraggableAnalysisSheet<OverviewContent: View, IssuesContent: View, NotesC
     var body: some View {
         VStack(spacing: 0) {
             dragHandle
-            if sheetState != .hidden {
+            if sheetState == .medium || sheetState == .expanded {
                 tabBar
                 
                 sheetContent
@@ -109,15 +114,15 @@ struct DraggableAnalysisSheet<OverviewContent: View, IssuesContent: View, NotesC
                     .clipped()
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(isDragging ? sheetBackground.opacity(1.0) : sheetBackground)
         .overlay(
-            RoundedRectangle(cornerRadius: 20)
+            RoundedRectangle(cornerRadius: sheetCornerRadius)
                 .stroke(sheetStroke, lineWidth: 1)
                 .padding(.top, 1)
         )
-        .cornerRadius(20, corners: [.topLeft, .topRight])
+        .cornerRadius(sheetCornerRadius, corners: [.topLeft, .topRight])
         .shadow(color: .black.opacity(0.35), radius: 12, x: 0, y: -4)
-        .offset(y: dragOffset)
         .gesture(
             DragGesture()
                 .updating($isDragging) { _, state, _ in state = true }
@@ -126,37 +131,18 @@ struct DraggableAnalysisSheet<OverviewContent: View, IssuesContent: View, NotesC
                     dragOffset = rubberBand(translation, min: maxUp, max: maxDown)
                 }
                 .onEnded { value in
-                    let translation = value.translation.height
-                    let velocity = value.predictedEndTranslation.height - translation
+                    let predictedTranslation = value.predictedEndTranslation.height
+                    let targetHeight = max(0, currentHeight - predictedTranslation)
                     
-                    if velocity < -100 {
-                        // Fast swipe up → expand
-                        if let next = sheetState.nextUp {
-                            withAnimation(.interactiveSpring()) {
-                                sheetState = next
-                            }
-                        }
-                    } else if velocity > 100 {
-                        // Fast swipe down → collapse
-                        if let next = sheetState.nextDown {
-                            withAnimation(.interactiveSpring()) {
-                                sheetState = next
-                            }
-                        }
-                    } else if translation < -snapThreshold, let next = sheetState.nextUp {
+                    if let nearest = nearestDetent(for: targetHeight) {
                         withAnimation(.interactiveSpring()) {
-                            sheetState = next
-                        }
-                    } else if translation > snapThreshold, let next = sheetState.nextDown {
-                        withAnimation(.interactiveSpring()) {
-                            sheetState = next
+                            sheetState = nearest
                         }
                     }
                     
                     withAnimation(.interactiveSpring(response: 0.35, dampingFraction: 0.85, blendDuration: 0.15)) {
                         dragOffset = 0
                     }
-                    // Note: dragOffset binding is reset above so parent layout updates
                 }
         )
     }
@@ -165,9 +151,9 @@ struct DraggableAnalysisSheet<OverviewContent: View, IssuesContent: View, NotesC
     private var dragHandle: some View {
         RoundedRectangle(cornerRadius: 2)
             .fill(Color.white.opacity(0.35))
-            .frame(width: 44, height: 4)
-            .padding(.top, 10)
-            .padding(.bottom, 8)
+            .frame(width: 44, height: dragHandleHeight)
+            .padding(.top, dragHandlePaddingTop)
+            .padding(.bottom, dragHandlePaddingBottom)
             .frame(maxWidth: .infinity)
             .background(
                 ZStack {
@@ -182,6 +168,21 @@ struct DraggableAnalysisSheet<OverviewContent: View, IssuesContent: View, NotesC
                     .frame(maxHeight: .infinity, alignment: .top)
                 }
             )
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(key: DragHandleHeightKey.self, value: proxy.size.height)
+                }
+            )
+            .onPreferenceChange(DragHandleHeightKey.self) { newValue in
+                if newValue > 0 {
+                    minCollapsedHeight = newValue
+                }
+            }
+            .onAppear {
+                if minCollapsedHeight <= 0 {
+                    minCollapsedHeight = DragHandleMetrics.minCollapsedHeight
+                }
+            }
     }
     
     private var tabBar: some View {
@@ -228,6 +229,13 @@ struct DraggableAnalysisSheet<OverviewContent: View, IssuesContent: View, NotesC
         }
         return value
     }
+    
+    private func nearestDetent(for height: CGFloat) -> AnalysisSheetState? {
+        let candidates = detentHeights
+            .filter { $0.value > 0 }
+            .sorted { abs($0.value - height) < abs($1.value - height) }
+        return candidates.first?.key
+    }
 }
 
 // MARK: - Corner Radius Extension
@@ -249,6 +257,14 @@ struct RoundedCornerShape: Shape {
             cornerRadii: CGSize(width: radius, height: radius)
         )
         return Path(path.cgPath)
+    }
+}
+
+private struct DragHandleHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
 

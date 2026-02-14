@@ -3,6 +3,7 @@
 //  MoveAI
 //
 //  Created by Dave Mathew on 10/11/25.
+//  Requirements: docs/screens/video-review.md
 //
 
 import SwiftUI
@@ -13,11 +14,10 @@ struct VideoImportView: View {
     let movementType: MovementType
     let sessionManager: SessionManager
     let onVideoProcessed: (MovementRecording) -> Void
+    let onSessionCreated: (Session) -> Void
     
     @StateObject private var videoProcessor = VideoProcessor()
     @State private var selectedItem: PhotosPickerItem?
-    @State private var showingSessionDetail = false
-    @State private var createdSession: Session?
     @State private var errorMessage: String?
     @State private var showingError = false
     
@@ -54,18 +54,6 @@ struct VideoImportView: View {
             } message: {
                 if let errorMessage = errorMessage {
                     Text(errorMessage)
-                }
-            }
-            .navigationDestination(isPresented: $showingSessionDetail) {
-                if let session = createdSession {
-                    SessionDetailView(
-                        session: session,
-                        sessionManager: sessionManager,
-                        onExit: {
-                            showingSessionDetail = false
-                            dismiss()
-                        }
-                    )
                 }
             }
         }
@@ -232,8 +220,7 @@ struct VideoImportView: View {
                 // Call the callback
                 onVideoProcessed(recording)
                 
-                createdSession = session
-                showingSessionDetail = true
+                onSessionCreated(session)
             }
             
         } catch {
@@ -249,6 +236,7 @@ struct VideoImportView: View {
     VideoImportView(
         movementType: .squat,
         sessionManager: SessionManager(),
-        onVideoProcessed: { _ in }
+        onVideoProcessed: { _ in },
+        onSessionCreated: { _ in }
     )
 }

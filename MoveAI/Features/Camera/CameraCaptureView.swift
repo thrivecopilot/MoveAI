@@ -3,6 +3,7 @@
 //  MoveAI
 //
 //  Created by Dave Mathew on 10/11/25.
+//  Requirements: docs/screens/video-review.md
 //
 
 import SwiftUI
@@ -13,18 +14,18 @@ struct CameraCaptureView: View {
     @ObservedObject var cameraService: CameraService
     let sessionManager: SessionManager
     let onRecordingComplete: (MovementRecording) -> Void
+    let onSessionCreated: (Session) -> Void
     
     @State private var previewLayer: AVCaptureVideoPreviewLayer?
-    @State private var showingAnalysis = false
-    @State private var completedRecording: MovementRecording?
-    @State private var sessionId: UUID?
+    @Environment(\.dismiss) private var dismiss
     
-    init(movementType: MovementType, cameraService: CameraService, sessionManager: SessionManager, onRecordingComplete: @escaping (MovementRecording) -> Void) {
+    init(movementType: MovementType, cameraService: CameraService, sessionManager: SessionManager, onRecordingComplete: @escaping (MovementRecording) -> Void, onSessionCreated: @escaping (Session) -> Void) {
         print("📷 CameraCaptureView: Initializing for movement: \(movementType.displayName)")
         self.movementType = movementType
         self.cameraService = cameraService
         self.sessionManager = sessionManager
         self.onRecordingComplete = onRecordingComplete
+        self.onSessionCreated = onSessionCreated
         print("📷 CameraCaptureView: Camera service hasPermission: \(cameraService.hasPermission)")
     }
     
@@ -85,7 +86,7 @@ struct CameraCaptureView: View {
                 // Top controls
                 HStack {
                     Button("Cancel") {
-                        // TODO: Handle cancel
+                        dismiss()
                     }
                     .foregroundColor(.white)
                     .padding()
@@ -213,28 +214,6 @@ struct CameraCaptureView: View {
                 setupPreviewLayer()
             }
         }
-        .sheet(isPresented: $showingAnalysis) {
-            if let recording = completedRecording {
-                NavigationView {
-                    AnalysisResultsView(
-                        recording: recording,
-                        sessionId: sessionId,
-                        sessionManager: sessionManager
-                    )
-                    .navigationTitle("Analysis Results")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .navigationBarTrailing) {
-                            Button("Done") {
-                                showingAnalysis = false
-                            }
-                        }
-                    }
-                }
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
-            }
-        }
     }
     
     private func setupPreviewLayer() {
@@ -306,14 +285,10 @@ struct CameraCaptureView: View {
             isRecordedLive: true  // Live camera recording
         )
         
-        // Store session ID for passing to AnalysisResultsView
-        sessionId = session.id
-        
         // Add to session manager
         sessionManager.addSession(session)
         
-        completedRecording = recording
-        showingAnalysis = true
+        onSessionCreated(session)
         onRecordingComplete(recording)
     }
     
@@ -368,6 +343,7 @@ struct CameraPreviewView: UIViewRepresentable {
         movementType: .squat,
         cameraService: CameraService(),
         sessionManager: SessionManager(),
-        onRecordingComplete: { _ in }
+        onRecordingComplete: { _ in },
+        onSessionCreated: { _ in }
     )
 }

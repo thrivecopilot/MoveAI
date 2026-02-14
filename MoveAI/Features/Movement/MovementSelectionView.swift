@@ -3,6 +3,7 @@
 //  MoveAI
 //
 //  Created by Dave Mathew on 10/11/25.
+//  Requirements: docs/screens/video-review.md
 //
 
 import SwiftUI
@@ -14,6 +15,8 @@ struct MovementSelectionView: View {
     @State private var showingVideoImport = false
     @State private var selectedMovement: MovementType?
     @State private var captureMode: CaptureMode = .record
+    @State private var pendingSession: Session?
+    @State private var showingSessionDetail = false
     
     enum CaptureMode {
         case record
@@ -21,7 +24,7 @@ struct MovementSelectionView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 0) {
                 // Mode Selection
                 Picker("Mode", selection: $captureMode) {
@@ -55,6 +58,18 @@ struct MovementSelectionView: View {
             }
             .navigationTitle(captureMode == .record ? "Record Movement" : "Upload Video")
             .navigationBarTitleDisplayMode(.large)
+            .navigationDestination(isPresented: $showingSessionDetail) {
+                if let session = pendingSession {
+                    SessionDetailView(
+                        session: session,
+                        sessionManager: sessionManager,
+                        onExit: {
+                            showingSessionDetail = false
+                            pendingSession = nil
+                        }
+                    )
+                }
+            }
             .sheet(isPresented: $showingCamera) {
                 if let movement = selectedMovement {
                     CameraCaptureView(
@@ -64,6 +79,10 @@ struct MovementSelectionView: View {
                         onRecordingComplete: { recording in
                             // Session is created in CameraCaptureView
                             print("Recording completed: \(recording.id)")
+                        },
+                        onSessionCreated: { session in
+                            pendingSession = session
+                            showingCamera = false
                         }
                     )
                 }
@@ -76,8 +95,22 @@ struct MovementSelectionView: View {
                         onVideoProcessed: { recording in
                             // Session is created in VideoImportView
                             print("Video processed: \(recording.id)")
+                        },
+                        onSessionCreated: { session in
+                            pendingSession = session
+                            showingVideoImport = false
                         }
                     )
+                }
+            }
+            .onChange(of: showingCamera) { isShowing in
+                if !isShowing, pendingSession != nil {
+                    showingSessionDetail = true
+                }
+            }
+            .onChange(of: showingVideoImport) { isShowing in
+                if !isShowing, pendingSession != nil {
+                    showingSessionDetail = true
                 }
             }
         }

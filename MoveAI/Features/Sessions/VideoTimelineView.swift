@@ -30,11 +30,13 @@ struct VideoTimelineView: View {
     var goodMarkerColor: Color = .green
     var issueMarkerColor: Color = .orange
     var showTimeLabels: Bool = true
+    var onMarkerTap: ((IssueMarker) -> Void)?
     
     struct IssueMarker: Identifiable {
         let id: UUID
         let timestamp: TimeInterval
         let label: String?
+        let severity: FeedbackSeverity
     }
     
     @State private var isDragging = false
@@ -127,21 +129,22 @@ struct VideoTimelineView: View {
             ForEach(issueMarkers) { m in
                 let x = w * CGFloat(m.timestamp / safeDuration)
                 let highlighted = highlightedFeedbackIds.isEmpty || highlightedFeedbackIds.contains(m.id)
+                let markerColor = colorForSeverity(m.severity)
                 if style == .ticks {
                     Rectangle()
-                        .fill(highlighted ? issueMarkerColor : issueMarkerColor.opacity(0.4))
+                        .fill(highlighted ? markerColor : markerColor.opacity(0.4))
                         .frame(width: 2, height: 10)
                         .position(x: x, y: trackHeight / 2)
                         .allowsHitTesting(true)
-                        .onTapGesture { onSeek(m.timestamp) }
+                        .onTapGesture { onMarkerTap?(m) ?? onSeek(m.timestamp) }
                 } else {
                     Image(systemName: "triangle.fill")
                         .font(.system(size: 8))
-                        .foregroundColor(highlighted ? issueMarkerColor : issueMarkerColor.opacity(0.4))
+                        .foregroundColor(highlighted ? markerColor : markerColor.opacity(0.4))
                         .rotationEffect(.degrees(-180))
                         .position(x: x, y: trackHeight / 2)
                         .allowsHitTesting(true)
-                        .onTapGesture { onSeek(m.timestamp) }
+                        .onTapGesture { onMarkerTap?(m) ?? onSeek(m.timestamp) }
                 }
             }
         }
@@ -174,6 +177,15 @@ struct VideoTimelineView: View {
         let s = Int(t) % 60
         return String(format: "%d:%02d", m, s)
     }
+    
+    private func colorForSeverity(_ severity: FeedbackSeverity) -> Color {
+        switch severity {
+        case .critical: return Color(red: 1.0, green: 0.42, blue: 0.42)
+        case .warning: return Color(red: 1.0, green: 0.68, blue: 0.3)
+        case .good: return Color(red: 0.16, green: 0.97, blue: 0.65)
+        case .excellent: return Color(red: 0.24, green: 0.86, blue: 1.0)
+        }
+    }
 }
 
 /// Build good moments and issue markers from analysis result.
@@ -195,7 +207,7 @@ struct TimelineMarkers {
         }
         let issues = result.feedback
             .filter { $0.severity == .warning || $0.severity == .critical }
-            .map { VideoTimelineView.IssueMarker(id: $0.id, timestamp: $0.timestamp, label: $0.message) }
+            .map { VideoTimelineView.IssueMarker(id: $0.id, timestamp: $0.timestamp, label: $0.message, severity: $0.severity) }
         return TimelineMarkers(goodMoments: good, issueMarkers: issues)
     }
 }

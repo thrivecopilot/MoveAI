@@ -3,6 +3,7 @@
 //  MoveAI
 //
 //  Created by Dave Mathew on 10/11/25.
+//  Requirements: docs/screens/video-review.md
 //
 
 import SwiftUI
@@ -22,6 +23,8 @@ struct MovementMasteryHomeView: View {
     @State private var showingSessionHistory = false
     @State private var cameraView: CameraCaptureView?
     @State private var showingActionSheet = false
+    @State private var pendingSession: Session?
+    @State private var showingSessionDetail = false
     
     var body: some View {
         NavigationStack {
@@ -42,6 +45,18 @@ struct MovementMasteryHomeView: View {
             }
             .navigationTitle("MoveAI")
             .navigationBarTitleDisplayMode(.large)
+            .navigationDestination(isPresented: $showingSessionDetail) {
+                if let session = pendingSession {
+                    SessionDetailView(
+                        session: session,
+                        sessionManager: sessionManager,
+                        onExit: {
+                            showingSessionDetail = false
+                            pendingSession = nil
+                        }
+                    )
+                }
+            }
         }
         .sheet(isPresented: $showingCamera) {
             if let cameraView = cameraView {
@@ -53,9 +68,13 @@ struct MovementMasteryHomeView: View {
                 VideoImportView(
                     movementType: movement,
                     sessionManager: sessionManager,
-                    onVideoProcessed: { recording in
+                    onVideoProcessed: { _ in
                         // Session is now created in VideoImportView
                         // This callback is kept for any additional processing if needed
+                    },
+                    onSessionCreated: { session in
+                        pendingSession = session
+                        showingVideoImport = false
                     }
                 )
             }
@@ -66,11 +85,16 @@ struct MovementMasteryHomeView: View {
                 cameraView = CameraCaptureView(
                     movementType: movement,
                     cameraService: cameraService,
-                    sessionManager: sessionManager
-                ) { recordedMovement in
-                    // Session is now created in CameraCaptureView
-                    // This callback is kept for any additional processing if needed
-                }
+                    sessionManager: sessionManager,
+                    onRecordingComplete: { _ in
+                        // Session is now created in CameraCaptureView
+                        // This callback is kept for any additional processing if needed
+                    },
+                    onSessionCreated: { session in
+                        pendingSession = session
+                        showingCamera = false
+                    }
+                )
                 
                 showingCamera = true
             }
@@ -89,11 +113,17 @@ struct MovementMasteryHomeView: View {
                 print("🏠 MovementMasteryHomeView: Camera sheet dismissed, resetting selectedMovement")
                 selectedMovement = nil
                 cameraView = nil
+                if pendingSession != nil {
+                    showingSessionDetail = true
+                }
             }
         }
         .onChange(of: showingVideoImport) { isShowing in
             if !isShowing {
                 selectedMovement = nil
+                if pendingSession != nil {
+                    showingSessionDetail = true
+                }
             }
         }
     }

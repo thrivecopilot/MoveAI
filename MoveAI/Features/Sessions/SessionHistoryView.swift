@@ -3,6 +3,7 @@
 //  MoveAI
 //
 //  Created by Dave Mathew on 10/11/25.
+//  Requirements: docs/screens/video-review.md
 //
 
 import SwiftUI
@@ -11,6 +12,20 @@ import AVFoundation
 struct SessionHistoryView: View {
     @ObservedObject var sessionManager: SessionManager
     @State private var selectedMovement: MovementType?
+    let errorMessage: String?
+    let notesLineLimit: Int?
+
+    init(sessionManager: SessionManager) {
+        self.sessionManager = sessionManager
+        self.errorMessage = nil
+        self.notesLineLimit = 1
+    }
+
+    init(sessionManager: SessionManager, errorMessage: String? = nil, notesLineLimit: Int? = 1) {
+        self.sessionManager = sessionManager
+        self.errorMessage = errorMessage
+        self.notesLineLimit = notesLineLimit
+    }
     
     var body: some View {
         NavigationStack {
@@ -39,7 +54,9 @@ struct SessionHistoryView: View {
                 Divider()
                 
                 // Sessions List
-                if filteredSessions.isEmpty {
+                if let errorMessage = errorMessage {
+                    errorStateView(errorMessage)
+                } else if filteredSessions.isEmpty {
                     emptyStateView
                 } else {
                     sessionsList
@@ -47,6 +64,7 @@ struct SessionHistoryView: View {
             }
             .navigationTitle("Session History")
             .navigationBarTitleDisplayMode(.large)
+            .accessibilityIdentifier("SessionHistoryView")
         }
     }
     
@@ -78,6 +96,8 @@ struct SessionHistoryView: View {
             
             Spacer()
         }
+        .accessibilityIdentifier("SessionHistoryEmptyState")
+        .accessibilityElement(children: .contain)
     }
     
     private var sessionsList: some View {
@@ -85,13 +105,45 @@ struct SessionHistoryView: View {
             LazyVStack(spacing: 12) {
                 ForEach(filteredSessions) { session in
                     NavigationLink(destination: SessionDetailView(session: session, sessionManager: sessionManager, onExit: nil)) {
-                        SessionCard(session: session)
+                        SessionCard(session: session, notesLineLimit: notesLineLimit)
                     }
                     .buttonStyle(.plain)
                 }
             }
             .padding()
         }
+        .accessibilityIdentifier("SessionHistoryList")
+        .accessibilityElement(children: .contain)
+    }
+
+    private func errorStateView(_ message: String) -> some View {
+        VStack(spacing: 16) {
+            Spacer()
+
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 50))
+                .foregroundColor(.orange)
+
+            Text("Unable to Load Sessions")
+                .font(.title2)
+                .fontWeight(.semibold)
+
+            Text(message)
+                .font(.body)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
+
+            Button("Try Again") {
+                // Placeholder for real retry action in production flows.
+            }
+            .buttonStyle(.bordered)
+
+            Spacer()
+        }
+        .padding()
+        .accessibilityIdentifier("SessionHistoryErrorState")
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -117,7 +169,8 @@ struct FilterButton: View {
 
 struct SessionCard: View {
     let session: Session
-    
+    let notesLineLimit: Int?
+
     var body: some View {
         HStack(spacing: 16) {
             // Movement Icon
@@ -140,7 +193,7 @@ struct SessionCard: View {
                     Text(notes)
                         .font(.caption)
                         .foregroundColor(.secondary)
-                        .lineLimit(1)
+                        .lineLimit(notesLineLimit)
                 }
             }
             
@@ -211,51 +264,6 @@ struct SessionDetailView: View {
             sessionManager: sessionManager,
             onExit: onExit
         )
-    }
-}
-
-struct FullScreenVideoView: View {
-    let videoURL: URL
-    let poseData: [PoseDetectionResult]?
-    let isRecordedLive: Bool
-    let sessionTitle: String?
-    let playback: PlaybackController
-    @Environment(\.dismiss) var dismiss
-    
-    init(videoURL: URL, poseData: [PoseDetectionResult]?, isRecordedLive: Bool, sessionTitle: String? = nil, playback: PlaybackController) {
-        self.videoURL = videoURL
-        self.poseData = poseData
-        self.isRecordedLive = isRecordedLive
-        self.sessionTitle = sessionTitle
-        self.playback = playback
-    }
-    
-    var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-            
-            VideoPlayerView(
-                videoURL: videoURL,
-                poseData: poseData,
-                isRecordedLive: isRecordedLive,
-                isFullScreenMode: true,
-                playback: playback,
-                onExitFullScreen: { dismiss() },
-                fullScreenTitle: sessionTitle
-            )
-            .ignoresSafeArea(.all, edges: .all)
-            
-            VStack {
-                Spacer()
-                PlaybackControlsBar(
-                    playback: playback,
-                    analysisResult: nil,
-                    highlightedFeedbackIds: [],
-                    onFullScreenToggle: nil
-                )
-            }
-        }
-        .statusBar(hidden: true)
     }
 }
 
