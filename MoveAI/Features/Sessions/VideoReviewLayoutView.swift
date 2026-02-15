@@ -54,7 +54,8 @@ struct VideoReviewLayoutView: View {
     }
     
     var body: some View {
-        NavigationStack {
+        let currentSession = sessionManager.sessions.first(where: { $0.id == session.id }) ?? session
+        return NavigationStack {
             GeometryReader { geometry in
                 let totalHeight = geometry.size.height
                 let topInset = geometry.safeAreaInsets.top
@@ -82,17 +83,19 @@ struct VideoReviewLayoutView: View {
                     backgroundColor
                         .ignoresSafeArea()
                     
-                    videoSection(constrainedHeight: fullHeight, cueTopPadding: topInset + topBarHeight + 12)
+                    // Video fills the band edge-to-edge horizontally (Photos-like).
+                    videoSection(constrainedHeight: totalHeight, cueTopPadding: topBarHeight + 12)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                        .offset(y: -topInset)
-                        .ignoresSafeArea()
+                        .clipped()
+                        .ignoresSafeArea(edges: .horizontal)
                     
                     VStack(spacing: 0) {
                         analysisSheet(
                             maxUp: maxUp,
                             maxDown: maxDown,
                             currentHeight: currentSheetHeight,
-                            detentHeights: detentHeights
+                            detentHeights: detentHeights,
+                            sessionForContent: currentSession
                         )
                             .frame(height: effectiveSheetHeight)
                             .frame(maxWidth: .infinity)
@@ -103,13 +106,14 @@ struct VideoReviewLayoutView: View {
                     .frame(maxWidth: .infinity)
                 }
             }
+            .ignoresSafeArea(edges: .horizontal)
             .safeAreaInset(edge: .top) {
                 topBar(topInset: 0)
             }
             .safeAreaInset(edge: .bottom) {
                 PlaybackControlsBar(
                     playback: playback,
-                    analysisResult: session.analysisResult,
+                    analysisResult: currentSession.analysisResult,
                     issueMarkers: reviewModel.markers().map {
                         VideoTimelineView.IssueMarker(
                             id: $0.id,
@@ -137,9 +141,15 @@ struct VideoReviewLayoutView: View {
             .toolbar(.hidden, for: .tabBar)
             .accessibilityIdentifier(AccessibilityID.VideoReview.root)
         }
+        .ignoresSafeArea(edges: .horizontal)
         .onAppear {
             notes = session.notes ?? ""
             tabBarVisibility.isHidden = true
+            // Sync issues from store when view appears (e.g. after analysis completes or when returning).
+            let current = sessionManager.sessions.first(where: { $0.id == session.id }) ?? session
+            if let result = current.analysisResult {
+                reviewModel.setAnalysisResult(result)
+            }
         }
         .onDisappear {
             tabBarVisibility.isHidden = false
@@ -163,20 +173,24 @@ struct VideoReviewLayoutView: View {
             }
             schedulePausedCueCheck()
         }
-        .onChange(of: session.analysisResult?.score ?? -1) { _ in
-            reviewModel.setAnalysisResult(session.analysisResult)
+        .onChange(of: currentSession.analysisResult?.score ?? -1) { _ in
+            reviewModel.setAnalysisResult(currentSession.analysisResult)
         }
-        .task(id: session.analysisResult?.score ?? -1) {
+        .task(id: currentSession.analysisResult?.score ?? -1) {
+            if let result = currentSession.analysisResult {
+                reviewModel.setAnalysisResult(result)
+            }
             await maybeStartAnalysis()
         }
     }
     
     private func videoSection(constrainedHeight: CGFloat, cueTopPadding: CGFloat) -> some View {
-        VideoPlayerView(
+        let current = sessionManager.sessions.first(where: { $0.id == session.id }) ?? session
+        return VideoPlayerView(
             videoURL: session.videoURL,
             poseData: session.poseData,
             isRecordedLive: session.isRecordedLive,
-            analysisResult: session.analysisResult,
+            analysisResult: current.analysisResult,
             constrainedHeight: constrainedHeight,
             maxVisibleHeightRatio: 1.0,
             seekToTime: $seekToTime,
@@ -190,7 +204,8 @@ struct VideoReviewLayoutView: View {
     }
 
     private func topBar(topInset: CGFloat) -> some View {
-        HStack(spacing: 12) {
+        let current = sessionManager.sessions.first(where: { $0.id == session.id }) ?? session
+        return HStack(spacing: 12) {
             Button(action: {
                 if let onExit = onExit {
                     onExit()
@@ -210,7 +225,7 @@ struct VideoReviewLayoutView: View {
 
             Spacer()
             
-            Text(session.displayName)
+            Text(current.displayName)
                 .font(.headline)
                 .foregroundColor(.white)
                 .lineLimit(1)
@@ -238,7 +253,8 @@ struct VideoReviewLayoutView: View {
         maxUp: CGFloat,
         maxDown: CGFloat,
         currentHeight: CGFloat,
-        detentHeights: [AnalysisSheetState: CGFloat]
+        detentHeights: [AnalysisSheetState: CGFloat],
+        sessionForContent: Session
     ) -> some View {
         DraggableAnalysisSheet(
             sheetState: $sheetState,
@@ -249,7 +265,7 @@ struct VideoReviewLayoutView: View {
             detentHeights: detentHeights,
             maxUp: maxUp,
             maxDown: maxDown,
-            overviewContent: { overviewTabContent },
+            overviewContent: { overviewTabContent(using: sessionForContent) },
             issuesContent: {
                 IssueSummaryTabView(
                     issues: reviewModel.issues,
@@ -276,6 +292,11 @@ struct VideoReviewLayoutView: View {
     
     @ViewBuilder
     private var overviewTabContent: some View {
+        overviewTabContent(using: session)
+    }
+
+    @ViewBuilder
+    private func overviewTabContent(using session: Session) -> some View {
         if let result = session.analysisResult {
             OverviewTabView(analysisResult: result)
         } else if isAnalyzing {
@@ -290,15 +311,16 @@ struct VideoReviewLayoutView: View {
     }
     
     private func saveNotes() {
+        let current = sessionManager.sessions.first(where: { $0.id == session.id }) ?? session
         let updated = Session(
-            id: session.id,
-            movementType: session.movementType,
-            videoURL: session.videoURL,
-            timestamp: session.timestamp,
-            analysisResult: session.analysisResult,
-            poseData: session.poseData,
+            id: current.id,
+            movementType: current.movementType,
+            videoURL: current.videoURL,
+            timestamp: current.timestamp,
+            analysisResult: current.analysisResult,
+            poseData: current.poseData,
             notes: notes.isEmpty ? nil : notes,
-            isRecordedLive: session.isRecordedLive
+            isRecordedLive: current.isRecordedLive
         )
         sessionManager.updateSession(updated)
     }
@@ -390,8 +412,9 @@ struct VideoReviewLayoutView: View {
     }
     
     private func maybeStartAnalysis(force: Bool = false) async {
-        guard session.analysisResult == nil else { return }
-        guard let poseData = session.poseData, !poseData.isEmpty else { return }
+        let current = sessionManager.sessions.first(where: { $0.id == session.id }) ?? session
+        guard current.analysisResult == nil else { return }
+        guard let poseData = current.poseData, !poseData.isEmpty else { return }
         guard force || !isAnalyzing else { return }
         
         await MainActor.run {
@@ -430,18 +453,19 @@ struct VideoReviewLayoutView: View {
     }
     
     private func sheetHeight(for state: AnalysisSheetState, availableHeight: CGFloat) -> CGFloat {
-        let maxHeight = availableHeight * 0.95
-        let baseHeight = availableHeight * state.sheetFraction
-        let handleMinHeight = minCollapsedHeight
+        let handleMinHeight = max(minCollapsedHeight, DragHandleMetrics.minCollapsedHeight)
         
         switch state {
         case .collapsed:
-            let safeMin = max(handleMinHeight, DragHandleMetrics.minCollapsedHeight)
-            return min(maxHeight, safeMin)
+            return min(availableHeight * 0.95, handleMinHeight)
         case .medium:
-            return min(maxHeight, max(220, baseHeight))
+            // Enough for tab bar + score + rep summary (~300pt min).
+            let minMedium: CGFloat = 300
+            let baseHeight = availableHeight * state.sheetFraction
+            return min(availableHeight * 0.95, max(minMedium, baseHeight))
         case .expanded:
-            return min(maxHeight, max(320, baseHeight))
+            // Maps-style: almost full screen (~92% of available height).
+            return availableHeight * 0.92
         }
     }
 }
@@ -456,18 +480,26 @@ private struct PlaybackBarHeightKey: PreferenceKey {
 
 #if DEBUG
 #Preview("Session detail") {
-    VideoReviewLayoutView(
-        session: PreviewData.sessionWithAnalysis(),
-        sessionManager: SessionManager()
+    let session = PreviewData.sessionWithAnalysis()
+    let manager = SessionManager()
+    manager.addSession(session)
+    return VideoReviewLayoutView(
+        session: session,
+        sessionManager: manager
     )
     .environmentObject(TabBarVisibility())
+    .frame(width: 393, height: 852)
 }
 
 #Preview("Session detail (no analysis)") {
-    VideoReviewLayoutView(
-        session: PreviewData.sessionWithoutAnalysis(),
-        sessionManager: SessionManager()
+    let session = PreviewData.sessionWithoutAnalysis()
+    let manager = SessionManager()
+    manager.addSession(session)
+    return VideoReviewLayoutView(
+        session: session,
+        sessionManager: manager
     )
     .environmentObject(TabBarVisibility())
+    .frame(width: 393, height: 852)
 }
 #endif
