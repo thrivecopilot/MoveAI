@@ -22,8 +22,8 @@ enum AnalysisSheetState: Int, CaseIterable {
     var sheetFraction: Double {
         switch self {
         case .collapsed: return 0.20
-        case .medium:   return 0.45
-        case .expanded: return 0.80
+        case .medium:   return 0.50  // Tab bar + score + rep summary
+        case .expanded: return 0.92  // Maps-style almost full screen
         }
     }
 }
@@ -43,7 +43,8 @@ enum DragHandleMetrics {
     static let paddingBottom: CGFloat = 8
     /// Minimum height so the handle isn’t clipped by the sheet’s top corner radius (20pt).
     /// Need room below the curve for padding + handle + padding.
-    static let minCollapsedHeight: CGFloat = 52
+    /// Slim strip when collapsed (handle + padding + small radius). 36pt so it’s not “comically large”.
+    static let minCollapsedHeight: CGFloat = 36
 }
 
 struct DraggableAnalysisSheet<OverviewContent: View, IssuesContent: View, NotesContent: View>: View {
@@ -122,7 +123,7 @@ struct DraggableAnalysisSheet<OverviewContent: View, IssuesContent: View, NotesC
                 .padding(.top, 1)
         )
         .cornerRadius(sheetCornerRadius, corners: [.topLeft, .topRight])
-        .shadow(color: .black.opacity(0.35), radius: 12, x: 0, y: -4)
+        .shadow(color: .black.opacity(0.25), radius: 6, x: 0, y: -2)
         .gesture(
             DragGesture()
                 .updating($isDragging) { _, state, _ in state = true }

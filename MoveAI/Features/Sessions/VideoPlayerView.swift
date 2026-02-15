@@ -170,54 +170,105 @@ struct VideoPlayerView: View {
             GeometryReader { geometry in
                 let availableWidth = geometry.size.width
                 let containerHeight = geometry.size.height
-                let baseVideoHeight = availableWidth * 16 / 9
-                let visibleHeight = isFullBleed ? containerHeight : min(videoHeight, baseVideoHeight * maxVisibleHeightRatio)
-                let scale = isFullBleed ? max(1.0, visibleHeight / baseVideoHeight) : 1.0
                 
-                if let player = playback.player {
-                    let baseSize = CGSize(width: availableWidth, height: baseVideoHeight)
-                    
-                    let videoLayer = ZStack(alignment: .topLeading) {
-                        PlayerContainerView(player: player)
-                            .frame(width: baseSize.width, height: baseSize.height)
-                        
-                        if showingPoseOverlay, let poseData = poseData, !poseData.isEmpty {
-                            PoseOverlayView(
-                                pose: currentPose,
-                                previewSize: baseSize,
-                                flipXAxis: true,
-                                isUploadedVideo: !isRecordedLive,
-                                style: .telemetry
-                            )
-                            .frame(width: baseSize.width, height: baseSize.height)
-                            .allowsHitTesting(false)
+                if isFullBleed {
+                    // Photos-like: one rect, video display size from asset, aspect fit, overlay in content rect.
+                    let displaySize: CGSize = {
+                        if let ds = playback.videoDisplaySize, ds.width > 0, ds.height > 0 {
+                            return ds
                         }
-                    }
-                    .frame(width: baseSize.width, height: baseSize.height)
-                    .scaleEffect(scale, anchor: .top)
-                    .frame(width: availableWidth, height: visibleHeight, alignment: .top)
-                    .clipped()
-                    .cornerRadius(isFullBleed ? 0 : 12)
+                        let h = availableWidth * DeviceInfo.screenHeight / DeviceInfo.screenWidth
+                        return CGSize(width: availableWidth, height: h)
+                    }()
+                    let fitScale = min(availableWidth / displaySize.width, containerHeight / displaySize.height)
+                    let contentWidth = displaySize.width * fitScale
+                    let contentHeight = displaySize.height * fitScale
+                    let contentSize = CGSize(width: contentWidth, height: contentHeight)
                     
-                    ZStack(alignment: .topLeading) {
-                        videoLayer
-                        
-                        if let cueOverlay {
-                            CueOverlayView(overlay: cueOverlay)
-                                .padding(.top, cueTopPadding)
-                                .padding(.horizontal, 12)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                                .transition(.opacity)
+                    if let player = playback.player {
+                        ZStack {
+                            Color.black
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            PlayerContainerView(player: player, useAspectFit: true)
+                                .frame(width: availableWidth, height: containerHeight)
+                            if showingPoseOverlay, let poseData = poseData, !poseData.isEmpty {
+                                PoseOverlayView(
+                                    pose: currentPose,
+                                    previewSize: contentSize,
+                                    flipXAxis: true,
+                                    isUploadedVideo: !isRecordedLive,
+                                    style: .telemetry
+                                )
+                                .frame(width: contentWidth, height: contentHeight)
+                                .position(x: availableWidth / 2, y: containerHeight / 2)
+                                .allowsHitTesting(false)
+                            }
+                            if let cueOverlay {
+                                CueOverlayView(overlay: cueOverlay)
+                                    .padding(.top, cueTopPadding)
+                                    .padding(.horizontal, 12)
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                                    .transition(.opacity)
+                            }
                         }
+                        .frame(width: availableWidth, height: containerHeight)
+                        .clipped()
+                        .cornerRadius(0)
+                    } else {
+                        Rectangle()
+                            .fill(telemetryBackground)
+                            .frame(width: availableWidth, height: containerHeight)
+                            .overlay(loadingOverlay)
+                            .cornerRadius(0)
                     }
-                    .frame(width: availableWidth, height: visibleHeight)
-                    .cornerRadius(isFullBleed ? 0 : 12)
                 } else {
-                    Rectangle()
-                        .fill(telemetryBackground)
+                    // Non-fullBleed: original 16:9 / scale behavior.
+                    let baseVideoHeight = availableWidth * 16 / 9
+                    let baseSize = CGSize(width: availableWidth, height: baseVideoHeight)
+                    let visibleHeight = min(videoHeight, baseVideoHeight * maxVisibleHeightRatio)
+                    let scale = max(1.0, visibleHeight / baseVideoHeight)
+                    
+                    if let player = playback.player {
+                        let videoLayer = ZStack(alignment: .topLeading) {
+                            PlayerContainerView(player: player, useAspectFit: false)
+                                .frame(width: baseSize.width, height: baseSize.height)
+                            if showingPoseOverlay, let poseData = poseData, !poseData.isEmpty {
+                                PoseOverlayView(
+                                    pose: currentPose,
+                                    previewSize: baseSize,
+                                    flipXAxis: true,
+                                    isUploadedVideo: !isRecordedLive,
+                                    style: .telemetry
+                                )
+                                .frame(width: baseSize.width, height: baseSize.height)
+                                .allowsHitTesting(false)
+                            }
+                        }
+                        .frame(width: baseSize.width, height: baseSize.height)
+                        .scaleEffect(scale, anchor: .top)
+                        .frame(width: availableWidth, height: visibleHeight, alignment: .top)
+                        .clipped()
+                        .cornerRadius(12)
+                        
+                        ZStack(alignment: .topLeading) {
+                            videoLayer
+                            if let cueOverlay {
+                                CueOverlayView(overlay: cueOverlay)
+                                    .padding(.top, cueTopPadding)
+                                    .padding(.horizontal, 12)
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                                    .transition(.opacity)
+                            }
+                        }
                         .frame(width: availableWidth, height: visibleHeight)
-                        .overlay(loadingOverlay)
-                        .cornerRadius(isFullBleed ? 0 : 12)
+                        .cornerRadius(12)
+                    } else {
+                        Rectangle()
+                            .fill(telemetryBackground)
+                            .frame(width: availableWidth, height: visibleHeight)
+                            .overlay(loadingOverlay)
+                            .cornerRadius(12)
+                    }
                 }
             }
             .frame(maxWidth: .infinity)
@@ -317,12 +368,14 @@ private struct ConstrainedHeightModifier: ViewModifier {
 // MARK: - AVPlayer Container (controls disabled)
 private struct PlayerContainerView: UIViewControllerRepresentable {
     let player: AVPlayer
+    /// When true (e.g. review full-bleed), use aspect fit so entire frame is visible; otherwise aspect fill.
+    var useAspectFit: Bool = false
     
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let controller = AVPlayerViewController()
         controller.player = player
         controller.showsPlaybackControls = false
-        controller.videoGravity = .resizeAspectFill
+        controller.videoGravity = useAspectFit ? .resizeAspect : .resizeAspectFill
         return controller
     }
     
@@ -331,6 +384,7 @@ private struct PlayerContainerView: UIViewControllerRepresentable {
             uiViewController.player = player
         }
         uiViewController.showsPlaybackControls = false
+        uiViewController.videoGravity = useAspectFit ? .resizeAspect : .resizeAspectFill
     }
 }
 
@@ -343,6 +397,8 @@ final class PlaybackController: ObservableObject {
     @Published var duration: Double = 0
     @Published var playerStatus: AVPlayerItem.Status = .unknown
     @Published var nominalFrameRate: Double = 30.0
+    /// Display size of the video (naturalSize with preferredTransform applied). Used for aspect-fit layout; nil until loaded.
+    @Published var videoDisplaySize: CGSize?
     
     private let videoURL: URL
     private let statusObserver = PlayerStatusObserver()
@@ -389,6 +445,14 @@ final class PlaybackController: ObservableObject {
                     if let frameRate, frameRate > 0 {
                         await MainActor.run {
                             self.nominalFrameRate = Double(frameRate)
+                        }
+                    }
+                    // Display size for aspect-fit layout (orientation from preferredTransform).
+                    if let naturalSize = size, let transform = preferredTransform {
+                        let transformed = naturalSize.applying(transform)
+                        let displaySize = CGSize(width: abs(transformed.width), height: abs(transformed.height))
+                        await MainActor.run {
+                            self.videoDisplaySize = displaySize
                         }
                     }
                 }
