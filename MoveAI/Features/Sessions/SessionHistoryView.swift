@@ -64,7 +64,7 @@ struct SessionHistoryView: View {
             }
             .navigationTitle("Session History")
             .navigationBarTitleDisplayMode(.large)
-            .accessibilityIdentifier("SessionHistoryView")
+            .accessibilityIdentifier(AccessibilityID.SessionHistory.root)
         }
     }
     
@@ -96,13 +96,22 @@ struct SessionHistoryView: View {
             
             Spacer()
         }
-        .accessibilityIdentifier("SessionHistoryEmptyState")
+        .accessibilityIdentifier(AccessibilityID.SessionHistory.emptyState)
         .accessibilityElement(children: .contain)
     }
     
     private var sessionsList: some View {
         ScrollView {
             LazyVStack(spacing: 12) {
+                // Hidden sentinel element for UI test discoverability.
+                // ScrollView identifiers are often absorbed by SwiftUI's
+                // accessibility tree merging, so we use a zero-height Text
+                // as a discoverable marker for the list.
+                Text("")
+                    .frame(height: 0)
+                    .accessibilityHidden(false)
+                    .accessibilityIdentifier(AccessibilityID.SessionHistory.list)
+
                 ForEach(filteredSessions) { session in
                     NavigationLink(destination: SessionDetailView(session: session, sessionManager: sessionManager, onExit: nil)) {
                         SessionCard(session: session, notesLineLimit: notesLineLimit)
@@ -112,8 +121,6 @@ struct SessionHistoryView: View {
             }
             .padding()
         }
-        .accessibilityIdentifier("SessionHistoryList")
-        .accessibilityElement(children: .contain)
     }
 
     private func errorStateView(_ message: String) -> some View {
@@ -138,11 +145,12 @@ struct SessionHistoryView: View {
                 // Placeholder for real retry action in production flows.
             }
             .buttonStyle(.bordered)
+            .accessibilityIdentifier(AccessibilityID.SessionHistory.tryAgainButton)
 
             Spacer()
         }
         .padding()
-        .accessibilityIdentifier("SessionHistoryErrorState")
+        .accessibilityIdentifier(AccessibilityID.SessionHistory.errorState)
         .accessibilityElement(children: .contain)
     }
 }
@@ -164,6 +172,7 @@ struct FilterButton: View {
                 .cornerRadius(20)
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("\(AccessibilityID.SessionHistory.filterButton).\(title)")
     }
 }
 
@@ -239,8 +248,9 @@ struct SessionCard: View {
         .background(Color(.systemBackground))
         .cornerRadius(12)
         .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
+        .accessibilityIdentifier("\(AccessibilityID.SessionHistory.sessionCard).\(session.id.uuidString)")
     }
-    
+
     private func scoreColor(_ score: Int) -> Color {
         if score >= 80 {
             return .green

@@ -18,8 +18,18 @@ struct MovementMasteryHomeView: View {
     @State private var selectedMovement: MovementType?
     @State private var showingCamera = false
     @State private var showingVideoImport = false
-    @StateObject private var sessionManager = SessionManager()
+    @StateObject private var sessionManager: SessionManager
     @StateObject private var cameraService = CameraService()
+
+    /// Default initializer — creates a fresh `SessionManager`.
+    init() {
+        _sessionManager = StateObject(wrappedValue: SessionManager())
+    }
+
+    /// Injected initializer for deterministic testing scenarios.
+    init(sessionManager: SessionManager) {
+        _sessionManager = StateObject(wrappedValue: sessionManager)
+    }
     @State private var showingSessionHistory = false
     @State private var cameraView: CameraCaptureView?
     @State private var showingActionSheet = false
@@ -126,6 +136,7 @@ struct MovementMasteryHomeView: View {
                 }
             }
         }
+        .accessibilityIdentifier(AccessibilityID.Home.root)
     }
     
     private var welcomeHeader: some View {
@@ -151,8 +162,9 @@ struct MovementMasteryHomeView: View {
         .padding()
         .background(Color(.systemGray6))
         .cornerRadius(16)
+        .accessibilityIdentifier(AccessibilityID.Home.welcomeHeader)
     }
-    
+
     private var movementCategoriesSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Start Session")
@@ -191,7 +203,8 @@ struct MovementMasteryHomeView: View {
                     showingActionSheet = true
                 }
             )
-            
+            .accessibilityIdentifier(AccessibilityID.Home.powerliftingCard)
+
             // Coming Soon Categories
             VStack(spacing: 12) {
                 ComingSoonCategoryCard(
@@ -209,9 +222,10 @@ struct MovementMasteryHomeView: View {
                 )
             }
         }
+        .accessibilityIdentifier(AccessibilityID.Home.startSessionSection)
     }
-    
-    
+
+
     private var recentActivitySection: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
@@ -226,6 +240,7 @@ struct MovementMasteryHomeView: View {
                         .font(.subheadline)
                         .foregroundColor(.accentColor)
                 }
+                .accessibilityIdentifier(AccessibilityID.Home.viewAllButton)
             }
             
             if sessionManager.sessions.isEmpty {
@@ -245,8 +260,9 @@ struct MovementMasteryHomeView: View {
                 }
             }
         }
+        .accessibilityIdentifier(AccessibilityID.Home.recentSessions)
     }
-    
+
 }
 
 struct MovementCategoryCard: View {
@@ -349,6 +365,7 @@ struct MovementOptionRow: View {
             .cornerRadius(12)
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("\(AccessibilityID.Home.movementOption).\(movement.type.rawValue)")
     }
 }
 

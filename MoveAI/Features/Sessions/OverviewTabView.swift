@@ -43,6 +43,7 @@ struct OverviewTabView: View {
             .padding(.horizontal, 20)
             .padding(.vertical, 24)
         }
+        .accessibilityIdentifier(AccessibilityID.Overview.root)
     }
     
     private var scoreAndSummaryRow: some View {
@@ -54,9 +55,11 @@ struct OverviewTabView: View {
                         .font(.caption)
                         .fontWeight(.semibold)
                         .foregroundColor(.secondary)
+                        .accessibilityIdentifier(AccessibilityID.Overview.scoreLabel)
                     Text("\(Int(analysisResult.score))")
                         .font(.system(size: 28, weight: .bold))
                         .foregroundColor(scoreColor(analysisResult.score))
+                        .accessibilityIdentifier(AccessibilityID.Overview.scoreValue)
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
@@ -74,6 +77,7 @@ struct OverviewTabView: View {
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                             .lineLimit(2)
+                            .accessibilityIdentifier(AccessibilityID.Overview.repSummary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
@@ -105,9 +109,10 @@ struct OverviewTabView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityIdentifier(AccessibilityID.Overview.topFixes)
         )
     }
-    
+
     private func sectionLabel(_ title: String) -> some View {
         Text(title.uppercased())
             .font(.caption)

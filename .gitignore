@@ -3,3 +3,6 @@
 
 # Extracted screenshot PNGs (generated, not committed)
 Screenshots/
+
+# Structural test results (generated, not committed)
+test-results/

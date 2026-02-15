@@ -14,6 +14,7 @@ struct IssueSummaryTabView: View {
                     .foregroundColor(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .padding(.top, 40)
+                    .accessibilityIdentifier(AccessibilityID.Issues.emptyText)
             } else {
                 LazyVStack(spacing: 12) {
                     ForEach(issues) { issue in
@@ -29,6 +30,7 @@ struct IssueSummaryTabView: View {
                 .padding(.vertical, 16)
             }
         }
+        .accessibilityIdentifier(AccessibilityID.Issues.root)
     }
 }
 
@@ -87,6 +89,7 @@ private struct IssueSummaryCard: View {
         .onTapGesture {
             onSelectIssue(issue)
         }
+        .accessibilityIdentifier("\(AccessibilityID.Issues.issueCard).\(issue.id.uuidString)")
     }
     
     private var timestampChips: some View {

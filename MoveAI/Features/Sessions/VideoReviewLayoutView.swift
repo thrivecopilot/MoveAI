@@ -96,7 +96,7 @@ struct VideoReviewLayoutView: View {
                         )
                             .frame(height: effectiveSheetHeight)
                             .frame(maxWidth: .infinity)
-                            .accessibilityIdentifier("VideoReviewSheet")
+                            .accessibilityIdentifier(AccessibilityID.VideoReview.sheet)
                             .accessibilityElement(children: .contain)
                             .animation(.interactiveSpring(), value: sheetState)
                     }
@@ -135,8 +135,8 @@ struct VideoReviewLayoutView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .navigationBar)
             .toolbar(.hidden, for: .tabBar)
+            .accessibilityIdentifier(AccessibilityID.VideoReview.root)
         }
-        .accessibilityIdentifier("VideoReviewLayoutView")
         .onAppear {
             notes = session.notes ?? ""
             tabBarVisibility.isHidden = true
@@ -205,7 +205,9 @@ struct VideoReviewLayoutView: View {
                     .background(Color.black.opacity(0.45))
                     .clipShape(Circle())
             }
-            
+            .accessibilityIdentifier(AccessibilityID.VideoReview.closeButton)
+            .accessibilityLabel("Close")
+
             Spacer()
             
             Text(session.displayName)
@@ -213,6 +215,7 @@ struct VideoReviewLayoutView: View {
                 .foregroundColor(.white)
                 .lineLimit(1)
                 .shadow(color: .black.opacity(0.4), radius: 2, x: 0, y: 1)
+                .accessibilityIdentifier(AccessibilityID.VideoReview.sessionTitle)
             
             Spacer()
             

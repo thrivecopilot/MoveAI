@@ -28,6 +28,7 @@ struct PlaybackControlsBar: View {
                         .clipShape(Circle())
                 }
                 .disabled(playback.playerStatus != .readyToPlay)
+                .accessibilityIdentifier(AccessibilityID.VideoReview.playPauseButton)
                 
                 if playback.duration > 0 {
                     let markers = issueMarkers.isEmpty ? TimelineMarkers.from(analysisResult).issueMarkers : issueMarkers

@@ -183,6 +183,7 @@ struct DraggableAnalysisSheet<OverviewContent: View, IssuesContent: View, NotesC
                     minCollapsedHeight = DragHandleMetrics.minCollapsedHeight
                 }
             }
+            .accessibilityIdentifier(AccessibilityID.Tabs.dragHandle)
     }
     
     private var tabBar: some View {
@@ -201,6 +202,7 @@ struct DraggableAnalysisSheet<OverviewContent: View, IssuesContent: View, NotesC
                         .padding(.vertical, 12)
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("Tab.\(tab.rawValue)")
             }
         }
         .background(sheetSurface)

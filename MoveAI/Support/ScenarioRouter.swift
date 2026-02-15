@@ -17,6 +17,7 @@ enum UIScenario: String, CaseIterable {
     case videoReviewOverviewCollapsed = "VideoReview_overview_collapsed"
     case videoReviewOverviewMedium = "VideoReview_overview_medium"
     case videoReviewOverviewExpanded = "VideoReview_overview_expanded"
+    case homeLoaded = "Home_loaded"
 }
 
 struct ScenarioSettings {
@@ -148,6 +149,11 @@ private enum ScenarioViews {
             return videoReviewView(sessionManager: sessionManager, sheetState: .medium)
         case .videoReviewOverviewExpanded:
             return videoReviewView(sessionManager: sessionManager, sheetState: .expanded)
+        case .homeLoaded:
+            return AnyView(
+                MovementMasteryHomeView(sessionManager: sessionManager)
+                    .environmentObject(TabBarVisibility())
+            )
         }
     }
 
@@ -185,6 +191,8 @@ private enum ScenarioFixtures {
              .videoReviewOverviewMedium,
              .videoReviewOverviewExpanded:
             return [videoReviewSession()]
+        case .homeLoaded:
+            return loadedSessions()
         }
     }
 

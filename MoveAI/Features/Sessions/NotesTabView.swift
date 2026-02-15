@@ -17,6 +17,7 @@ struct NotesTabView: View {
             HStack {
                 Text("Notes")
                     .font(.headline)
+                    .accessibilityIdentifier(AccessibilityID.Notes.header)
                 Spacer()
                 Button(isEditing ? "Save" : "Edit") {
                     if isEditing { onSave() }
@@ -24,11 +25,13 @@ struct NotesTabView: View {
                 }
                 .font(.subheadline)
                 .foregroundColor(.accentColor)
+                .accessibilityIdentifier(AccessibilityID.Notes.editButton)
             }
             if isEditing {
                 TextField("Add notes about this session...", text: $notes, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
                     .lineLimit(3...8)
+                    .accessibilityIdentifier(AccessibilityID.Notes.textField)
             } else {
                 Text(notes.isEmpty ? "No notes added" : notes)
                     .font(.body)
@@ -37,11 +40,13 @@ struct NotesTabView: View {
                     .padding()
                     .background(Color(.systemGray6))
                     .cornerRadius(8)
+                    .accessibilityIdentifier(AccessibilityID.Notes.notesText)
             }
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .accessibilityIdentifier(AccessibilityID.Notes.root)
     }
 }
 
