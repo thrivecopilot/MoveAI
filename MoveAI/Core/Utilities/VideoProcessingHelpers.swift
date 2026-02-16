@@ -16,7 +16,7 @@ public enum VideoProcessingHelpers {
     // MARK: - Debug Logging Helper
     
     public static func writeDebugLog(_ message: String, data: [String: Any], location: String) {
-        let logPath = "/Users/davemathew/Documents/MoveAI/.cursor/debug.log"
+        let logPath = "/Users/davemathew/Developer/MoveAI/.cursor/debug.log"
         let logEntry: [String: Any] = [
             "location": location,
             "message": message,

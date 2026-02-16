@@ -1,0 +1,34 @@
+{
+  "elements" : [
+    {
+      "exists" : true,
+      "id" : "PoseOverlay.Keypoint.leftHip",
+      "isEnabled" : null,
+      "label" : "leftHip",
+      "value" : "confidence=0.87,frame=42"
+    },
+    {
+      "exists" : true,
+      "id" : "PoseOverlay.Keypoint.nose",
+      "isEnabled" : null,
+      "label" : "nose",
+      "value" : "confidence=0.94,frame=42"
+    },
+    {
+      "exists" : true,
+      "id" : "PoseOverlay.MetaLabel",
+      "isEnabled" : null,
+      "label" : "Frame 42 · 7 keypoints",
+      "value" : null
+    },
+    {
+      "exists" : true,
+      "id" : "PoseOverlayView",
+      "isEnabled" : null,
+      "label" : "Pose Overlay",
+      "value" : "frame=42,keypoints=7,style=standard,source=uploaded"
+    }
+  ],
+  "scenario" : "PoseOverlay_detected",
+  "schemaVersion" : 1
+}

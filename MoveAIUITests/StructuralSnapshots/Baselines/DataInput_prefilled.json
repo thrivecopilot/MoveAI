@@ -1,0 +1,48 @@
+{
+  "elements" : [
+    {
+      "exists" : true,
+      "id" : "DataInput.AgeValue",
+      "isEnabled" : null,
+      "label" : "31 years",
+      "value" : null
+    },
+    {
+      "exists" : true,
+      "id" : "DataInput.ContinueButton",
+      "isEnabled" : true,
+      "label" : "Continue",
+      "value" : null
+    },
+    {
+      "exists" : true,
+      "id" : "DataInput.HeightValue",
+      "isEnabled" : null,
+      "label" : "(178 cm)",
+      "value" : null
+    },
+    {
+      "exists" : true,
+      "id" : "DataInput.Subtitle",
+      "isEnabled" : null,
+      "label" : "Your information was synced from Apple Health. You can edit it below if needed.",
+      "value" : null
+    },
+    {
+      "exists" : true,
+      "id" : "DataInput.Title",
+      "isEnabled" : null,
+      "label" : "Review Your Information",
+      "value" : null
+    },
+    {
+      "exists" : true,
+      "id" : "DataInput.WeightValue",
+      "isEnabled" : null,
+      "label" : "180 lbs (82 kg)",
+      "value" : null
+    }
+  ],
+  "scenario" : "DataInput_prefilled",
+  "schemaVersion" : 1
+}

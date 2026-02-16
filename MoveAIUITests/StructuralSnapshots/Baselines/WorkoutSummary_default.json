@@ -1,0 +1,41 @@
+{
+  "elements" : [
+    {
+      "exists" : true,
+      "id" : "WorkoutSummary.RepSummaryTitle",
+      "isEnabled" : null,
+      "label" : "REP SUMMARY",
+      "value" : null
+    },
+    {
+      "exists" : true,
+      "id" : "WorkoutSummary.RepSummaryValue",
+      "isEnabled" : null,
+      "label" : "4 total  ·  3 good  ·  1 need attention",
+      "value" : null
+    },
+    {
+      "exists" : true,
+      "id" : "WorkoutSummary.ScoreTitle",
+      "isEnabled" : null,
+      "label" : "Score",
+      "value" : null
+    },
+    {
+      "exists" : true,
+      "id" : "WorkoutSummary.ScoreValue",
+      "isEnabled" : null,
+      "label" : "72",
+      "value" : null
+    },
+    {
+      "exists" : true,
+      "id" : "WorkoutSummary.TopFixesTitle",
+      "isEnabled" : null,
+      "label" : "TOP FIXES",
+      "value" : null
+    }
+  ],
+  "scenario" : "WorkoutSummary_default",
+  "schemaVersion" : 1
+}

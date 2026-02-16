@@ -9,44 +9,48 @@ import SwiftUI
 
 struct PersonalInfoStepView: View {
     let onComplete: () -> Void
-    
+
     @AppStorage("userHeight") private var userHeight: Double = 0
     @AppStorage("userWeight") private var userWeight: Double = 0
     @AppStorage("userAge") private var userAge: Int = 0
-    
+
     @State private var heightFeet: Int = 5
     @State private var heightInches: Int = 8
     @State private var weightPounds: Double = 150
     @State private var age: Int = 25
-    
+
     var body: some View {
         VStack(spacing: 32) {
             Spacer()
-            
+
             VStack(spacing: 24) {
                 Image(systemName: "person.crop.circle.fill")
                     .font(.system(size: 60))
                     .foregroundColor(.blue)
-                
+                    .accessibilityIdentifier("DataInput.Icon")
+
                 VStack(spacing: 16) {
                     Text("Review Your Information")
                         .font(.title2)
                         .fontWeight(.semibold)
-                    
+                        .accessibilityIdentifier("DataInput.Title")
+
                     Text(hasExistingData ? "Your information was synced from Apple Health. You can edit it below if needed." : "This helps us personalize your movement analysis")
                         .font(.body)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
+                        .accessibilityIdentifier("DataInput.Subtitle")
                 }
             }
-            
+
             Spacer()
-            
+
             VStack(spacing: 20) {
                 // Height Input
                 VStack(alignment: .leading) {
                     Text("Height")
                         .font(.headline)
+                        .accessibilityIdentifier("DataInput.HeightTitle")
                     HStack {
                         Picker("Feet", selection: $heightFeet) {
                             ForEach(0..<9) { feet in
@@ -56,6 +60,7 @@ struct PersonalInfoStepView: View {
                         .pickerStyle(.wheel)
                         .frame(width: 100, height: 120)
                         .clipped()
+                        .accessibilityIdentifier("DataInput.HeightFeetPicker")
 
                         Picker("Inches", selection: $heightInches) {
                             ForEach(0..<12) { inches in
@@ -65,6 +70,7 @@ struct PersonalInfoStepView: View {
                         .pickerStyle(.wheel)
                         .frame(width: 100, height: 120)
                         .clipped()
+                        .accessibilityIdentifier("DataInput.HeightInchesPicker")
                     }
                     .padding(.horizontal)
                     .onChange(of: heightFeet) { _, _ in updateProfile() }
@@ -72,12 +78,14 @@ struct PersonalInfoStepView: View {
                     Text("(\(String(format: "%.0f", (Double(heightFeet * 12 + heightInches) * 2.54))) cm)")
                         .font(.caption)
                         .foregroundColor(.secondary)
+                        .accessibilityIdentifier("DataInput.HeightValue")
                 }
 
                 // Weight Input
                 VStack(alignment: .leading) {
                     Text("Weight")
                         .font(.headline)
+                        .accessibilityIdentifier("DataInput.WeightTitle")
                     Slider(
                         value: $weightPounds,
                         in: 50...500,
@@ -89,16 +97,19 @@ struct PersonalInfoStepView: View {
                     } maximumValueLabel: {
                         Text("500 lbs")
                     }
+                    .accessibilityIdentifier("DataInput.WeightSlider")
                     Text("\(Int(weightPounds)) lbs (\(String(format: "%.0f", weightPounds * 0.453592)) kg)")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    .onChange(of: weightPounds) { _, _ in updateProfile() }
+                        .accessibilityIdentifier("DataInput.WeightValue")
+                        .onChange(of: weightPounds) { _, _ in updateProfile() }
                 }
 
                 // Age Input
                 VStack(alignment: .leading) {
                     Text("Age")
                         .font(.headline)
+                        .accessibilityIdentifier("DataInput.AgeTitle")
                     Slider(
                         value: Binding(get: { Double(age) }, set: { age = Int($0) }),
                         in: 10...100,
@@ -110,16 +121,18 @@ struct PersonalInfoStepView: View {
                     } maximumValueLabel: {
                         Text("100")
                     }
+                    .accessibilityIdentifier("DataInput.AgeSlider")
                     Text("\(age) years")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    .onChange(of: age) { _, _ in updateProfile() }
+                        .accessibilityIdentifier("DataInput.AgeValue")
+                        .onChange(of: age) { _, _ in updateProfile() }
                 }
             }
             .padding(.horizontal)
-            
+
             Spacer()
-            
+
             // Continue button
             Button(action: onComplete) {
                 Text("Continue")
@@ -131,11 +144,14 @@ struct PersonalInfoStepView: View {
                     .cornerRadius(8)
             }
             .disabled(!canContinue)
+            .accessibilityIdentifier("DataInput.ContinueButton")
             .padding(.horizontal)
-            
+
             Spacer()
         }
         .padding()
+        .accessibilityIdentifier("DataInputScreen")
+        .accessibilityElement(children: .contain)
         .onAppear {
             // Load existing values from AppStorage or use defaults
             if userHeight > 0 {
@@ -146,40 +162,40 @@ struct PersonalInfoStepView: View {
                 heightFeet = 5
                 heightInches = 8
             }
-            
+
             if userWeight > 0 {
                 weightPounds = userWeight * 2.20462
             } else {
                 weightPounds = 150
             }
-            
+
             if userAge > 0 {
                 age = userAge
             } else {
                 age = 25
             }
-            
+
             updateProfile()
         }
     }
-    
+
     private var canContinue: Bool {
         return heightFeet > 0 && heightInches >= 0 && heightInches < 12 &&
                weightPounds >= 50 && weightPounds <= 500 && age >= 10 && age <= 100
     }
-    
+
     private var hasExistingData: Bool {
         return userHeight > 0 || userWeight > 0 || userAge > 0
     }
-    
+
     private func updateProfile() {
         // Convert feet and inches to centimeters
         let totalInches = Double(heightFeet * 12 + heightInches)
         let heightInCm = totalInches * 2.54
-        
+
         // Convert pounds to kilograms
         let weightInKg = weightPounds * 0.453592
-        
+
         // Save to AppStorage for persistence
         userHeight = heightInCm
         userWeight = weightInKg

@@ -1,0 +1,27 @@
+{
+  "elements" : [
+    {
+      "exists" : true,
+      "id" : "PoseOverlay.EmptyStateMessage",
+      "isEnabled" : null,
+      "label" : "Position yourself in frame",
+      "value" : null
+    },
+    {
+      "exists" : true,
+      "id" : "PoseOverlay.MetaLabel",
+      "isEnabled" : null,
+      "label" : "Frame -- · 0 keypoints",
+      "value" : null
+    },
+    {
+      "exists" : true,
+      "id" : "PoseOverlayView",
+      "isEnabled" : null,
+      "label" : "Pose Overlay",
+      "value" : "frame=none,keypoints=0,style=standard,source=uploaded"
+    }
+  ],
+  "scenario" : "PoseOverlay_noPose",
+  "schemaVersion" : 1
+}

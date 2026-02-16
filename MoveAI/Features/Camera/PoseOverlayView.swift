@@ -1,8 +1,8 @@
+import AVFoundation
 import SwiftUI
 import Vision
-import AVFoundation
 
-enum PoseOverlayStyle {
+enum PoseOverlayStyle: String {
     case standard
     case telemetry
 }
@@ -13,10 +13,10 @@ struct PoseOverlayView: View {
     let flipXAxis: Bool
     let isUploadedVideo: Bool  // Distinguish between camera feed and uploaded videos
     let style: PoseOverlayStyle
-    
+
     // Transform Vision coordinates to display coordinates
     // Vision coordinates are normalized (0-1) in the raw video frame
-    
+
     init(pose: PoseDetectionResult?, previewSize: CGSize, flipXAxis: Bool, isUploadedVideo: Bool = false, style: PoseOverlayStyle = .standard) {
         self.pose = pose
         self.previewSize = previewSize
@@ -24,7 +24,7 @@ struct PoseOverlayView: View {
         self.isUploadedVideo = isUploadedVideo
         self.style = style
     }
-    
+
     var body: some View {
         GeometryReader { geometry in
             ZStack {
@@ -42,9 +42,16 @@ struct PoseOverlayView: View {
                                 style: style
                             )
                         }
-                        
-                // Draw skeleton connections
-                SkeletonView(pose: pose, previewSize: previewSize == .zero ? geometry.size : previewSize, flipXAxis: flipXAxis, isUploadedVideo: isUploadedVideo, style: style)
+
+                        // Draw skeleton connections
+                        SkeletonView(
+                            pose: pose,
+                            previewSize: previewSize == .zero ? geometry.size : previewSize,
+                            flipXAxis: flipXAxis,
+                            isUploadedVideo: isUploadedVideo,
+                            style: style
+                        )
+                        .accessibilityIdentifier("PoseOverlay.Skeleton")
                     }
                 } else {
                     // Show a subtle indicator when no pose is detected yet - NO ROTATION
@@ -58,6 +65,7 @@ struct PoseOverlayView: View {
                                 .padding(8)
                                 .background(Color.black.opacity(0.6))
                                 .cornerRadius(8)
+                                .accessibilityIdentifier("PoseOverlay.EmptyStateMessage")
                             Spacer()
                         }
                         Spacer()
@@ -65,8 +73,19 @@ struct PoseOverlayView: View {
                 }
             }
         }
+        .accessibilityIdentifier("PoseOverlayView")
+        .accessibilityLabel("Pose Overlay")
+        .accessibilityValue(poseAccessibilityValue)
+        .accessibilityElement(children: .contain)
     }
-    
+
+    private var poseAccessibilityValue: String {
+        let frame = pose.map { String($0.frameIndex) } ?? "none"
+        let keypointCount = pose?.keypoints.count ?? 0
+        let source = isUploadedVideo ? "uploaded" : "camera"
+        return "frame=\(frame),keypoints=\(keypointCount),style=\(style.rawValue),source=\(source)"
+    }
+
     private func keypointColor(for keypoint: PoseKeypoint) -> Color {
         // Color based on confidence level
         switch style {
@@ -98,15 +117,15 @@ private struct KeypointView: View {
     let keypointColor: Color
     let frameIndex: Int
     let style: PoseOverlayStyle
-    
+
     private var screenPosition: CGPoint {
         // Vision uses bottom-left origin, SwiftUI uses top-left origin
         // First, flip Y coordinate to convert from Vision to SwiftUI coordinate system
         let flippedY = 1.0 - keypoint.position.y
-        
+
         let finalX: CGFloat
         let finalY: CGFloat
-        
+
         if isUploadedVideo {
             // For uploaded videos: frames are already correctly oriented after appliesPreferredTrackTransform
             // Only apply Y-flip (no 90-degree rotation, no X-flip needed)
@@ -116,19 +135,19 @@ private struct KeypointView: View {
             // For camera feed: apply 90-degree rotation to match camera orientation
             let rotatedX = flippedY  // Y becomes X after 90-degree rotation
             let rotatedY = keypoint.position.x  // X becomes Y after 90-degree rotation (no flip needed)
-            
+
             // Apply X-axis flip for video playback if needed
             finalX = flipXAxis ? (1.0 - rotatedX) : rotatedX
             finalY = rotatedY
         }
-        
+
         // Map coordinates to screen space
         return CGPoint(
             x: finalX * actualSize.width,
             y: finalY * actualSize.height
         )
     }
-    
+
     var body: some View {
         Circle()
             .fill(keypointColor)
@@ -139,6 +158,10 @@ private struct KeypointView: View {
             )
             .shadow(color: style == .telemetry ? keypointColor.opacity(0.6) : .clear, radius: style == .telemetry ? 4 : 0)
             .position(x: screenPosition.x, y: screenPosition.y)
+            .accessibilityElement(children: .ignore)
+            .accessibilityIdentifier("PoseOverlay.Keypoint.\(keypoint.name)")
+            .accessibilityLabel(keypoint.name)
+            .accessibilityValue("confidence=\(String(format: "%.2f", keypoint.confidence)),frame=\(frameIndex)")
             .onAppear {
                 // #region agent log
                 if keypoint.name == "nose" {
@@ -175,18 +198,18 @@ struct SkeletonView: View {
     let flipXAxis: Bool
     let isUploadedVideo: Bool
     let style: PoseOverlayStyle
-    
+
     var body: some View {
         Canvas { context, size in
             drawSkeleton(context: context, size: size)
         }
     }
-    
+
     // Transform Vision coordinates to display coordinates
-    
+
     private func drawSkeleton(context: GraphicsContext, size: CGSize) {
         let keypoints = pose.keypoints
-        
+
         // Define skeleton connections (simplified)
         let connections: [(String, String)] = [
             // Head and neck
@@ -196,7 +219,7 @@ struct SkeletonView: View {
             ("rightEye", "rightEar"),
             ("leftEar", "neck"),
             ("rightEar", "neck"),
-            
+
             // Torso
             ("neck", "leftShoulder"),
             ("neck", "rightShoulder"),
@@ -204,12 +227,12 @@ struct SkeletonView: View {
             ("rightShoulder", "rightElbow"),
             ("leftElbow", "leftWrist"),
             ("rightElbow", "rightWrist"),
-            
+
             // Core
             ("leftShoulder", "leftHip"),
             ("rightShoulder", "rightHip"),
             ("leftHip", "rightHip"),
-            
+
             // Legs
             ("leftHip", "leftKnee"),
             ("rightHip", "rightKnee"),
@@ -220,59 +243,59 @@ struct SkeletonView: View {
             ("leftHeel", "leftFootIndex"),
             ("rightHeel", "rightFootIndex")
         ]
-        
+
         for (startJoint, endJoint) in connections {
             guard let startPoint = keypoints.first(where: { $0.name == startJoint }),
                   let endPoint = keypoints.first(where: { $0.name == endJoint }),
                   startPoint.confidence > 0.3 && endPoint.confidence > 0.3 else {
                 continue
             }
-            
-        let start: CGPoint
-        let end: CGPoint
-        
-        if isUploadedVideo {
-            // For uploaded videos: only apply Y-flip (no 90-degree rotation, no X-flip needed)
-            let flippedStartY = 1.0 - startPoint.position.y
-            let flippedEndY = 1.0 - endPoint.position.y
-            
-            start = CGPoint(
-                x: startPoint.position.x * previewSize.width,
-                y: flippedStartY * previewSize.height
-            )
-            end = CGPoint(
-                x: endPoint.position.x * previewSize.width,
-                y: flippedEndY * previewSize.height
-            )
-        } else {
-            // For camera feed: apply Y-flip and 90-degree rotation
-            let flippedStartY = 1.0 - startPoint.position.y
-            let flippedEndY = 1.0 - endPoint.position.y
-            
-            // Apply 90-degree rotation to the coordinates before mapping to screen
-            let startRotatedX = flippedStartY  // Y becomes X after 90-degree rotation
-            let startRotatedY = startPoint.position.x  // X becomes Y after 90-degree rotation (no flip needed)
-            let endRotatedX = flippedEndY  // Y becomes X after 90-degree rotation
-            let endRotatedY = endPoint.position.x  // X becomes Y after 90-degree rotation (no flip needed)
-            
-            // Apply X-axis flip for video playback if needed
-            let startFinalX = flipXAxis ? (1.0 - startRotatedX) : startRotatedX
-            let endFinalX = flipXAxis ? (1.0 - endRotatedX) : endRotatedX
-            
-            start = CGPoint(
-                x: startFinalX * previewSize.width,
-                y: startRotatedY * previewSize.height
-            )
-            end = CGPoint(
-                x: endFinalX * previewSize.width,
-                y: endRotatedY * previewSize.height
-            )
-        }
-            
+
+            let start: CGPoint
+            let end: CGPoint
+
+            if isUploadedVideo {
+                // For uploaded videos: only apply Y-flip (no 90-degree rotation, no X-flip needed)
+                let flippedStartY = 1.0 - startPoint.position.y
+                let flippedEndY = 1.0 - endPoint.position.y
+
+                start = CGPoint(
+                    x: startPoint.position.x * previewSize.width,
+                    y: flippedStartY * previewSize.height
+                )
+                end = CGPoint(
+                    x: endPoint.position.x * previewSize.width,
+                    y: flippedEndY * previewSize.height
+                )
+            } else {
+                // For camera feed: apply Y-flip and 90-degree rotation
+                let flippedStartY = 1.0 - startPoint.position.y
+                let flippedEndY = 1.0 - endPoint.position.y
+
+                // Apply 90-degree rotation to the coordinates before mapping to screen
+                let startRotatedX = flippedStartY  // Y becomes X after 90-degree rotation
+                let startRotatedY = startPoint.position.x  // X becomes Y after 90-degree rotation (no flip needed)
+                let endRotatedX = flippedEndY  // Y becomes X after 90-degree rotation
+                let endRotatedY = endPoint.position.x  // X becomes Y after 90-degree rotation (no flip needed)
+
+                // Apply X-axis flip for video playback if needed
+                let startFinalX = flipXAxis ? (1.0 - startRotatedX) : startRotatedX
+                let endFinalX = flipXAxis ? (1.0 - endRotatedX) : endRotatedX
+
+                start = CGPoint(
+                    x: startFinalX * previewSize.width,
+                    y: startRotatedY * previewSize.height
+                )
+                end = CGPoint(
+                    x: endFinalX * previewSize.width,
+                    y: endRotatedY * previewSize.height
+                )
+            }
+
             var path = Path()
             path.move(to: start)
             path.addLine(to: end)
-            
+
             context.stroke(
                 path,
                 with: .color(style == .telemetry ? Color(red: 0.24, green: 0.86, blue: 1.0) : .white),
@@ -292,9 +315,9 @@ struct SkeletonView: View {
         PoseKeypoint(name: "leftKnee", position: CGPoint(x: 0.45, y: 0.8), confidence: 0.6),
         PoseKeypoint(name: "rightKnee", position: CGPoint(x: 0.55, y: 0.8), confidence: 0.6)
     ]
-    
+
     let mockPose = PoseDetectionResult(keypoints: mockKeypoints, frameIndex: 1)
-    
+
     PoseOverlayView(
         pose: mockPose,
         previewSize: CGSize(width: 300, height: 400),
