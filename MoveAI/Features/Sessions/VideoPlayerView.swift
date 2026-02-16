@@ -185,42 +185,46 @@ struct VideoPlayerView: View {
                     let contentHeight = displaySize.height * fitScale
                     let contentSize = CGSize(width: contentWidth, height: contentHeight)
                     
-                    if let player = playback.player {
-                        ZStack {
-                            Color.black
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            PlayerContainerView(player: player, useAspectFit: true)
-                                .frame(width: availableWidth, height: containerHeight)
-                            if showingPoseOverlay, let poseData = poseData, !poseData.isEmpty {
-                                PoseOverlayView(
-                                    pose: currentPose,
-                                    previewSize: contentSize,
-                                    flipXAxis: true,
-                                    isUploadedVideo: !isRecordedLive,
-                                    style: .telemetry
-                                )
-                                .frame(width: contentWidth, height: contentHeight)
-                                .position(x: availableWidth / 2, y: containerHeight / 2)
-                                .allowsHitTesting(false)
+                    Group {
+                        if let player = playback.player {
+                            ZStack {
+                                Color.black
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                PlayerContainerView(player: player, useAspectFit: true)
+                                    .frame(width: availableWidth, height: containerHeight)
+                                if showingPoseOverlay, let poseData = poseData, !poseData.isEmpty {
+                                    PoseOverlayView(
+                                        pose: currentPose,
+                                        previewSize: contentSize,
+                                        flipXAxis: true,
+                                        isUploadedVideo: !isRecordedLive,
+                                        style: .telemetry
+                                    )
+                                    .frame(width: contentWidth, height: contentHeight)
+                                    .position(x: availableWidth / 2, y: containerHeight / 2)
+                                    .allowsHitTesting(false)
+                                }
+                                if let cueOverlay {
+                                    CueOverlayView(overlay: cueOverlay)
+                                        .padding(.top, cueTopPadding)
+                                        .padding(.horizontal, 12)
+                                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                                        .transition(.opacity)
+                                }
                             }
-                            if let cueOverlay {
-                                CueOverlayView(overlay: cueOverlay)
-                                    .padding(.top, cueTopPadding)
-                                    .padding(.horizontal, 12)
-                                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                                    .transition(.opacity)
-                            }
-                        }
-                        .frame(width: availableWidth, height: containerHeight)
-                        .clipped()
-                        .cornerRadius(0)
-                    } else {
-                        Rectangle()
-                            .fill(telemetryBackground)
                             .frame(width: availableWidth, height: containerHeight)
-                            .overlay(loadingOverlay)
+                            .clipped()
                             .cornerRadius(0)
+                        } else {
+                            Rectangle()
+                                .fill(telemetryBackground)
+                                .frame(width: availableWidth, height: containerHeight)
+                                .overlay(loadingOverlay)
+                                .cornerRadius(0)
+                        }
                     }
+                    .accessibilityIdentifier("VideoReview.VideoSurface")
+                    .accessibilityElement(children: .contain)
                 } else {
                     // Non-fullBleed: original 16:9 / scale behavior.
                     let baseVideoHeight = availableWidth * 16 / 9

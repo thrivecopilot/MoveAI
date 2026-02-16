@@ -1,0 +1,34 @@
+{
+  "elements" : [
+    {
+      "exists" : true,
+      "id" : "VideoReview.PlaybackBar",
+      "isEnabled" : false,
+      "label" : "Play"
+    },
+    {
+      "exists" : true,
+      "id" : "VideoReview.TopBar",
+      "isEnabled" : true,
+      "label" : "Close"
+    },
+    {
+      "exists" : true,
+      "id" : "VideoReview.VideoSurface",
+      "label" : ""
+    },
+    {
+      "exists" : true,
+      "id" : "VideoReviewLayoutView",
+      "label" : ""
+    },
+    {
+      "exists" : true,
+      "id" : "VideoReviewSheet",
+      "isEnabled" : true,
+      "label" : "Overview"
+    }
+  ],
+  "scenario" : "VideoReview_overview_medium",
+  "schemaVersion" : 1
+}

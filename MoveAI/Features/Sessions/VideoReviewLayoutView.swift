@@ -30,10 +30,12 @@ struct VideoReviewLayoutView: View {
     @State private var pausedCueTask: Task<Void, Never>?
     @State private var playbackBarHeight: CGFloat = 0
     @State private var minCollapsedHeight: CGFloat = DragHandleMetrics.minCollapsedHeight
+    @State private var videoSurfaceFrame: CGRect = .zero
     
     @StateObject private var playback: PlaybackController
     @StateObject private var reviewModel: SessionReviewViewModel
     
+    private static let layoutCoordinateSpaceName = "VideoReview.LayoutSpace"
     private let backgroundColor = Color(red: 0.04, green: 0.05, blue: 0.07)
     private let analysisService: AnalysisServiceProtocol = PoseBasedAnalysisService()
     
@@ -60,7 +62,11 @@ struct VideoReviewLayoutView: View {
                 let totalHeight = geometry.size.height
                 let topInset = geometry.safeAreaInsets.top
                 let bottomInset = geometry.safeAreaInsets.bottom
-                let fullHeight = totalHeight + topInset + bottomInset
+                let probeValue = layoutProbeValue(
+                    containerSize: geometry.size,
+                    safeTop: topInset,
+                    safeBottom: bottomInset
+                )
                 let topBarHeight: CGFloat = 54
                 let estimatedBarHeight: CGFloat = 72
                 let playbackHeight = max(playbackBarHeight, estimatedBarHeight)
@@ -88,6 +94,14 @@ struct VideoReviewLayoutView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                         .clipped()
                         .ignoresSafeArea(edges: .horizontal)
+                        .background(
+                            GeometryReader { proxy in
+                                Color.clear.preference(
+                                    key: VideoSurfaceFrameKey.self,
+                                    value: proxy.frame(in: .named(Self.layoutCoordinateSpaceName))
+                                )
+                            }
+                        )
                     
                     VStack(spacing: 0) {
                         analysisSheet(
@@ -104,6 +118,15 @@ struct VideoReviewLayoutView: View {
                             .animation(.interactiveSpring(), value: sheetState)
                     }
                     .frame(maxWidth: .infinity)
+                }
+                .coordinateSpace(name: Self.layoutCoordinateSpaceName)
+                .overlay(alignment: .topLeading) {
+                    Color.clear
+                        .frame(width: 1, height: 1)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityIdentifier("VideoReview.LayoutProbe")
+                        .accessibilityLabel("Video Review Layout Probe")
+                        .accessibilityValue(probeValue)
                 }
             }
             .ignoresSafeArea(edges: .horizontal)
@@ -136,10 +159,15 @@ struct VideoReviewLayoutView: View {
                     playbackBarHeight = newValue
                 }
             }
+            .onPreferenceChange(VideoSurfaceFrameKey.self) { newValue in
+                guard newValue.width > 0, newValue.height > 0 else { return }
+                videoSurfaceFrame = newValue
+            }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .navigationBar)
             .toolbar(.hidden, for: .tabBar)
             .accessibilityIdentifier(AccessibilityID.VideoReview.root)
+            .accessibilityElement(children: .contain)
         }
         .ignoresSafeArea(edges: .horizontal)
         .onAppear {
@@ -219,6 +247,7 @@ struct VideoReviewLayoutView: View {
                     .frame(width: 32, height: 32)
                     .background(Color.black.opacity(0.45))
                     .clipShape(Circle())
+                    .frame(width: 44, height: 44)
             }
             .accessibilityIdentifier(AccessibilityID.VideoReview.closeButton)
             .accessibilityLabel("Close")
@@ -247,6 +276,8 @@ struct VideoReviewLayoutView: View {
                 endPoint: .bottom
             )
         )
+        .accessibilityIdentifier("VideoReview.TopBar")
+        .accessibilityElement(children: .contain)
     }
 
     private func analysisSheet(
@@ -468,6 +499,46 @@ struct VideoReviewLayoutView: View {
             return availableHeight * 0.92
         }
     }
+
+    private func layoutProbeValue(containerSize: CGSize, safeTop: CGFloat, safeBottom: CGFloat) -> String {
+        let ready =
+            containerSize.width > 0 &&
+            containerSize.height > 0 &&
+            videoSurfaceFrame.width > 0 &&
+            videoSurfaceFrame.height > 0 &&
+            videoSurfaceFrame.minX.isFinite &&
+            videoSurfaceFrame.maxX.isFinite &&
+            videoSurfaceFrame.minY.isFinite &&
+            videoSurfaceFrame.maxY.isFinite
+
+        let frame = ready ? videoSurfaceFrame : .zero
+        let payload = VideoReviewLayoutProbePayload(
+            schemaVersion: 1,
+            ready: ready,
+            containerWidth: roundedToTenth(containerSize.width),
+            containerHeight: roundedToTenth(containerSize.height),
+            safeTop: roundedToTenth(safeTop),
+            safeBottom: roundedToTenth(safeBottom),
+            videoMinX: roundedToTenth(frame.minX),
+            videoMaxX: roundedToTenth(frame.maxX),
+            videoMinY: roundedToTenth(frame.minY),
+            videoMaxY: roundedToTenth(frame.maxY)
+        )
+
+        let encoder = JSONEncoder()
+        guard
+            let data = try? encoder.encode(payload),
+            let json = String(data: data, encoding: .utf8)
+        else {
+            return "{\"schemaVersion\":1,\"ready\":false}"
+        }
+        return json
+    }
+
+    private func roundedToTenth(_ value: CGFloat) -> Double {
+        guard value.isFinite else { return 0 }
+        return (Double(value) * 10).rounded() / 10
+    }
 }
 
 private struct PlaybackBarHeightKey: PreferenceKey {
@@ -476,6 +547,30 @@ private struct PlaybackBarHeightKey: PreferenceKey {
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = max(value, nextValue())
     }
+}
+
+private struct VideoSurfaceFrameKey: PreferenceKey {
+    static var defaultValue: CGRect = .zero
+
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        let next = nextValue()
+        if next.width > 0, next.height > 0 {
+            value = next
+        }
+    }
+}
+
+private struct VideoReviewLayoutProbePayload: Encodable {
+    let schemaVersion: Int
+    let ready: Bool
+    let containerWidth: Double
+    let containerHeight: Double
+    let safeTop: Double
+    let safeBottom: Double
+    let videoMinX: Double
+    let videoMaxX: Double
+    let videoMinY: Double
+    let videoMaxY: Double
 }
 
 #if DEBUG

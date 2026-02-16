@@ -26,6 +26,7 @@ struct PlaybackControlsBar: View {
                         .frame(width: 28, height: 28)
                         .background(Color.white.opacity(0.08))
                         .clipShape(Circle())
+                        .frame(width: 44, height: 44)
                 }
                 .disabled(playback.playerStatus != .readyToPlay)
                 .accessibilityIdentifier(AccessibilityID.VideoReview.playPauseButton)
@@ -65,5 +66,7 @@ struct PlaybackControlsBar: View {
                 .frame(height: 1),
             alignment: .top
         )
+        .accessibilityIdentifier("VideoReview.PlaybackBar")
+        .accessibilityElement(children: .contain)
     }
 }
