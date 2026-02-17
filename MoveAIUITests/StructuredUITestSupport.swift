@@ -37,10 +37,22 @@ extension XCTestCase {
         appearance: StructuredUITestAppearance = .light,
         textSize: StructuredUITestTextSize = .default
     ) -> XCUIApplication {
+        launchScenario(
+            scenario.rawValue,
+            appearance: appearance,
+            textSize: textSize
+        )
+    }
+
+    func launchScenario(
+        _ scenarioName: String,
+        appearance: StructuredUITestAppearance = .light,
+        textSize: StructuredUITestTextSize = .default
+    ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = [
             "--uitesting",
-            "-uiScenario", scenario.rawValue,
+            "-uiScenario", scenarioName,
             "-uiAppearance", appearance.rawValue,
             "-uiTextSize", textSize.rawValue,
             "-uiDisableAnimations"
