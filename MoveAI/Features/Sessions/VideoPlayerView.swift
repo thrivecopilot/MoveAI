@@ -172,7 +172,7 @@ struct VideoPlayerView: View {
                 let containerHeight = geometry.size.height
                 
                 if isFullBleed {
-                    // Photos-like: one rect, video display size from asset, aspect fit, overlay in content rect.
+                    // Full-bleed review surface: edge-to-edge with aspect fill (no letterboxing).
                     let displaySize: CGSize = {
                         if let ds = playback.videoDisplaySize, ds.width > 0, ds.height > 0 {
                             return ds
@@ -180,27 +180,28 @@ struct VideoPlayerView: View {
                         let h = availableWidth * DeviceInfo.screenHeight / DeviceInfo.screenWidth
                         return CGSize(width: availableWidth, height: h)
                     }()
-                    let fitScale = min(availableWidth / displaySize.width, containerHeight / displaySize.height)
-                    let contentWidth = displaySize.width * fitScale
-                    let contentHeight = displaySize.height * fitScale
-                    let contentSize = CGSize(width: contentWidth, height: contentHeight)
-                    
+                    let safeDisplayWidth = max(displaySize.width, 1)
+                    let safeDisplayHeight = max(displaySize.height, 1)
+                    let fillScale = max(availableWidth / safeDisplayWidth, containerHeight / safeDisplayHeight)
+                    let filledWidth = safeDisplayWidth * fillScale
+                    let filledHeight = safeDisplayHeight * fillScale
+                    let fillSize = CGSize(width: filledWidth, height: filledHeight)
+
                     Group {
                         if let player = playback.player {
                             ZStack {
-                                Color.black
+                                PlayerContainerView(player: player, useAspectFit: false)
                                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                PlayerContainerView(player: player, useAspectFit: true)
-                                    .frame(width: availableWidth, height: containerHeight)
+                                    .clipped()
                                 if showingPoseOverlay, let poseData = poseData, !poseData.isEmpty {
                                     PoseOverlayView(
                                         pose: currentPose,
-                                        previewSize: contentSize,
+                                        previewSize: fillSize,
                                         flipXAxis: true,
                                         isUploadedVideo: !isRecordedLive,
                                         style: .telemetry
                                     )
-                                    .frame(width: contentWidth, height: contentHeight)
+                                    .frame(width: filledWidth, height: filledHeight)
                                     .position(x: availableWidth / 2, y: containerHeight / 2)
                                     .allowsHitTesting(false)
                                 }
