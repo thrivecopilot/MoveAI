@@ -51,14 +51,16 @@ struct FormFeedback: Codable, Identifiable {
     let severity: FeedbackSeverity
     let timestamp: TimeInterval // When in the video this applies
     let repNumber: Int? // Which rep this feedback applies to (1-indexed)
+    let affectedBodyJoints: [BodyJoint]? // Body joints affected by this feedback
     
-    init(category: FeedbackCategory, message: String, severity: FeedbackSeverity, timestamp: TimeInterval, repNumber: Int? = nil) {
+    init(category: FeedbackCategory, message: String, severity: FeedbackSeverity, timestamp: TimeInterval, repNumber: Int? = nil, affectedBodyJoints: [BodyJoint]? = nil) {
         self.id = UUID()
         self.category = category
         self.message = message
         self.severity = severity
         self.timestamp = timestamp
         self.repNumber = repNumber
+        self.affectedBodyJoints = affectedBodyJoints
     }
 }
 

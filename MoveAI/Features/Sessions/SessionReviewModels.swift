@@ -24,6 +24,7 @@ struct IssueOccurrence: Identifiable {
     let id: UUID
     let time: TimeInterval
     let severity: FeedbackSeverity
+    let affectedBodyJoints: [BodyJoint]
 }
 
 struct IssueSummary: Identifiable {

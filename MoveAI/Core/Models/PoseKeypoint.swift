@@ -32,7 +32,7 @@ public struct PoseDetectionResult: Codable, Equatable {
 }
 
 // MARK: - Body Joint Names (matching Vision framework)
-enum BodyJoint: String, CaseIterable {
+enum BodyJoint: String, CaseIterable, Codable {
     // Head and neck
     case nose = "nose"
     case leftEye = "leftEye"
