@@ -2050,7 +2050,8 @@ struct SquatAnalyzer {
                     message: "Incomplete range of motion - return to start or reach full depth",
                     severity: totalReps == 1 ? .critical : .warning,
                     timestamp: max(0, timestamp),
-                    repNumber: rep.repNumber
+                    repNumber: rep.repNumber,
+                    affectedBodyJoints: [.leftHip, .rightHip, .leftKnee, .rightKnee]
                 ))
             } else if shallowReps.contains(rep.repNumber) {
                 feedback.append(FormFeedback(
@@ -2058,7 +2059,8 @@ struct SquatAnalyzer {
                     message: "Need to go deeper - aim to get hip crease below knee level",
                     severity: .warning,
                     timestamp: max(0, timestamp),
-                    repNumber: rep.repNumber
+                    repNumber: rep.repNumber,
+                    affectedBodyJoints: [.leftHip, .rightHip, .leftKnee, .rightKnee]
                 ))
             }
             // Skip positive feedback for reps with excellent depth
@@ -2079,7 +2081,8 @@ struct SquatAnalyzer {
                         message: "Knees caving inward - push knees out to align with toes",
                         severity: .critical,
                         timestamp: max(0, timestamp),
-                        repNumber: rep.repNumber
+                        repNumber: rep.repNumber,
+                        affectedBodyJoints: [.leftKnee, .rightKnee]
                     ))
                 }
                 // Skip positive feedback for reps with good knee tracking
@@ -2139,6 +2142,18 @@ struct SquatAnalyzer {
             for deviation in filteredDeviations {
                 let category = mapDeviationTypeToCategory(deviation.type, severity: deviation.severity)
                 let feedbackSeverity = mapDeviationSeverityToFeedbackSeverity(deviation.severity)
+                let joints: [BodyJoint] = {
+                    switch deviation.type {
+                    case .torsoBias:
+                        return [.leftShoulder, .rightShoulder, .leftHip, .rightHip]
+                    case .torsoInstability:
+                        return [.leftShoulder, .rightShoulder, .leftHip, .rightHip]
+                    case .hipShoot:
+                        return [.leftHip, .rightHip, .leftKnee, .rightKnee]
+                    case .balanceDrift:
+                        return [.leftAnkle, .rightAnkle]
+                    }
+                }()
                 
                 // Calculate timestamp for this deviation (use midpoint of frame range)
                 // Frame indices in deviation.frameRange are absolute frame indices
@@ -2174,7 +2189,8 @@ struct SquatAnalyzer {
                     message: deviation.message,
                     severity: feedbackSeverity,
                     timestamp: max(0, deviationTimestamp),
-                    repNumber: rep.repNumber
+                    repNumber: rep.repNumber,
+                    affectedBodyJoints: joints
                 ))
             }
         }

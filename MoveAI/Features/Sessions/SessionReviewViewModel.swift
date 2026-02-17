@@ -113,7 +113,12 @@ enum IssueSummaryBuilder {
         let issues = grouped.compactMap { _, items -> IssueSummary? in
             guard let first = items.first else { return nil }
             let occurrences = items.map {
-                IssueOccurrence(id: $0.id, time: $0.timestamp, severity: $0.severity)
+                IssueOccurrence(
+                    id: $0.id,
+                    time: $0.timestamp,
+                    severity: $0.severity,
+                    affectedBodyJoints: $0.affectedBodyJoints ?? []
+                )
             }
             .sorted { $0.time < $1.time }
             
