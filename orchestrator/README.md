@@ -43,13 +43,55 @@ cd ~/Developer/moveai-ios
 # Open in Codex/Cursor: "implement the spec in tasks/phase-1-layout.md"
 ```
 
-## After a Phase Completes
+## Review & Merge Playbook
+
+When agents report done, run this in a **short "Review & Merge" session**:
+
+### 1. Generate review bundles (don't read raw diffs)
+```bash
+bash orchestrator/scripts/make_bundle.sh ~/Developer/moveai-ml phase-2-overlay
+bash orchestrator/scripts/make_bundle.sh ~/Developer/moveai-ios phase-3-cue-logic
+```
+
+### 2. Trial-merge in moveai-review (keeps main clean)
+```bash
+cd ~/Developer/moveai-review
+git reset --hard main
+git merge feat/squat-layout-ml --no-ff -m "Trial: Phase 2"
+git merge feat/squat-layout-ios --no-ff -m "Trial: Phase 3"
+```
+
+### 3. Verify the integration
+```bash
+bash orchestrator/scripts/verify.sh ~/Developer/moveai-review
+```
+
+### 4. If green → merge to main
+```bash
+cd ~/Developer/MoveAI
+git merge feat/squat-layout-ml --no-ff -m "Merge Phase 2: ..."
+git merge feat/squat-layout-ios --no-ff -m "Merge Phase 3: ..."
+```
+
+### 5. Sync all worktrees
+```bash
+for wt in moveai-ios moveai-ml moveai-lead moveai-review; do
+  cd ~/Developer/$wt && git merge main --ff-only
+done
+```
+
+### 6. Update taskboard
+Mark completed phases, unblock next ones, update `orchestrator/taskboard.md`.
+
+---
+
+## Legacy: After a Phase Completes (simple version)
 
 1. Agent fills in self-check: [`templates/review_bundle_selfcheck_template.md`](templates/review_bundle_selfcheck_template.md)
 2. Run verification: `bash orchestrator/scripts/verify.sh <worktree-path>`
 3. Generate review bundle: `bash orchestrator/scripts/make_bundle.sh <worktree-path> <phase-name>`
-4. Review in moveai-review, merge to main
-5. Rebase other worktrees, update [`taskboard.md`](taskboard.md)
+4. Trial-merge in moveai-review, verify, then merge to main
+5. Fast-forward other worktrees, update [`taskboard.md`](taskboard.md)
 6. Start next phase
 
 ## Key Documents (outside this directory)
