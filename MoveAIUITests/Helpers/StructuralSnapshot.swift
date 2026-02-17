@@ -8,7 +8,7 @@
 //
 //  Usage:
 //  ```swift
-//  try StructuralSnapshot.verify(
+//  try StructuralTreeSnapshot.verify(
 //      app: app,
 //      rootIdentifier: AID.SessionHistory.root,
 //      snapshotName: "SessionHistory_loaded__light__default",
@@ -23,7 +23,7 @@
 
 import XCTest
 
-enum StructuralSnapshot {
+enum StructuralTreeSnapshot {
 
     // MARK: - Element Node Model
 

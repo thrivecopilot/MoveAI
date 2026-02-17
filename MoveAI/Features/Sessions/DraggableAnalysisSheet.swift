@@ -21,9 +21,9 @@ enum AnalysisSheetState: Int, CaseIterable {
     /// Fraction of content area given to the sheet (0...1). Video gets (1 - fraction).
     var sheetFraction: Double {
         switch self {
-        case .collapsed: return 0.20
-        case .medium:   return 0.50  // Tab bar + score + rep summary
-        case .expanded: return 0.92  // Maps-style almost full screen
+        case .collapsed: return 0.0
+        case .medium:   return 0.38  // Tab bar + score + rep summary
+        case .expanded: return 0.88  // Maps-style almost full screen
         }
     }
 }
@@ -185,6 +185,13 @@ struct DraggableAnalysisSheet<OverviewContent: View, IssuesContent: View, NotesC
                 }
             }
             .accessibilityIdentifier(AccessibilityID.Tabs.dragHandle)
+            .onTapGesture {
+                if sheetState == .collapsed {
+                    withAnimation(.interactiveSpring()) {
+                        sheetState = .medium
+                    }
+                }
+            }
     }
     
     private var tabBar: some View {

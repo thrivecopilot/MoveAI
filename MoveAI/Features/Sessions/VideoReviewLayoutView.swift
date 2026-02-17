@@ -11,6 +11,27 @@
 import SwiftUI
 import AVFoundation
 
+enum SheetDetentLayoutCalculator {
+    static func sheetHeight(
+        for state: AnalysisSheetState,
+        availableHeight: CGFloat,
+        minCollapsedHeight: CGFloat
+    ) -> CGFloat {
+        let handleMinHeight = max(minCollapsedHeight, DragHandleMetrics.minCollapsedHeight)
+
+        switch state {
+        case .collapsed:
+            return handleMinHeight
+        case .medium:
+            let minMedium: CGFloat = 300
+            let baseHeight = availableHeight * state.sheetFraction
+            return min(availableHeight * 0.95, max(minMedium, baseHeight))
+        case .expanded:
+            return availableHeight * state.sheetFraction
+        }
+    }
+}
+
 struct VideoReviewLayoutView: View {
     let session: Session
     @ObservedObject var sessionManager: SessionManager
@@ -484,20 +505,11 @@ struct VideoReviewLayoutView: View {
     }
     
     private func sheetHeight(for state: AnalysisSheetState, availableHeight: CGFloat) -> CGFloat {
-        let handleMinHeight = max(minCollapsedHeight, DragHandleMetrics.minCollapsedHeight)
-        
-        switch state {
-        case .collapsed:
-            return min(availableHeight * 0.95, handleMinHeight)
-        case .medium:
-            // Enough for tab bar + score + rep summary (~300pt min).
-            let minMedium: CGFloat = 300
-            let baseHeight = availableHeight * state.sheetFraction
-            return min(availableHeight * 0.95, max(minMedium, baseHeight))
-        case .expanded:
-            // Maps-style: almost full screen (~92% of available height).
-            return availableHeight * 0.92
-        }
+        SheetDetentLayoutCalculator.sheetHeight(
+            for: state,
+            availableHeight: availableHeight,
+            minCollapsedHeight: minCollapsedHeight
+        )
     }
 
     private func layoutProbeValue(containerSize: CGSize, safeTop: CGFloat, safeBottom: CGFloat) -> String {

@@ -338,7 +338,7 @@ final class StructuralUITests: XCTestCase {
 
     func testSessionHistoryLoaded_snapshot() throws {
         app = launchScenario("SessionHistory_loaded")
-        try StructuralSnapshot.verify(
+        try StructuralTreeSnapshot.verify(
             app: app,
             rootIdentifier: AID.SessionHistory.root,
             snapshotName: "SessionHistory_loaded__light__default",
@@ -349,7 +349,7 @@ final class StructuralUITests: XCTestCase {
 
     func testVideoReviewMedium_snapshot() throws {
         app = launchScenario("VideoReview_overview_medium")
-        try StructuralSnapshot.verify(
+        try StructuralTreeSnapshot.verify(
             app: app,
             rootIdentifier: AID.VideoReview.root,
             snapshotName: "VideoReview_overview_medium__light__default",
