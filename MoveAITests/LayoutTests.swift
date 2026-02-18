@@ -7,6 +7,7 @@
 
 import XCTest
 import SwiftUI
+import AVFoundation
 @testable import MoveAI
 
 @MainActor
@@ -245,4 +246,50 @@ final class LayoutTests: XCTestCase {
         XCTAssertGreaterThan(heightDifference, 0,
                             "There should be a height difference indicating cropping")
     }
+
+    func testFullBleedFilledSizeCoversContainer() throws {
+        let containerSize = CGSize(width: 390, height: 760)
+        let displaySize = CGSize(width: 1920, height: 1080)
+
+        let fillSize = VideoSurfaceLayoutCalculator.filledSize(
+            containerSize: containerSize,
+            displaySize: displaySize
+        )
+
+        XCTAssertGreaterThanOrEqual(fillSize.width, containerSize.width,
+                                    "Aspect-fill width should cover the container")
+        XCTAssertGreaterThanOrEqual(fillSize.height, containerSize.height,
+                                    "Aspect-fill height should cover the container")
+    }
+
+    func testFullBleedFilledSizePreservesSourceAspectRatio() throws {
+        let containerSize = CGSize(width: 390, height: 760)
+        let displaySize = CGSize(width: 1080, height: 1920)
+
+        let fillSize = VideoSurfaceLayoutCalculator.filledSize(
+            containerSize: containerSize,
+            displaySize: displaySize
+        )
+
+        let expectedRatio = displaySize.width / displaySize.height
+        let actualRatio = fillSize.width / fillSize.height
+
+        XCTAssertEqual(actualRatio, expectedRatio, accuracy: 0.0001,
+                       "Aspect-fill sizing should preserve the source aspect ratio")
+    }
+
+    func testVideoGravityMappingUsesAspectFillForReviewMode() throws {
+        XCTAssertEqual(
+            VideoSurfaceLayoutCalculator.videoGravity(useAspectFit: false),
+            AVLayerVideoGravity.resizeAspectFill,
+            "Review mode should always use aspect fill"
+        )
+        XCTAssertEqual(
+            VideoSurfaceLayoutCalculator.videoGravity(useAspectFit: true),
+            AVLayerVideoGravity.resizeAspect,
+            "Aspect-fit mode should map to resizeAspect"
+        )
+    }
+
+
 }

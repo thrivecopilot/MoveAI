@@ -180,12 +180,12 @@ struct VideoPlayerView: View {
                         let h = availableWidth * DeviceInfo.screenHeight / DeviceInfo.screenWidth
                         return CGSize(width: availableWidth, height: h)
                     }()
-                    let safeDisplayWidth = max(displaySize.width, 1)
-                    let safeDisplayHeight = max(displaySize.height, 1)
-                    let fillScale = max(availableWidth / safeDisplayWidth, containerHeight / safeDisplayHeight)
-                    let filledWidth = safeDisplayWidth * fillScale
-                    let filledHeight = safeDisplayHeight * fillScale
-                    let fillSize = CGSize(width: filledWidth, height: filledHeight)
+                    let fillSize = VideoSurfaceLayoutCalculator.filledSize(
+                        containerSize: CGSize(width: availableWidth, height: containerHeight),
+                        displaySize: displaySize
+                    )
+                    let filledWidth = fillSize.width
+                    let filledHeight = fillSize.height
 
                     Group {
                         if let player = playback.player {
@@ -356,6 +356,7 @@ struct VideoPlayerView: View {
         let targetFrameIndex = Int(playback.currentTime * poseFrameRate)
         currentFrameIndex = min(max(targetFrameIndex, 0), poseData.count - 1)
     }
+
 }
 
 // MARK: - Constrained Height Modifier
@@ -380,7 +381,7 @@ private struct PlayerContainerView: UIViewControllerRepresentable {
         let controller = AVPlayerViewController()
         controller.player = player
         controller.showsPlaybackControls = false
-        controller.videoGravity = useAspectFit ? .resizeAspect : .resizeAspectFill
+        controller.videoGravity = VideoSurfaceLayoutCalculator.videoGravity(useAspectFit: useAspectFit)
         return controller
     }
     
@@ -389,7 +390,26 @@ private struct PlayerContainerView: UIViewControllerRepresentable {
             uiViewController.player = player
         }
         uiViewController.showsPlaybackControls = false
-        uiViewController.videoGravity = useAspectFit ? .resizeAspect : .resizeAspectFill
+        uiViewController.videoGravity = VideoSurfaceLayoutCalculator.videoGravity(useAspectFit: useAspectFit)
+    }
+}
+
+enum VideoSurfaceLayoutCalculator {
+    static func filledSize(containerSize: CGSize, displaySize: CGSize) -> CGSize {
+        let safeContainerWidth = max(containerSize.width, 1)
+        let safeContainerHeight = max(containerSize.height, 1)
+        let safeDisplayWidth = max(displaySize.width, 1)
+        let safeDisplayHeight = max(displaySize.height, 1)
+        let fillScale = max(safeContainerWidth / safeDisplayWidth, safeContainerHeight / safeDisplayHeight)
+
+        return CGSize(
+            width: safeDisplayWidth * fillScale,
+            height: safeDisplayHeight * fillScale
+        )
+    }
+
+    static func videoGravity(useAspectFit: Bool) -> AVLayerVideoGravity {
+        useAspectFit ? .resizeAspect : .resizeAspectFill
     }
 }
 
