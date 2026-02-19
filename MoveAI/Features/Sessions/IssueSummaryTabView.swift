@@ -31,6 +31,7 @@ struct IssueSummaryTabView: View {
             }
         }
         .accessibilityIdentifier(AccessibilityID.Issues.root)
+        .accessibilityElement(children: .contain)
     }
 }
 

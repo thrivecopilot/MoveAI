@@ -282,6 +282,22 @@ final class StructuralUITests: XCTestCase {
         )
 
         assertSheetFlushWithPlaybackBar()
+
+        // Tapping Issues/Notes in medium should switch tabs (no auto expansion).
+        let issuesTabById = element(AID.Tabs.issues)
+        let issuesTab = issuesTabById.exists ? issuesTabById : (app.buttons["Issues"].exists ? app.buttons["Issues"] : app.staticTexts["Issues"])
+        XCTAssertTrue(issuesTab.exists, "Issues tab must exist in medium state")
+        issuesTab.tap()
+        XCTAssertTrue(
+            app.staticTexts["SAFETY"].waitForExistence(timeout: 3),
+            "Selecting Issues from medium should show Issues content"
+        )
+
+        let notesTabById = element(AID.Tabs.notes)
+        let notesTab = notesTabById.exists ? notesTabById : (app.buttons["Notes"].exists ? app.buttons["Notes"] : app.staticTexts["Notes"])
+        XCTAssertTrue(notesTab.exists, "Notes tab must exist after selecting Issues")
+        notesTab.tap()
+        assertExists(AID.Notes.root, timeout: 3, "Selecting Notes should show Notes content")
     }
 
     func testVideoReviewMedium_a11yAudit() throws {
@@ -302,9 +318,18 @@ final class StructuralUITests: XCTestCase {
         assertExists(AID.VideoReview.sheet, "Sheet must exist even when collapsed")
 
         // Collapsed state should only expose the handle strip.
-        assertNotExists("Tab.Overview", "Overview tab must be hidden when collapsed")
-        assertNotExists("Tab.Issues", "Issues tab must be hidden when collapsed")
-        assertNotExists("Tab.Notes", "Notes tab must be hidden when collapsed")
+        XCTAssertFalse(
+            app.buttons["Overview"].exists || app.staticTexts["Overview"].exists,
+            "Overview tab must be hidden when collapsed"
+        )
+        XCTAssertFalse(
+            app.buttons["Issues"].exists || app.staticTexts["Issues"].exists,
+            "Issues tab must be hidden when collapsed"
+        )
+        XCTAssertFalse(
+            app.buttons["Notes"].exists || app.staticTexts["Notes"].exists,
+            "Notes tab must be hidden when collapsed"
+        )
         assertNotExists("WorkoutSummary.ScoreTitle", "Score content must be hidden when collapsed")
 
         assertSheetFlushWithPlaybackBar()

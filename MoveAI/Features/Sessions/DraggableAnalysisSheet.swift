@@ -111,11 +111,11 @@ struct DraggableAnalysisSheet<OverviewContent: View, IssuesContent: View, NotesC
 
                 if sheetState == .expanded {
                     sheetContent
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                         .clipped()
                 } else {
                     sheetContent
-                        .frame(maxWidth: .infinity, alignment: .top)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                         .clipped()
                 }
             }
@@ -134,33 +134,7 @@ struct DraggableAnalysisSheet<OverviewContent: View, IssuesContent: View, NotesC
             x: 0,
             y: -2
         )
-        .gesture(
-            // Use a stable coordinate space so resizing the sheet while dragging
-            // does not feed back into the gesture translation (jittery drag).
-            DragGesture(coordinateSpace: .global)
-                .updating($isDragging) { _, state, _ in state = true }
-                .onChanged { value in
-                    let translation = value.translation.height
-                    dragOffset = rubberBand(translation, min: maxUp, max: maxDown)
-                }
-                .onEnded { value in
-                    let nextState = resolvedDetent(
-                        translation: value.translation.height,
-                        predictedTranslation: value.predictedEndTranslation.height
-                    )
-                    withAnimation(.interactiveSpring(response: 0.35, dampingFraction: 0.85, blendDuration: 0.15)) {
-                        sheetState = nextState
-                        dragOffset = 0
-                    }
-                }
-        )
-        .onChange(of: sheetState) { _, newValue in
-            if newValue != .expanded, selectedTab != .overview {
-                selectedTab = .overview
-            }
-        }
     }
-
     /// Thin horizontal grabber (Apple Maps-style); no label.
     private var dragHandle: some View {
         let rowHeight = collapsedRowHeight
@@ -202,6 +176,24 @@ struct DraggableAnalysisSheet<OverviewContent: View, IssuesContent: View, NotesC
                     minCollapsedHeight = DragHandleMetrics.minCollapsedHeight
                 }
             }
+            .gesture(
+                DragGesture(coordinateSpace: .global)
+                    .updating($isDragging) { _, state, _ in state = true }
+                    .onChanged { value in
+                        let translation = value.translation.height
+                        dragOffset = rubberBand(translation, min: maxUp, max: maxDown)
+                    }
+                    .onEnded { value in
+                        let nextState = resolvedDetent(
+                            translation: value.translation.height,
+                            predictedTranslation: value.predictedEndTranslation.height
+                        )
+                        withAnimation(.interactiveSpring(response: 0.35, dampingFraction: 0.85, blendDuration: 0.15)) {
+                            sheetState = nextState
+                            dragOffset = 0
+                        }
+                    }
+            )
             .accessibilityIdentifier(AccessibilityID.Tabs.dragHandle)
             .onTapGesture {
                 if sheetState == .collapsed {
@@ -215,9 +207,7 @@ struct DraggableAnalysisSheet<OverviewContent: View, IssuesContent: View, NotesC
     private var tabBar: some View {
         HStack(spacing: 0) {
             ForEach(AnalysisSheetTab.allCases, id: \.self) { tab in
-                let canSelectTab = sheetState == .expanded || tab == .overview
                 Button {
-                    guard canSelectTab else { return }
                     withAnimation(.easeInOut(duration: 0.2)) {
                         selectedTab = tab
                     }
@@ -225,13 +215,14 @@ struct DraggableAnalysisSheet<OverviewContent: View, IssuesContent: View, NotesC
                     Text(tab.rawValue)
                         .font(.subheadline)
                         .fontWeight(selectedTab == tab ? .semibold : .regular)
-                        .foregroundColor(selectedTab == tab ? accentColor : Color.white.opacity(canSelectTab ? 0.65 : 0.35))
+                        .foregroundColor(selectedTab == tab ? accentColor : Color.white.opacity(0.65))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
                 }
                 .buttonStyle(.plain)
-                .disabled(!canSelectTab)
+                .accessibilityElement(children: .ignore)
                 .accessibilityIdentifier("Tab.\(tab.rawValue)")
+                .accessibilityLabel(tab.rawValue)
             }
         }
         .background(sheetSurface)
@@ -239,17 +230,13 @@ struct DraggableAnalysisSheet<OverviewContent: View, IssuesContent: View, NotesC
 
     @ViewBuilder
     private var sheetContent: some View {
-        if sheetState == .medium {
+        switch selectedTab {
+        case .overview:
             overviewContent()
-        } else {
-            switch selectedTab {
-            case .overview:
-                overviewContent()
-            case .issues:
-                issuesContent()
-            case .notes:
-                notesContent()
-            }
+        case .issues:
+            issuesContent()
+        case .notes:
+            notesContent()
         }
     }
 
@@ -357,15 +344,15 @@ private struct DragHandleHeightKey: PreferenceKey {
                 dragOffset: $dragOffset,
                 overviewContent: {
                     Text("Overview content")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 },
                 issuesContent: {
                     Text("Issues content")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 },
                 notesContent: {
                     Text("Notes content")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 }
             )
         }

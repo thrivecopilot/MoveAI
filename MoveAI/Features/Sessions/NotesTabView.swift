@@ -47,6 +47,7 @@ struct NotesTabView: View {
         .padding(.vertical, 24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .accessibilityIdentifier(AccessibilityID.Notes.root)
+        .accessibilityElement(children: .contain)
     }
 }
 
