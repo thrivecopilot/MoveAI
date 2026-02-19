@@ -135,7 +135,9 @@ struct DraggableAnalysisSheet<OverviewContent: View, IssuesContent: View, NotesC
             y: -2
         )
         .gesture(
-            DragGesture()
+            // Use a stable coordinate space so resizing the sheet while dragging
+            // does not feed back into the gesture translation (jittery drag).
+            DragGesture(coordinateSpace: .global)
                 .updating($isDragging) { _, state, _ in state = true }
                 .onChanged { value in
                     let translation = value.translation.height
