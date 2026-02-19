@@ -38,7 +38,7 @@ final class StructuralUITests: XCTestCase {
 
     /// Find any element by accessibility identifier, regardless of its element type.
     private func element(_ identifier: String) -> XCUIElement {
-        app.descendants(matching: .any)[identifier]
+        app.descendants(matching: .any).matching(identifier: identifier).firstMatch
     }
 
     /// Assert an element with the given identifier exists (waits up to `timeout`).
@@ -67,6 +67,37 @@ final class StructuralUITests: XCTestCase {
         XCTAssertFalse(
             element(identifier).exists,
             message,
+            file: file,
+            line: line
+        )
+    }
+
+    /// Assert the draggable sheet does not leave a visible gap above the playback bar.
+    private func assertSheetFlushWithPlaybackBar(
+        tolerance: CGFloat = 1.5,
+        file: StaticString = #file,
+        line: UInt = #line
+    ) {
+        let playbackBarId = "VideoReview.PlaybackBar"
+        assertExists(playbackBarId, "Playback bar must exist for flush-alignment check", file: file, line: line)
+        assertExists(AID.VideoReview.sheet, "Sheet must exist for flush-alignment check", file: file, line: line)
+
+        let probeElement = element(AID.VideoReview.root)
+        guard let probe = waitForVideoReviewLayoutProbe(
+            probeElement,
+            timeout: 8,
+            file: file,
+            line: line
+        ) else {
+            return
+        }
+
+        let delta = probe.playbackMinY - probe.sheetMaxY
+
+        XCTAssertLessThanOrEqual(
+            delta,
+            Double(tolerance),
+            "Expected no gap between sheet and playback bar; probe delta was \(delta), sheetMaxY=\(probe.sheetMaxY), playbackMinY=\(probe.playbackMinY)",
             file: file,
             line: line
         )
@@ -233,9 +264,24 @@ final class StructuralUITests: XCTestCase {
             "Notes tab must be visible"
         )
 
-        // Score from fixture (PreviewData.analysisResult → score 72)
+        // Compact middle state: only score + rep summary are visible.
         XCTAssertTrue(app.staticTexts["Score"].exists, "Score label must be visible")
         XCTAssertTrue(app.staticTexts["72"].exists, "Score value 72 from fixture must be visible")
+
+        let repSummary = app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS 'total'")
+        )
+        XCTAssertTrue(
+            repSummary.firstMatch.waitForExistence(timeout: 3),
+            "Rep summary must be visible in medium state"
+        )
+
+        assertNotExists(
+            "WorkoutSummary.TopFixesSection",
+            "Top fixes list must not be visible in compact medium state"
+        )
+
+        assertSheetFlushWithPlaybackBar()
     }
 
     func testVideoReviewMedium_a11yAudit() throws {
@@ -252,8 +298,16 @@ final class StructuralUITests: XCTestCase {
 
         assertExists(AID.VideoReview.root, timeout: 5, "VideoReviewLayoutView root must exist")
 
-        // Sheet exists (drag handle visible)
+        // Sheet exists (drag handle visible).
         assertExists(AID.VideoReview.sheet, "Sheet must exist even when collapsed")
+
+        // Collapsed state should only expose the handle strip.
+        assertNotExists("Tab.Overview", "Overview tab must be hidden when collapsed")
+        assertNotExists("Tab.Issues", "Issues tab must be hidden when collapsed")
+        assertNotExists("Tab.Notes", "Notes tab must be hidden when collapsed")
+        assertNotExists("WorkoutSummary.ScoreTitle", "Score content must be hidden when collapsed")
+
+        assertSheetFlushWithPlaybackBar()
     }
 
     // =========================================================================
@@ -276,12 +330,15 @@ final class StructuralUITests: XCTestCase {
 
         // Rep summary (4 reps from fixture)
         let repSummary = app.staticTexts.matching(
-            NSPredicate(format: "label CONTAINS '4 total'")
+            NSPredicate(format: "label CONTAINS %@", "4 total")
         )
         XCTAssertTrue(
             repSummary.firstMatch.waitForExistence(timeout: 3),
-            "Rep summary '4 total' must be visible in expanded state"
+            "Rep summary 4 total must be visible in expanded state"
         )
+
+        assertExists("WorkoutSummary.TopFixesSection", "Top fixes must be visible in expanded state")
+        assertSheetFlushWithPlaybackBar()
     }
 
     // =========================================================================

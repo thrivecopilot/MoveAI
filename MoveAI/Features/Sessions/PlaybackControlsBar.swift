@@ -10,7 +10,6 @@ struct PlaybackControlsBar: View {
     var onMarkerTap: ((VideoTimelineView.IssueMarker) -> Void)?
     
     private let barBackground = Color(red: 0.07, green: 0.09, blue: 0.13)
-    private let barStroke = Color.white.opacity(0.08)
     private let accent = Color(red: 0.24, green: 0.86, blue: 1.0)
     private let good = Color(red: 0.16, green: 0.97, blue: 0.65)
     private let issue = Color(red: 1.0, green: 0.42, blue: 0.42)
@@ -60,12 +59,6 @@ struct PlaybackControlsBar: View {
         }
         .frame(maxWidth: .infinity)
         .background(barBackground.ignoresSafeArea(.container, edges: .bottom))
-        .overlay(
-            Rectangle()
-                .fill(barStroke)
-                .frame(height: 1),
-            alignment: .top
-        )
         .accessibilityIdentifier("VideoReview.PlaybackBar")
         .accessibilityElement(children: .contain)
     }

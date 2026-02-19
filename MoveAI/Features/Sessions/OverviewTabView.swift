@@ -9,6 +9,7 @@ import SwiftUI
 
 struct OverviewTabView: View {
     let analysisResult: AnalysisResult
+    var isCompact: Bool = false
 
     private var repStats: (total: Int, good: Int, warning: Int) {
         guard let reps = analysisResult.reps, !reps.isEmpty else {
@@ -39,6 +40,18 @@ struct OverviewTabView: View {
     }
 
     var body: some View {
+        Group {
+            if isCompact {
+                compactBody
+            } else {
+                fullBody
+            }
+        }
+        .accessibilityIdentifier("WorkoutSummaryScreen")
+        .accessibilityElement(children: .contain)
+    }
+
+    private var fullBody: some View {
         ScrollView {
             VStack(spacing: 28) {
                 scoreAndSummaryRow
@@ -47,8 +60,15 @@ struct OverviewTabView: View {
             .padding(.horizontal, 20)
             .padding(.vertical, 24)
         }
-        .accessibilityIdentifier("WorkoutSummaryScreen")
-        .accessibilityElement(children: .contain)
+    }
+
+    private var compactBody: some View {
+        VStack(spacing: 0) {
+            scoreAndSummaryRow
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
     private var scoreAndSummaryRow: some View {
@@ -82,7 +102,7 @@ struct OverviewTabView: View {
                         Text("\(stats.total) total  ·  \(stats.good) good  ·  \(stats.warning) need attention")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
-                            .lineLimit(2)
+                            .lineLimit(isCompact ? 1 : 2)
                             .accessibilityIdentifier("WorkoutSummary.RepSummaryValue")
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)

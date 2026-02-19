@@ -17,7 +17,7 @@ enum AnalysisSheetState: Int, CaseIterable {
     case medium
     /// Full content: all tabs, scrollable.
     case expanded
-    
+
     /// Fraction of content area given to the sheet (0...1). Video gets (1 - fraction).
     var sheetFraction: Double {
         switch self {
@@ -41,10 +41,8 @@ enum DragHandleMetrics {
     static let height: CGFloat = 4
     static let paddingTop: CGFloat = 10
     static let paddingBottom: CGFloat = 8
-    /// Minimum height so the handle isn’t clipped by the sheet’s top corner radius (20pt).
-    /// Need room below the curve for padding + handle + padding.
-    /// Slim strip when collapsed (handle + padding + small radius). 36pt so it’s not “comically large”.
-    static let minCollapsedHeight: CGFloat = 36
+    /// Minimum height so the handle remains comfortably tappable and visible.
+    static var minCollapsedHeight: CGFloat { height + paddingTop + paddingBottom }
 }
 
 struct DraggableAnalysisSheet<OverviewContent: View, IssuesContent: View, NotesContent: View>: View {
@@ -58,26 +56,27 @@ struct DraggableAnalysisSheet<OverviewContent: View, IssuesContent: View, NotesC
     let detentHeights: [AnalysisSheetState: CGFloat]
     let maxUp: CGFloat
     let maxDown: CGFloat
-    
+
     let overviewContent: () -> OverviewContent
     let issuesContent: () -> IssuesContent
     let notesContent: () -> NotesContent
-    
+
     @GestureState private var isDragging = false
-    
-    /// Smaller radius when collapsed so the handle stays in flat area and is always visible.
+
+    /// Slightly smaller radius in collapsed state while keeping original visual rhythm.
     private var sheetCornerRadius: CGFloat { sheetState == .collapsed ? 12 : 20 }
-    
+    private var collapsedRowHeight: CGFloat { minCollapsedHeight > 0 ? minCollapsedHeight : DragHandleMetrics.minCollapsedHeight }
+
     private let dragHandleHeight: CGFloat = DragHandleMetrics.height
     private let dragHandlePaddingTop: CGFloat = DragHandleMetrics.paddingTop
     private let dragHandlePaddingBottom: CGFloat = DragHandleMetrics.paddingBottom
-    
+
     private let sheetBackground = Color(red: 0.06, green: 0.08, blue: 0.11)
     private let sheetSurface = Color(red: 0.09, green: 0.12, blue: 0.17)
     private let sheetStroke = Color.white.opacity(0.08)
     private let handleShadow = Color.black.opacity(0.35)
     private let accentColor = Color(red: 0.24, green: 0.86, blue: 1.0)
-    
+
     init(
         sheetState: Binding<AnalysisSheetState>,
         selectedTab: Binding<AnalysisSheetTab>,
@@ -103,27 +102,38 @@ struct DraggableAnalysisSheet<OverviewContent: View, IssuesContent: View, NotesC
         self.issuesContent = issuesContent
         self.notesContent = notesContent
     }
-    
+
     var body: some View {
         VStack(spacing: 0) {
             dragHandle
             if sheetState == .medium || sheetState == .expanded {
                 tabBar
-                
-                sheetContent
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .clipped()
+
+                if sheetState == .expanded {
+                    sheetContent
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .clipped()
+                } else {
+                    sheetContent
+                        .frame(maxWidth: .infinity, alignment: .top)
+                        .clipped()
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(isDragging ? sheetBackground.opacity(1.0) : sheetBackground)
-        .overlay(
-            RoundedRectangle(cornerRadius: sheetCornerRadius)
-                .stroke(sheetStroke, lineWidth: 1)
-                .padding(.top, 1)
-        )
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(sheetStroke)
+                .frame(height: 1)
+        }
         .cornerRadius(sheetCornerRadius, corners: [.topLeft, .topRight])
-        .shadow(color: .black.opacity(0.25), radius: 6, x: 0, y: -2)
+        .shadow(
+            color: .black.opacity(sheetState == .collapsed ? 0.0 : 0.25),
+            radius: sheetState == .collapsed ? 0 : 6,
+            x: 0,
+            y: -2
+        )
         .gesture(
             DragGesture()
                 .updating($isDragging) { _, state, _ in state = true }
@@ -132,41 +142,47 @@ struct DraggableAnalysisSheet<OverviewContent: View, IssuesContent: View, NotesC
                     dragOffset = rubberBand(translation, min: maxUp, max: maxDown)
                 }
                 .onEnded { value in
-                    let predictedTranslation = value.predictedEndTranslation.height
-                    let targetHeight = max(0, currentHeight - predictedTranslation)
-                    
-                    if let nearest = nearestDetent(for: targetHeight) {
-                        withAnimation(.interactiveSpring()) {
-                            sheetState = nearest
-                        }
-                    }
-                    
+                    let nextState = resolvedDetent(
+                        translation: value.translation.height,
+                        predictedTranslation: value.predictedEndTranslation.height
+                    )
                     withAnimation(.interactiveSpring(response: 0.35, dampingFraction: 0.85, blendDuration: 0.15)) {
+                        sheetState = nextState
                         dragOffset = 0
                     }
                 }
         )
+        .onChange(of: sheetState) { _, newValue in
+            if newValue != .expanded, selectedTab != .overview {
+                selectedTab = .overview
+            }
+        }
     }
-    
-    /// Thin horizontal grabber (Apple Maps–style); no label.
+
+    /// Thin horizontal grabber (Apple Maps-style); no label.
     private var dragHandle: some View {
-        RoundedRectangle(cornerRadius: 2)
+        let rowHeight = collapsedRowHeight
+
+        return RoundedRectangle(cornerRadius: 2.5)
             .fill(Color.white.opacity(0.35))
             .frame(width: 44, height: dragHandleHeight)
             .padding(.top, dragHandlePaddingTop)
             .padding(.bottom, dragHandlePaddingBottom)
             .frame(maxWidth: .infinity)
+            .frame(height: rowHeight, alignment: .center)
             .background(
                 ZStack {
                     Rectangle()
                         .fill(sheetBackground)
-                    LinearGradient(
-                        colors: [handleShadow, Color.clear],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                    .frame(height: 10)
-                    .frame(maxHeight: .infinity, alignment: .top)
+                    if sheetState != .collapsed {
+                        LinearGradient(
+                            colors: [handleShadow, Color.clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .frame(height: 10)
+                        .frame(maxHeight: .infinity, alignment: .top)
+                    }
                 }
             )
             .background(
@@ -193,11 +209,13 @@ struct DraggableAnalysisSheet<OverviewContent: View, IssuesContent: View, NotesC
                 }
             }
     }
-    
+
     private var tabBar: some View {
         HStack(spacing: 0) {
             ForEach(AnalysisSheetTab.allCases, id: \.self) { tab in
+                let canSelectTab = sheetState == .expanded || tab == .overview
                 Button {
+                    guard canSelectTab else { return }
                     withAnimation(.easeInOut(duration: 0.2)) {
                         selectedTab = tab
                     }
@@ -205,29 +223,34 @@ struct DraggableAnalysisSheet<OverviewContent: View, IssuesContent: View, NotesC
                     Text(tab.rawValue)
                         .font(.subheadline)
                         .fontWeight(selectedTab == tab ? .semibold : .regular)
-                        .foregroundColor(selectedTab == tab ? accentColor : Color.white.opacity(0.65))
+                        .foregroundColor(selectedTab == tab ? accentColor : Color.white.opacity(canSelectTab ? 0.65 : 0.35))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
                 }
                 .buttonStyle(.plain)
+                .disabled(!canSelectTab)
                 .accessibilityIdentifier("Tab.\(tab.rawValue)")
             }
         }
         .background(sheetSurface)
     }
-    
+
     @ViewBuilder
     private var sheetContent: some View {
-        switch selectedTab {
-        case .overview:
+        if sheetState == .medium {
             overviewContent()
-        case .issues:
-            issuesContent()
-        case .notes:
-            notesContent()
+        } else {
+            switch selectedTab {
+            case .overview:
+                overviewContent()
+            case .issues:
+                issuesContent()
+            case .notes:
+                notesContent()
+            }
         }
     }
-    
+
     private func rubberBand(_ value: CGFloat, min: CGFloat, max: CGFloat) -> CGFloat {
         if value < min {
             let excess = value - min
@@ -239,12 +262,51 @@ struct DraggableAnalysisSheet<OverviewContent: View, IssuesContent: View, NotesC
         }
         return value
     }
-    
+
     private func nearestDetent(for height: CGFloat) -> AnalysisSheetState? {
         let candidates = detentHeights
             .filter { $0.value > 0 }
             .sorted { abs($0.value - height) < abs($1.value - height) }
         return candidates.first?.key
+    }
+
+    private func detentAbove(_ state: AnalysisSheetState) -> AnalysisSheetState {
+        switch state {
+        case .collapsed:
+            return .medium
+        case .medium:
+            return .expanded
+        case .expanded:
+            return .expanded
+        }
+    }
+
+    private func detentBelow(_ state: AnalysisSheetState) -> AnalysisSheetState {
+        switch state {
+        case .collapsed:
+            return .collapsed
+        case .medium:
+            return .collapsed
+        case .expanded:
+            return .medium
+        }
+    }
+
+    private func resolvedDetent(translation: CGFloat, predictedTranslation: CGFloat) -> AnalysisSheetState {
+        // Step between adjacent detents for predictable snapping and to avoid skipping medium.
+        let dominantTranslation = abs(predictedTranslation) > abs(translation) ? predictedTranslation : translation
+        let threshold: CGFloat = 72
+
+        if dominantTranslation <= -threshold {
+            return detentAbove(sheetState)
+        }
+
+        if dominantTranslation >= threshold {
+            return detentBelow(sheetState)
+        }
+
+        let targetHeight = max(0, currentHeight - translation)
+        return nearestDetent(for: targetHeight) ?? sheetState
     }
 }
 
@@ -259,7 +321,7 @@ extension View {
 struct RoundedCornerShape: Shape {
     var radius: CGFloat = .infinity
     var corners: UIRectCorner = .allCorners
-    
+
     func path(in rect: CGRect) -> Path {
         let path = UIBezierPath(
             roundedRect: rect,
@@ -272,7 +334,7 @@ struct RoundedCornerShape: Shape {
 
 private struct DragHandleHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
-    
+
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = max(value, nextValue())
     }
@@ -285,7 +347,7 @@ private struct DragHandleHeightKey: PreferenceKey {
         @State private var sheetState: AnalysisSheetState = .medium
         @State private var selectedTab: AnalysisSheetTab = .overview
         @State private var dragOffset: CGFloat = 0
-        
+
         var body: some View {
             DraggableAnalysisSheet(
                 sheetState: $sheetState,

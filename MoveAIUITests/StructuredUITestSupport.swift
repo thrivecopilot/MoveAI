@@ -29,6 +29,8 @@ struct VideoReviewLayoutProbe: Decodable {
     let videoMaxX: Double
     let videoMinY: Double
     let videoMaxY: Double
+    let sheetMaxY: Double
+    let playbackMinY: Double
 }
 
 extension XCTestCase {

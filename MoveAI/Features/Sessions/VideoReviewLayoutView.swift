@@ -17,15 +17,17 @@ enum SheetDetentLayoutCalculator {
         availableHeight: CGFloat,
         minCollapsedHeight: CGFloat
     ) -> CGFloat {
-        let handleMinHeight = max(minCollapsedHeight, DragHandleMetrics.minCollapsedHeight)
+        let handleMinHeight = minCollapsedHeight > 0 ? minCollapsedHeight : DragHandleMetrics.minCollapsedHeight
 
         switch state {
         case .collapsed:
             return handleMinHeight
         case .medium:
-            let minMedium: CGFloat = 300
+            let minMedium: CGFloat = handleMinHeight + 104
+            let maxMedium: CGFloat = handleMinHeight + 140
             let baseHeight = availableHeight * state.sheetFraction
-            return min(availableHeight * 0.95, max(minMedium, baseHeight))
+            let mediumHeight = min(maxMedium, max(minMedium, baseHeight))
+            return min(availableHeight * 0.9, mediumHeight)
         case .expanded:
             return availableHeight * state.sheetFraction
         }
@@ -52,6 +54,8 @@ struct VideoReviewLayoutView: View {
     @State private var playbackBarHeight: CGFloat = 0
     @State private var minCollapsedHeight: CGFloat = DragHandleMetrics.minCollapsedHeight
     @State private var videoSurfaceFrame: CGRect = .zero
+    @State private var sheetContainerFrame: CGRect = .zero
+    @State private var playbackBarFrame: CGRect = .zero
     
     @StateObject private var playback: PlaybackController
     @StateObject private var reviewModel: SessionReviewViewModel
@@ -134,27 +138,37 @@ struct VideoReviewLayoutView: View {
                         )
                             .frame(height: effectiveSheetHeight)
                             .frame(maxWidth: .infinity)
+                            .background(
+                                GeometryReader { proxy in
+                                    Color.clear.preference(
+                                        key: SheetContainerFrameKey.self,
+                                        value: proxy.frame(in: .global)
+                                    )
+                                }
+                            )
                             .accessibilityIdentifier(AccessibilityID.VideoReview.sheet)
                             .accessibilityElement(children: .contain)
-                            .animation(.interactiveSpring(), value: sheetState)
                     }
                     .frame(maxWidth: .infinity)
                 }
                 .coordinateSpace(name: Self.layoutCoordinateSpaceName)
                 .overlay(alignment: .topLeading) {
-                    Color.clear
-                        .frame(width: 1, height: 1)
+                    Rectangle()
+                        .fill(Color.white.opacity(0.001))
+                        .frame(width: 2, height: 2)
                         .accessibilityElement(children: .ignore)
                         .accessibilityIdentifier("VideoReview.LayoutProbe")
                         .accessibilityLabel("Video Review Layout Probe")
-                        .accessibilityValue(probeValue)
                 }
+                .accessibilityIdentifier(AccessibilityID.VideoReview.root)
+                .accessibilityValue(probeValue)
+                .accessibilityElement(children: .contain)
             }
             .ignoresSafeArea(edges: .horizontal)
             .safeAreaInset(edge: .top) {
                 topBar(topInset: 0)
             }
-            .safeAreaInset(edge: .bottom) {
+            .safeAreaInset(edge: .bottom, spacing: 0) {
                 PlaybackControlsBar(
                     playback: playback,
                     analysisResult: currentSession.analysisResult,
@@ -171,7 +185,9 @@ struct VideoReviewLayoutView: View {
                 )
                 .background(
                     GeometryReader { proxy in
-                        Color.clear.preference(key: PlaybackBarHeightKey.self, value: proxy.size.height)
+                        Color.clear
+                            .preference(key: PlaybackBarHeightKey.self, value: proxy.size.height)
+                            .preference(key: PlaybackBarFrameKey.self, value: proxy.frame(in: .global))
                     }
                 )
             }
@@ -180,6 +196,14 @@ struct VideoReviewLayoutView: View {
                     playbackBarHeight = newValue
                 }
             }
+            .onPreferenceChange(PlaybackBarFrameKey.self) { newValue in
+                guard newValue.width > 0, newValue.height > 0 else { return }
+                playbackBarFrame = newValue
+            }
+            .onPreferenceChange(SheetContainerFrameKey.self) { newValue in
+                guard newValue.width > 0, newValue.height > 0 else { return }
+                sheetContainerFrame = newValue
+            }
             .onPreferenceChange(VideoSurfaceFrameKey.self) { newValue in
                 guard newValue.width > 0, newValue.height > 0 else { return }
                 videoSurfaceFrame = newValue
@@ -187,8 +211,6 @@ struct VideoReviewLayoutView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .navigationBar)
             .toolbar(.hidden, for: .tabBar)
-            .accessibilityIdentifier(AccessibilityID.VideoReview.root)
-            .accessibilityElement(children: .contain)
         }
         .ignoresSafeArea(edges: .horizontal)
         .onAppear {
@@ -350,7 +372,7 @@ struct VideoReviewLayoutView: View {
     @ViewBuilder
     private func overviewTabContent(using session: Session) -> some View {
         if let result = session.analysisResult {
-            OverviewTabView(analysisResult: result)
+            OverviewTabView(analysisResult: result, isCompact: sheetState == .medium)
         } else if isAnalyzing {
             analysisLoadingView
         } else if analysisErrorMessage != nil {
@@ -513,7 +535,7 @@ struct VideoReviewLayoutView: View {
     }
 
     private func layoutProbeValue(containerSize: CGSize, safeTop: CGFloat, safeBottom: CGFloat) -> String {
-        let ready =
+        let videoFrameIsReady =
             containerSize.width > 0 &&
             containerSize.height > 0 &&
             videoSurfaceFrame.width > 0 &&
@@ -523,7 +545,23 @@ struct VideoReviewLayoutView: View {
             videoSurfaceFrame.minY.isFinite &&
             videoSurfaceFrame.maxY.isFinite
 
-        let frame = ready ? videoSurfaceFrame : .zero
+        let sheetFrameIsReady =
+            sheetContainerFrame.width > 0 &&
+            sheetContainerFrame.height > 0 &&
+            sheetContainerFrame.minY.isFinite &&
+            sheetContainerFrame.maxY.isFinite
+
+        let playbackFrameIsReady =
+            playbackBarFrame.width > 0 &&
+            playbackBarFrame.height > 0 &&
+            playbackBarFrame.minY.isFinite &&
+            playbackBarFrame.maxY.isFinite
+
+        let ready = videoFrameIsReady && sheetFrameIsReady && playbackFrameIsReady
+
+        let videoFrame = ready ? videoSurfaceFrame : .zero
+        let sheetFrame = ready ? sheetContainerFrame : .zero
+        let playbackFrame = ready ? playbackBarFrame : .zero
         let payload = VideoReviewLayoutProbePayload(
             schemaVersion: 1,
             ready: ready,
@@ -531,10 +569,12 @@ struct VideoReviewLayoutView: View {
             containerHeight: roundedToTenth(containerSize.height),
             safeTop: roundedToTenth(safeTop),
             safeBottom: roundedToTenth(safeBottom),
-            videoMinX: roundedToTenth(frame.minX),
-            videoMaxX: roundedToTenth(frame.maxX),
-            videoMinY: roundedToTenth(frame.minY),
-            videoMaxY: roundedToTenth(frame.maxY)
+            videoMinX: roundedToTenth(videoFrame.minX),
+            videoMaxX: roundedToTenth(videoFrame.maxX),
+            videoMinY: roundedToTenth(videoFrame.minY),
+            videoMaxY: roundedToTenth(videoFrame.maxY),
+            sheetMaxY: roundedToTenth(sheetFrame.maxY),
+            playbackMinY: roundedToTenth(playbackFrame.minY)
         )
 
         let encoder = JSONEncoder()
@@ -561,6 +601,28 @@ private struct PlaybackBarHeightKey: PreferenceKey {
     }
 }
 
+private struct PlaybackBarFrameKey: PreferenceKey {
+    static var defaultValue: CGRect = .zero
+
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        let next = nextValue()
+        if next.width > 0, next.height > 0 {
+            value = next
+        }
+    }
+}
+
+private struct SheetContainerFrameKey: PreferenceKey {
+    static var defaultValue: CGRect = .zero
+
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        let next = nextValue()
+        if next.width > 0, next.height > 0 {
+            value = next
+        }
+    }
+}
+
 private struct VideoSurfaceFrameKey: PreferenceKey {
     static var defaultValue: CGRect = .zero
 
@@ -583,6 +645,8 @@ private struct VideoReviewLayoutProbePayload: Encodable {
     let videoMaxX: Double
     let videoMinY: Double
     let videoMaxY: Double
+    let sheetMaxY: Double
+    let playbackMinY: Double
 }
 
 #if DEBUG
