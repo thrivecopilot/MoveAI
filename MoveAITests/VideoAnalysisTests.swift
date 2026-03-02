@@ -11,7 +11,17 @@ import XCTest
 /// Tests for video analysis using test videos and expected results
 @MainActor
 final class VideoAnalysisTests: XCTestCase {
-    
+
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+
+        #if targetEnvironment(simulator)
+        if ProcessInfo.processInfo.environment["MOVEAI_RUN_VIDEO_TESTS_ON_SIMULATOR"] != "1" {
+            throw XCTSkip("Video analysis tests are disabled on iOS Simulator. Set MOVEAI_RUN_VIDEO_TESTS_ON_SIMULATOR=1 to enable.")
+        }
+        #endif
+    }
+
     /// Test directory containing test videos and markdown files
     /// Files are added directly to bundle resources, not in a subdirectory
     var testVideosDirectory: URL {

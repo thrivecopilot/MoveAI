@@ -10,7 +10,15 @@ import XCTest
 
 @MainActor
 final class MoveAITests: XCTestCase {
-    
+
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+
+        let defaults = UserDefaults.standard
+        defaults.removeObject(forKey: "isOnboardingCompleted")
+        defaults.removeObject(forKey: "isPremiumUser")
+    }
+
     // MARK: - AppStateManager Tests
     
     func testAppStateManagerInitialization() throws {

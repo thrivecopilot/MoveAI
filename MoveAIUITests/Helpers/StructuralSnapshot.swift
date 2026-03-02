@@ -21,6 +21,7 @@
 //  re-record.
 //
 
+import Foundation
 import XCTest
 
 enum StructuralTreeSnapshot {
@@ -103,21 +104,24 @@ enum StructuralTreeSnapshot {
         let snapshotsDir = snapshotsDirectory()
         let refPath = snapshotsDir.appendingPathComponent("\(snapshotName).json")
 
+        let normalizedCurrent = normalizeNode(current)
+
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let currentData = try encoder.encode(current)
+        let currentData = try encoder.encode(normalizedCurrent)
 
         if FileManager.default.fileExists(atPath: refPath.path) {
             // Compare against reference
             let refData = try Data(contentsOf: refPath)
             let reference = try JSONDecoder().decode(ElementNode.self, from: refData)
+            let normalizedReference = normalizeNode(reference)
 
-            if current != reference {
+            if normalizedCurrent != normalizedReference {
                 // Write actual tree for debugging
                 let actualPath = snapshotsDir.appendingPathComponent("\(snapshotName).actual.json")
                 try currentData.write(to: actualPath)
 
-                let diff = diffNodes(expected: reference, actual: current, path: rootIdentifier)
+                let diff = diffNodes(expected: normalizedReference, actual: normalizedCurrent, path: rootIdentifier)
                 XCTFail(
                     "Structural snapshot mismatch for '\(snapshotName)':\n\(diff)\n\nActual written to: \(actualPath.path)",
                     file: file,
@@ -181,6 +185,36 @@ enum StructuralTreeSnapshot {
         }
 
         return diffs.joined(separator: "\n")
+    }
+
+
+    // MARK: - Normalization
+
+    private static func normalizeNode(_ node: ElementNode) -> ElementNode {
+        ElementNode(
+            identifier: node.identifier,
+            elementType: node.elementType,
+            label: node.label,
+            value: normalizeValueString(node.value),
+            isEnabled: node.isEnabled,
+            children: node.children.map(normalizeNode)
+        )
+    }
+
+    private static func normalizeValueString(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("{"), trimmed.hasSuffix("}") else { return value }
+        guard
+            let data = trimmed.data(using: .utf8),
+            let object = try? JSONSerialization.jsonObject(with: data),
+            JSONSerialization.isValidJSONObject(object),
+            let normalizedData = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]),
+            let normalizedString = String(data: normalizedData, encoding: .utf8)
+        else {
+            return value
+        }
+        return normalizedString
     }
 
     // MARK: - Storage

@@ -14,6 +14,7 @@ enum UIScenario: String, CaseIterable {
     case sessionHistoryEmpty = "SessionHistory_empty"
     case sessionHistoryError = "SessionHistory_error"
     case sessionHistoryLongText = "SessionHistory_longText"
+    case homeLoaded = "Home_loaded"
     case videoReviewOverviewCollapsed = "VideoReview_overview_collapsed"
     case videoReviewOverviewMedium = "VideoReview_overview_medium"
     case videoReviewOverviewExpanded = "VideoReview_overview_expanded"
@@ -148,6 +149,8 @@ private enum ScenarioViews {
             )
         case .sessionHistoryLongText:
             return AnyView(SessionHistoryView(sessionManager: sessionManager, notesLineLimit: 3))
+        case .homeLoaded:
+            return AnyView(MovementMasteryHomeView(sessionManager: sessionManager))
         case .videoReviewOverviewCollapsed:
             return videoReviewView(sessionManager: sessionManager, sheetState: .collapsed)
         case .videoReviewOverviewMedium:
@@ -222,7 +225,7 @@ private enum ScenarioViews {
 private enum ScenarioFixtures {
     static func sessions(for scenario: UIScenario) -> [Session] {
         switch scenario {
-        case .sessionHistoryLoaded:
+        case .sessionHistoryLoaded, .homeLoaded:
             return loadedSessions()
         case .sessionHistoryEmpty:
             return []

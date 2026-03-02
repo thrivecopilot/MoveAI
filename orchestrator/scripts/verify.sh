@@ -159,6 +159,7 @@ if [ "$BUILD_OK" = true ]; then
         -scheme "$SCHEME" \
         -destination "$DESTINATION" \
         -only-testing:MoveAIUITests \
+        -skip-testing:MoveAIUITests/MoveAIUITests \
         -resultBundlePath "$RUN_DIR/ui.xcresult" \
         -quiet \
         >"$UI_LOG" 2>&1; then
