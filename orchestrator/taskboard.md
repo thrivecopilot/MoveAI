@@ -5,6 +5,24 @@
 - Target branch: `main`
 - Baseline commit: `cb9436b` (2026-02-19)
 
+## Integration Evidence (T-ORCH-001, T-206)
+
+- Branch: `codex/integrate-squat-ui-batch2`
+- Status:
+  - T-ORCH-001: INTEGRATED
+  - T-206: INTEGRATED
+- Commits:
+  - `6cb5cf5` Orchestrator: make verify.sh simulator-agnostic and improve logs
+  - `abfd414` Tests: stabilize simulator verify baseline
+  - `1df8e09` Integrate T-ORCH-001: Orchestration best-practices docs upgrade
+  - `19ee83b` Integrate T-206: Catalog-driven cues and structured metrics
+- verify.sh PASS evidence (worktree: `/Users/davemathew/Developer/moveai-review`):
+  - `verify_20260302_072942` (baseline) — /Users/davemathew/Developer/moveai-review/orchestrator/review/verify_20260302_072942
+  - `verify_20260302_073304` (after T-ORCH-001) — /Users/davemathew/Developer/moveai-review/orchestrator/review/verify_20260302_073304
+  - `verify_20260302_074033` (after T-206) — /Users/davemathew/Developer/moveai-review/orchestrator/review/verify_20260302_074033
+- Waivers:
+  - T-ORCH-001: docs-only changes (markdown/template); no runtime behavior change.
+
 ## Completed (reference)
 
 | Phase | Status | Evidence |
