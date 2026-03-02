@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 
 struct IssueSummaryTabView: View {
@@ -59,10 +60,21 @@ private struct IssueSummaryCard: View {
                 }
                 
                 Spacer(minLength: 0)
-                
+
                 severityPill(issue.severity)
             }
-            
+
+            if let quickFix = issue.cues.first?.shortText, !quickFix.isEmpty {
+                Text(quickFix)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
+            }
+
+            if let metric = primaryMetric(from: issue.worstOccurrence.metrics) {
+                metricMiniCard(metric)
+            }
+
             HStack(spacing: 8) {
                 Text("\(issue.momentsCount) moment\(issue.momentsCount == 1 ? "" : "s")")
                     .font(.caption)
@@ -92,7 +104,92 @@ private struct IssueSummaryCard: View {
         }
         .accessibilityIdentifier("\(AccessibilityID.Issues.issueCard).\(issue.id.uuidString)")
     }
+
+    private func primaryMetric(from metrics: [FeedbackMetric]) -> FeedbackMetric? {
+        let priority: [FeedbackMetricKind] = [
+            .squatTorsoInstabilityDegrees,
+            .squatTorsoBiasDegrees,
+            .squatBalanceDriftShinLengths
+        ]
+        for kind in priority {
+            if let metric = metrics.first(where: { $0.kind == kind }) {
+                return metric
+            }
+        }
+        return metrics.first
+    }
+
     
+    private func metricMiniCard(_ metric: FeedbackMetric) -> some View {
+        let title = metricTitle(metric)
+        let value = metricValue(metric)
+
+        return VStack(alignment: .leading, spacing: 4) {
+            Text(title.uppercased())
+                .font(.caption2)
+                .foregroundColor(.secondary)
+            Text(value)
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundColor(.primary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white.opacity(0.06))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        )
+        .cornerRadius(10)
+        .accessibilityIdentifier("IssueMetricCard")
+    }
+
+    private func metricTitle(_ metric: FeedbackMetric) -> String {
+        let base: String
+        switch metric.kind {
+        case .squatTorsoBiasDegrees:
+            base = "Torso bias"
+        case .squatTorsoInstabilityDegrees:
+            base = "Torso instability"
+        case .squatBalanceDriftShinLengths:
+            base = "Balance drift"
+        default:
+            base = metric.kind.rawValue
+        }
+        if let phase = metric.phase {
+            return "\(base) (\(phaseLabel(phase)))"
+        }
+        return base
+    }
+
+    private func metricValue(_ metric: FeedbackMetric) -> String {
+        switch metric.unit {
+        case .degrees:
+            return String(format: "%+.1f°", metric.value)
+        case .shinLengths:
+            return String(format: "%.2f shin lengths", metric.value)
+        case .percent:
+            return String(format: "%.0f%%", metric.value)
+        case .ratio:
+            return String(format: "%.2f", metric.value)
+        case .count:
+            return String(format: "%.0f", metric.value)
+        case .unknown:
+            return String(format: "%.2f", metric.value)
+        }
+    }
+
+    private func phaseLabel(_ phase: SquatPhaseType) -> String {
+        switch phase {
+        case .setup: return "setup"
+        case .descent: return "descent"
+        case .bottom: return "bottom"
+        case .ascent: return "ascent"
+        }
+    }
+
     private var timestampChips: some View {
         let displayed = Array(issue.occurrences.prefix(4))
         let remaining = max(0, issue.occurrences.count - displayed.count)

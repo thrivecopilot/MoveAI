@@ -2051,6 +2051,7 @@ struct SquatAnalyzer {
                     severity: totalReps == 1 ? .critical : .warning,
                     timestamp: max(0, timestamp),
                     repNumber: rep.repNumber,
+                    issueKind: .squatIncompleteROM,
                     affectedBodyJoints: [.leftHip, .rightHip, .leftKnee, .rightKnee]
                 ))
             } else if shallowReps.contains(rep.repNumber) {
@@ -2060,6 +2061,7 @@ struct SquatAnalyzer {
                     severity: .warning,
                     timestamp: max(0, timestamp),
                     repNumber: rep.repNumber,
+                    issueKind: .squatDepthTooShallow,
                     affectedBodyJoints: [.leftHip, .rightHip, .leftKnee, .rightKnee]
                 ))
             }
@@ -2082,6 +2084,7 @@ struct SquatAnalyzer {
                         severity: .critical,
                         timestamp: max(0, timestamp),
                         repNumber: rep.repNumber,
+                        issueKind: .squatKneeValgus,
                         affectedBodyJoints: [.leftKnee, .rightKnee]
                     ))
                 }
@@ -2183,13 +2186,36 @@ struct SquatAnalyzer {
                 }
                 
                 print("📝 Adding individual deviation feedback: Rep \(rep.repNumber) - \(deviation.type) (\(deviation.severity.rawValue)): \(deviation.message)")
-                
+                let issueKind: MovementIssueKind? = {
+                    switch deviation.type {
+                    case .balanceDrift:
+                        return .squatHeelsLift
+                    case .torsoBias, .torsoInstability, .hipShoot:
+                        return .squatForwardLean
+                    }
+                }()
+
+                let metrics: [FeedbackMetric]? = {
+                    switch deviation.type {
+                    case .torsoBias:
+                        return [FeedbackMetric(kind: .squatTorsoBiasDegrees, value: deviation.magnitude, unit: .degrees, phase: .bottom)]
+                    case .balanceDrift:
+                        return [FeedbackMetric(kind: .squatBalanceDriftShinLengths, value: deviation.magnitude, unit: .shinLengths)]
+                    case .torsoInstability:
+                        return [FeedbackMetric(kind: .squatTorsoInstabilityDegrees, value: deviation.magnitude, unit: .degrees)]
+                    case .hipShoot:
+                        return nil
+                    }
+                }()
+
                 feedback.append(FormFeedback(
                     category: category,
                     message: deviation.message,
                     severity: feedbackSeverity,
                     timestamp: max(0, deviationTimestamp),
                     repNumber: rep.repNumber,
+                    issueKind: issueKind,
+                    metrics: metrics,
                     affectedBodyJoints: joints
                 ))
             }

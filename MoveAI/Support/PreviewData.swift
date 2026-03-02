@@ -47,10 +47,38 @@ enum PreviewData {
         let reps = squatReps()
         let depthMetrics = depthMetricsForReps()
         let feedback: [FormFeedback] = [
-            FormFeedback(category: .safety, message: "Back rounding at bottom on rep 3.", severity: .warning, timestamp: 11.67, repNumber: 3),
-            FormFeedback(category: .rangeOfMotion, message: "Rep 4 was shallow; aim for hip crease below knee.", severity: .warning, timestamp: 17.23, repNumber: 4),
+            FormFeedback(
+                category: .posture,
+                message: "Torso leaning too far forward at bottom (bias: 11.3°)",
+                severity: .warning,
+                timestamp: 11.67,
+                repNumber: 3,
+                issueKind: .squatForwardLean,
+                metrics: [
+                    FeedbackMetric(kind: .squatTorsoBiasDegrees, value: 11.3, unit: .degrees, phase: .bottom)
+                ],
+                affectedBodyJoints: [.leftShoulder, .rightShoulder, .leftHip, .rightHip]
+            ),
+            FormFeedback(
+                category: .safety,
+                message: "Knees caving inward - push knees out to align with toes",
+                severity: .critical,
+                timestamp: 7.83,
+                repNumber: 2,
+                issueKind: .squatKneeValgus,
+                affectedBodyJoints: [.leftKnee, .rightKnee]
+            ),
+            FormFeedback(
+                category: .rangeOfMotion,
+                message: "Need to go deeper - aim to get hip crease below knee level",
+                severity: .warning,
+                timestamp: 17.23,
+                repNumber: 4,
+                issueKind: .squatDepthTooShallow,
+                affectedBodyJoints: [.leftHip, .rightHip, .leftKnee, .rightKnee]
+            ),
             FormFeedback(category: .posture, message: "Good bracing and upright torso on reps 1–2.", severity: .good, timestamp: 3.1, repNumber: 1),
-            FormFeedback(category: .stability, message: "Knees tracked well over toes.", severity: .excellent, timestamp: 7.83, repNumber: 2),
+            FormFeedback(category: .stability, message: "Knees tracked well over toes.", severity: .excellent, timestamp: 3.2, repNumber: 1),
         ]
         return AnalysisResult(
             score: 72,

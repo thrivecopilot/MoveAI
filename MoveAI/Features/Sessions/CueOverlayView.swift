@@ -20,7 +20,7 @@ struct CueOverlayView: View {
                 Spacer(minLength: 0)
             }
             
-            Text("Cue: \(overlay.cue.shortText)")
+            Text("Quick fix: \(overlay.cue.shortText)")
                 .font(.subheadline)
                 .foregroundColor(.white)
                 .lineLimit(2)
