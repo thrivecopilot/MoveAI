@@ -1,60 +1,78 @@
-# Test Plan — Per-Phase Expectations
+# Test Plan — Squat Analysis UI Revamp
 
-## Phase 0: Model Foundation
+## Standard gate (every task)
+All tasks must pass:
+- `bash orchestrator/scripts/verify.sh <worktree>` → PASS
+  - Build
+  - Unit tests
+  - UI tests
 
-**Unit tests** (`MoveAITests/FormFeedbackCodableTests.swift`):
-- Decode legacy JSON (no `affectedBodyJoints`) — field is nil, no crash
-- Round-trip encode/decode with joints present — joints match
-- `IssueSummaryBuilder.from()` propagates joints to `IssueOccurrence`
-- `IssueSummaryBuilder.from()` handles nil joints (empty array fallback)
+## Policy: no-test-no-merge (with explicit waiver)
 
-**Build gate**: `xcodebuild build` succeeds after adding `Codable` to `BodyJoint`
+**Default:** every TID must include **at least one new/updated automated test** that would fail pre-change.
 
-## Phase 1: Sheet Detent Tuning
+Acceptable “automated tests” include:
+- Unit tests in `MoveAITests/*`
+- UI tests in `MoveAIUITests/*` (including `StructuralUITests` / structured tests)
 
-**Unit tests** (`MoveAITests/SheetDetentTests.swift`):
-- Collapsed height = ~36pt (not 20% of available)
-- Medium height = max(300, available * 0.38)
-- Expanded height = available * 0.88
+Not sufficient on its own:
+- Manual-only `verify.md`
+- “Verify.sh PASS” without any new/updated assertions covering the change
 
-**UI tests** (existing ScenarioRouter scenarios):
-- `videoReviewOverviewCollapsed` — handle visible, content hidden
-- `videoReviewOverviewMedium` — tab bar + score visible
-- `videoReviewOverviewExpanded` — full content visible
+### Waiver (rare)
+If a TID cannot reasonably add an automated test:
+- Worker must explicitly request a waiver in `selfcheck.md` with:
+  - why a test is not feasible
+  - compensating controls (manual scenarios, guardrails)
+  - suggested follow-up to restore coverage
+- Integrator records the waiver + rationale in `orchestrator/taskboard.md` when integrating
 
-**Manual**: Tap-to-expand gesture works from collapsed to medium
+## Baseline regression (already on main)
+Spot-check (manual):
+- Collapsed sheet is handle-only (~36pt)
+- Tap handle from collapsed → medium
+- Full-bleed video surface still looks correct
+- No crashes loading legacy sessions without joint data
 
-## Phase 2: Limb Highlighting
+## T-202 — Pose overlay highlight plumbing
+- Automated: `verify.sh` PASS + at least one new/updated automated test
+- Manual:
+  - With empty `limbHighlights`, keypoint colors remain confidence-based.
+  - Skeleton strokes remain default (telemetry cyan / standard white).
+- Perf sanity:
+  - Play + scrub while overlay renders → no obvious stutter/regression
 
-**Unit tests** (`MoveAITests/LimbHighlightTests.swift`):
-- No selection + no nearby occurrence = empty highlights
-- Selected issue with nearby occurrence = correct joints + severity
-- Overlapping issues = max severity per joint
-- Legacy occurrences (empty joints) = empty highlights
+## T-201 — CueController refactor
+- Unit tests (suggested): `MoveAITests/CueControllerTests.swift`
+  - Play clears cue
+  - Explicit issue/marker selection shows cue immediately
+  - Debounced pause cue fires after ~400ms when stable
+  - Rapid seeks suppress auto-cues
+- Manual:
+  - Pause near marker → cue after ~0.4s
+  - Scrub rapidly → no cue flash/spam
+  - Tap marker/issue → cue immediately
+  - Play → cue clears
+- Perf sanity:
+  - Rapid scrub for ~30s → no cue spam and no obvious jank
 
-**Visual**: Select knee valgus issue — knee keypoints render red on overlay
+## T-203 — Compute + wire current limb highlights
+- Unit tests (suggested): `MoveAITests/LimbHighlightTests.swift`
+  - No selection + no nearby occurrence → empty
+  - Selected issue near time → correct joints + severity
+  - Overlapping occurrences → max severity per joint
+  - Empty joints (legacy) → empty
+- Manual:
+  - Select issue → joints glow amber/red
+  - No selection → pause near feedback → highlights appear
+  - Far from issues → no highlights
+- Perf sanity:
+  - Scrub across multiple occurrences → highlights update without obvious lag
 
-## Phase 3: Cue Logic
+## Integration verification (moveai-review)
+After each patch apply:
+- `bash orchestrator/scripts/verify.sh ~/Developer/moveai-review` → PASS
 
-**Unit tests** (`MoveAITests/CueControllerTests.swift`):
-- `onPlay()` clears active cue
-- `onIssueSelected()` shows cue immediately
-- `onMarkerTapped()` shows cue immediately
-- Rapid seeks (3 in 200ms) + pause = no cue (scrub suppression)
-- Single pause near feedback = cue after 400ms delay
-
-**UI test**: Scrub rapidly across markers — no cue flashing
-
-## Phase 4: Video Polish
-
-**Screenshot pipeline**: `bash scripts/capture_screenshots.sh`
-- Collapsed: video fills nearly full screen
-- No gaps between video and sheet
-- Top bar gradient renders over video
-- Playbar extends through bottom safe area
-
-## Integration (after all phases)
-
-**Full test suite**: `xcodebuild test -scheme MoveAI` — all pass
-**Screenshot pipeline**: 21 screenshots, no regressions from baseline
-**Structural tests**: `bash scripts/run_structural_tests.sh` — all pass
+Optional (only if visuals look risky):
+- `bash scripts/capture_screenshots.sh`
+- `bash scripts/run_structural_tests.sh`
