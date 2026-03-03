@@ -68,6 +68,12 @@ enum AID {
         static let viewAllButton = "Home.ViewAll"
     }
 
+    // MARK: - Main Tab Bar
+    enum MainTabBar {
+        static let root = "MainTabBar"
+        static let button = "MainTabBar.Button"
+    }
+
     // MARK: - Sheet Tabs
     enum Tabs {
         static let overview = "Tab.Overview"

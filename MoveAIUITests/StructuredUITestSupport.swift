@@ -51,6 +51,8 @@ extension XCTestCase {
         appearance: StructuredUITestAppearance = .light,
         textSize: StructuredUITestTextSize = .default
     ) -> XCUIApplication {
+        XCUIDevice.shared.orientation = .portrait
+
         let app = XCUIApplication()
         app.launchArguments = [
             "--uitesting",

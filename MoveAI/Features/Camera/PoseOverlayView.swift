@@ -13,16 +13,25 @@ struct PoseOverlayView: View {
     let flipXAxis: Bool
     let isUploadedVideo: Bool  // Distinguish between camera feed and uploaded videos
     let style: PoseOverlayStyle
+    let highlightedJoints: [BodyJoint: FeedbackSeverity]
 
     // Transform Vision coordinates to display coordinates
     // Vision coordinates are normalized (0-1) in the raw video frame
 
-    init(pose: PoseDetectionResult?, previewSize: CGSize, flipXAxis: Bool, isUploadedVideo: Bool = false, style: PoseOverlayStyle = .standard) {
+    init(
+        pose: PoseDetectionResult?,
+        previewSize: CGSize,
+        flipXAxis: Bool,
+        isUploadedVideo: Bool = false,
+        style: PoseOverlayStyle = .standard,
+        highlightedJoints: [BodyJoint: FeedbackSeverity] = [:]
+    ) {
         self.pose = pose
         self.previewSize = previewSize
         self.flipXAxis = flipXAxis
         self.isUploadedVideo = isUploadedVideo
         self.style = style
+        self.highlightedJoints = highlightedJoints
     }
 
     var body: some View {
@@ -32,12 +41,14 @@ struct PoseOverlayView: View {
                     // Pose data - apply rotation only to pose elements
                     ZStack {
                         ForEach(pose.keypoints) { keypoint in
+                            let highlightSeverity = BodyJoint(rawValue: keypoint.name).flatMap { highlightedJoints[$0] }
                             KeypointView(
                                 keypoint: keypoint,
                                 actualSize: previewSize == .zero ? geometry.size : previewSize,
                                 flipXAxis: flipXAxis,
                                 isUploadedVideo: isUploadedVideo,
-                                keypointColor: keypointColor(for: keypoint),
+                                keypointColor: keypointColor(for: keypoint, highlightSeverity: highlightSeverity),
+                                highlightSeverity: highlightSeverity,
                                 frameIndex: pose.frameIndex,
                                 style: style
                             )
@@ -49,7 +60,8 @@ struct PoseOverlayView: View {
                             previewSize: previewSize == .zero ? geometry.size : previewSize,
                             flipXAxis: flipXAxis,
                             isUploadedVideo: isUploadedVideo,
-                            style: style
+                            style: style,
+                            highlightedJoints: highlightedJoints
                         )
                         .accessibilityIdentifier("PoseOverlay.Skeleton")
                     }
@@ -83,10 +95,25 @@ struct PoseOverlayView: View {
         let frame = pose.map { String($0.frameIndex) } ?? "none"
         let keypointCount = pose?.keypoints.count ?? 0
         let source = isUploadedVideo ? "uploaded" : "camera"
-        return "frame=\(frame),keypoints=\(keypointCount),style=\(style.rawValue),source=\(source)"
+
+        var value = "frame=\(frame),keypoints=\(keypointCount),style=\(style.rawValue),source=\(source)"
+
+        if !highlightedJoints.isEmpty {
+            let highlights = highlightedJoints
+                .sorted { $0.key.rawValue < $1.key.rawValue }
+                .map { "\($0.key.rawValue):\($0.value.rawValue)" }
+                .joined(separator: "|")
+            value += ",highlights=\(highlights)"
+        }
+
+        return value
     }
 
-    private func keypointColor(for keypoint: PoseKeypoint) -> Color {
+    private func keypointColor(for keypoint: PoseKeypoint, highlightSeverity: FeedbackSeverity?) -> Color {
+        if let severity = highlightSeverity {
+            return highlightColor(for: severity)
+        }
+
         // Color based on confidence level
         switch style {
         case .standard:
@@ -107,6 +134,31 @@ struct PoseOverlayView: View {
             }
         }
     }
+
+    private func highlightColor(for severity: FeedbackSeverity) -> Color {
+        switch style {
+        case .standard:
+            switch severity {
+            case .critical:
+                return .red
+            case .warning:
+                return .yellow
+            case .good, .excellent:
+                return .green
+            }
+        case .telemetry:
+            switch severity {
+            case .critical:
+                return Color(red: 1.0, green: 0.42, blue: 0.42)
+            case .warning:
+                return Color(red: 1.0, green: 0.78, blue: 0.35)
+            case .good:
+                return Color(red: 0.16, green: 0.97, blue: 0.65)
+            case .excellent:
+                return Color(red: 0.24, green: 0.86, blue: 1.0)
+            }
+        }
+    }
 }
 
 private struct KeypointView: View {
@@ -115,6 +167,7 @@ private struct KeypointView: View {
     let flipXAxis: Bool
     let isUploadedVideo: Bool
     let keypointColor: Color
+    let highlightSeverity: FeedbackSeverity?
     let frameIndex: Int
     let style: PoseOverlayStyle
 
@@ -148,6 +201,12 @@ private struct KeypointView: View {
         )
     }
 
+    private var accessibilityValue: String {
+        let base = "confidence=\(String(format: "%.2f", keypoint.confidence)),frame=\(frameIndex)"
+        guard let highlightSeverity else { return base }
+        return base + ",highlight=\(highlightSeverity.rawValue)"
+    }
+
     var body: some View {
         Circle()
             .fill(keypointColor)
@@ -161,7 +220,7 @@ private struct KeypointView: View {
             .accessibilityElement(children: .ignore)
             .accessibilityIdentifier("PoseOverlay.Keypoint.\(keypoint.name)")
             .accessibilityLabel(keypoint.name)
-            .accessibilityValue("confidence=\(String(format: "%.2f", keypoint.confidence)),frame=\(frameIndex)")
+            .accessibilityValue(accessibilityValue)
             .onAppear {
                 // #region agent log
                 if keypoint.name == "nose" {
@@ -198,10 +257,38 @@ struct SkeletonView: View {
     let flipXAxis: Bool
     let isUploadedVideo: Bool
     let style: PoseOverlayStyle
+    let highlightedJoints: [BodyJoint: FeedbackSeverity]
 
     var body: some View {
         Canvas { context, size in
             drawSkeleton(context: context, size: size)
+        }
+    }
+
+    private var defaultStrokeColor: Color {
+        style == .telemetry ? Color(red: 0.24, green: 0.86, blue: 1.0) : .white
+    }
+
+    private func highlightColor(for severity: FeedbackSeverity) -> Color {
+        switch style {
+        case .standard:
+            switch severity {
+            case .critical:
+                return .red
+            case .warning:
+                return .yellow
+            case .good, .excellent:
+                return defaultStrokeColor
+            }
+        case .telemetry:
+            switch severity {
+            case .critical:
+                return Color(red: 1.0, green: 0.42, blue: 0.42)
+            case .warning:
+                return Color(red: 1.0, green: 0.78, blue: 0.35)
+            case .good, .excellent:
+                return defaultStrokeColor
+            }
         }
     }
 
@@ -292,13 +379,21 @@ struct SkeletonView: View {
                 )
             }
 
+            let startSeverity = BodyJoint(rawValue: startJoint).flatMap { highlightedJoints[$0] }
+            let endSeverity = BodyJoint(rawValue: endJoint).flatMap { highlightedJoints[$0] }
+            let segmentSeverity: FeedbackSeverity? = {
+                if startSeverity == .critical || endSeverity == .critical { return .critical }
+                if startSeverity == .warning || endSeverity == .warning { return .warning }
+                return nil
+            }()
+
             var path = Path()
             path.move(to: start)
             path.addLine(to: end)
 
             context.stroke(
                 path,
-                with: .color(style == .telemetry ? Color(red: 0.24, green: 0.86, blue: 1.0) : .white),
+                with: .color(segmentSeverity.map(highlightColor) ?? defaultStrokeColor),
                 lineWidth: style == .telemetry ? 2.6 : 2
             )
         }

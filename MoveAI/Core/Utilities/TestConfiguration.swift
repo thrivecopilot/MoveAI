@@ -9,13 +9,13 @@ import Foundation
 
 struct TestConfiguration {
     static let shared = TestConfiguration()
-    
+
     // MARK: - Test Flags
-    
+
     var isUITesting: Bool {
-        return ProcessInfo.processInfo.arguments.contains("--uitesting")
+        ProcessInfo.processInfo.arguments.contains("--uitesting")
     }
-    
+
     var isDebugMode: Bool {
         #if DEBUG
         return true
@@ -23,20 +23,20 @@ struct TestConfiguration {
         return false
         #endif
     }
-    
+
     // MARK: - Test Data
-    
+
     // Mock user profile data - now handled via @AppStorage
     var mockUserProfile: (height: Double, weight: Double, age: Int) {
-        return (
+        (
             height: 180.0,
             weight: 80.0,
             age: 25
         )
     }
-    
+
     var mockMovements: [Movement] {
-        return [
+        [
             Movement(
                 name: "Test Squat",
                 category: .powerlifting,
@@ -55,33 +55,72 @@ struct TestConfiguration {
             )
         ]
     }
-    
+
     // MARK: - Performance Thresholds
-    
+
     struct PerformanceThresholds {
         static let maxAppLaunchTime: TimeInterval = 3.0
         static let maxTabSwitchTime: TimeInterval = 0.5
         static let maxViewLoadTime: TimeInterval = 1.0
         static let maxMemoryUsage: UInt64 = 100 * 1024 * 1024 // 100MB
     }
-    
+
     // MARK: - Test Utilities
-    
+
+    /// Clear persisted state that can leak across simulator test runs.
+    ///
+    /// Note: Xcode sometimes reuses the same simulator instance (no fresh clone),
+    /// so we proactively clear onboarding/session data for determinism.
     func resetAppState() {
-        if isUITesting {
-            UserDefaults.standard.removeObject(forKey: "isOnboardingCompleted")
-            UserDefaults.standard.removeObject(forKey: "isPremiumUser")
-            UserDefaults.standard.removeObject(forKey: "currentUser")
+        guard isUITesting else { return }
+
+        let defaults = UserDefaults.standard
+        for key in [
+            // Legacy keys
+            "isOnboardingCompleted",
+            "isPremiumUser",
+            "currentUser",
+
+            // Current onboarding / profile keys
+            "isSignedIn",
+            "hasHealthPermissions",
+            "userHeight",
+            "userWeight",
+            "userAge"
+        ] {
+            defaults.removeObject(forKey: key)
         }
+
+        // Clear persisted sessions for deterministic UI tests.
+        let fileManager = FileManager.default
+        let sessionsDirectory = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Sessions", isDirectory: true)
+        try? fileManager.removeItem(at: sessionsDirectory)
     }
-    
+
+    /// Apply deterministic defaults so UI tests can start on the main app without
+    /// having to navigate through Apple Sign In / Health permissions.
+    func configureUserDefaultsForUITesting() {
+        guard isUITesting else { return }
+
+        resetAppState()
+
+        let defaults = UserDefaults.standard
+        defaults.set(true, forKey: "isSignedIn")
+        defaults.set(true, forKey: "hasHealthPermissions")
+
+        // Seed realistic personal info values (cm/kg) so profile-related UI has data.
+        defaults.set(177.8, forKey: "userHeight")
+        defaults.set(81.64656, forKey: "userWeight")
+        defaults.set(31, forKey: "userAge")
+    }
+
     @MainActor
     func setupTestEnvironment() {
-        if isUITesting {
-            resetAppState()
-            DebugManager.shared.clearLogs()
-            DebugManager.shared.clearPerformanceMetrics()
-        }
+        guard isUITesting else { return }
+        configureUserDefaultsForUITesting()
+        DebugManager.shared.clearLogs()
+        DebugManager.shared.clearPerformanceMetrics()
     }
 }
 

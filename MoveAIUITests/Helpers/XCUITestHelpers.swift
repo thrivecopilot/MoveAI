@@ -34,6 +34,8 @@ func launchScenario(
     file: StaticString = #file,
     line: UInt = #line
 ) -> XCUIApplication {
+    XCUIDevice.shared.orientation = .portrait
+
     let app = XCUIApplication()
     app.launchArguments = [
         "--uitesting",

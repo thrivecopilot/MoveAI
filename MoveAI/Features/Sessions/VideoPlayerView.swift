@@ -199,7 +199,8 @@ struct VideoPlayerView: View {
                                         previewSize: fillSize,
                                         flipXAxis: true,
                                         isUploadedVideo: !isRecordedLive,
-                                        style: .telemetry
+                                        style: .telemetry,
+                                        highlightedJoints: activeHighlightedJoints
                                     )
                                     .frame(width: filledWidth, height: filledHeight)
                                     .position(x: availableWidth / 2, y: containerHeight / 2)
@@ -243,7 +244,8 @@ struct VideoPlayerView: View {
                                     previewSize: baseSize,
                                     flipXAxis: true,
                                     isUploadedVideo: !isRecordedLive,
-                                    style: .telemetry
+                                    style: .telemetry,
+                                    highlightedJoints: activeHighlightedJoints
                                 )
                                 .frame(width: baseSize.width, height: baseSize.height)
                                 .allowsHitTesting(false)
@@ -293,7 +295,8 @@ struct VideoPlayerView: View {
                         previewSize: geometry.size,
                         flipXAxis: true,  // Flip X-axis for video playback
                         isUploadedVideo: !isRecordedLive,  // Use camera feed transformation for live recordings
-                        style: .telemetry
+                        style: .telemetry,
+                        highlightedJoints: activeHighlightedJoints
                     )
                     .allowsHitTesting(false)
                 }
@@ -321,6 +324,15 @@ struct VideoPlayerView: View {
     
     
     // MARK: - Computed Properties
+    private var activeHighlightedJoints: [BodyJoint: FeedbackSeverity] {
+        guard let feedback = analysisResult?.feedback else { return [:] }
+        return PoseOverlayHighlighting.activeHighlightedJoints(
+            feedback: feedback,
+            at: playback.currentTime,
+            tolerance: 0.2
+        )
+    }
+
     private var currentPose: PoseDetectionResult? {
         guard let poseData = poseData, !poseData.isEmpty else { return nil }
         

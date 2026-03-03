@@ -9,6 +9,19 @@ import SwiftUI
 
 @main
 struct MoveAIApp: App {
+    init() {
+        // Ensure deterministic UI tests by clearing onboarding-related defaults on launch.
+        // Some Xcode test runners reuse the same simulator instance (no fresh clone),
+        // which can otherwise cause onboarding to be skipped unexpectedly.
+        if TestConfiguration.shared.isUITesting {
+            TestConfiguration.shared.configureUserDefaultsForUITesting()
+            Task { @MainActor in
+                DebugManager.shared.clearLogs()
+                DebugManager.shared.clearPerformanceMetrics()
+            }
+        }
+    }
+
     var body: some Scene {
         WindowGroup {
             #if DEBUG

@@ -20,6 +20,7 @@ enum UIScenario: String, CaseIterable {
     case videoReviewOverviewExpanded = "VideoReview_overview_expanded"
     case workoutSummaryDefault = "WorkoutSummary_default"
     case poseOverlayDetected = "PoseOverlay_detected"
+    case poseOverlayHighlights = "PoseOverlay_highlights"
     case poseOverlayNoPose = "PoseOverlay_noPose"
     case dataInputPrefilled = "DataInput_prefilled"
 }
@@ -161,6 +162,11 @@ private enum ScenarioViews {
             return AnyView(OverviewTabView(analysisResult: PreviewData.analysisResult()))
         case .poseOverlayDetected:
             return poseOverlayView(pose: ScenarioFixtures.poseOverlayDetected())
+        case .poseOverlayHighlights:
+            return poseOverlayView(
+                pose: ScenarioFixtures.poseOverlayDetected(),
+                highlightedJoints: [.leftHip: .warning, .rightHip: .critical]
+            )
         case .poseOverlayNoPose:
             return poseOverlayView(pose: nil)
         case .dataInputPrefilled:
@@ -186,7 +192,7 @@ private enum ScenarioViews {
         )
     }
 
-    private static func poseOverlayView(pose: PoseDetectionResult?) -> AnyView {
+    private static func poseOverlayView(pose: PoseDetectionResult?, highlightedJoints: [BodyJoint: FeedbackSeverity] = [:]) -> AnyView {
         let keypointCount = pose?.keypoints.count ?? 0
         let frameText: String = {
             guard let pose else { return "Frame --" }
@@ -203,7 +209,8 @@ private enum ScenarioViews {
                     previewSize: CGSize(width: 360, height: 640),
                     flipXAxis: false,
                     isUploadedVideo: true,
-                    style: .standard
+                    style: .standard,
+                    highlightedJoints: highlightedJoints
                 )
 
                 Text("\(frameText) · \(keypointCount) keypoints")
@@ -239,6 +246,7 @@ private enum ScenarioFixtures {
             return [videoReviewSession()]
         case .workoutSummaryDefault,
              .poseOverlayDetected,
+             .poseOverlayHighlights,
              .poseOverlayNoPose,
              .dataInputPrefilled:
             return []

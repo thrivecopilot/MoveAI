@@ -61,13 +61,17 @@ final class ScreenshotTests: XCTestCase {
     }
 
     private func captureScenario(_ scenario: Scenario, appearance: Appearance, textSize: TextSize) {
-        let app = launch(scenario: scenario.name, appearance: appearance, textSize: textSize)
-        waitForScreen(app, id: "ScenarioRoot_\(scenario.name)")
-        takeShot(app, name: shotName(scenario: scenario.name, appearance: appearance, textSize: textSize))
-        app.terminate()
+        autoreleasepool {
+            let app = launch(scenario: scenario.name, appearance: appearance, textSize: textSize)
+            waitForScreen(app, id: "ScenarioRoot_\(scenario.name)")
+            takeShot(app, name: shotName(scenario: scenario.name, appearance: appearance, textSize: textSize))
+            app.terminate()
+        }
     }
 
     private func launch(scenario: String, appearance: Appearance, textSize: TextSize) -> XCUIApplication {
+        XCUIDevice.shared.orientation = .portrait
+
         let app = XCUIApplication()
         app.launchArguments = [
             "--uitesting",
@@ -89,7 +93,9 @@ final class ScreenshotTests: XCTestCase {
     private func takeShot(_ app: XCUIApplication, name: String) {
         let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         attachment.name = "screenshot__\(name)"
-        attachment.lifetime = .keepAlways
+        // Keep screenshots only when requested to avoid memory pressure during UI test runs.
+        let keepOnSuccess = ProcessInfo.processInfo.environment["MOVEAI_KEEP_UI_SCREENSHOTS"] == "1"
+        attachment.lifetime = keepOnSuccess ? .keepAlways : .deleteOnSuccess
         add(attachment)
     }
 

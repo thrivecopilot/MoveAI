@@ -237,6 +237,36 @@ final class StructuralUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["88"].exists, "Score 88 must be visible")
     }
 
+
+    // =========================================================================
+    // MARK: - Pose Overlay: Highlights
+    // =========================================================================
+
+    func testPoseOverlayHighlights_structure() throws {
+        app = launchScenario("PoseOverlay_highlights")
+
+        assertExists("PoseOverlayView", timeout: 5, "Pose overlay view must exist")
+
+        let poseOverlay = element("PoseOverlayView")
+        let value = String(describing: poseOverlay.value ?? "")
+
+        XCTAssertTrue(
+            value.contains("highlights="),
+            "Expected PoseOverlayView accessibility value to include highlights=..., got: \(value)"
+        )
+        XCTAssertTrue(
+            value.contains("leftHip:warning"),
+            "Expected leftHip to be highlighted as warning, got: \(value)"
+        )
+        XCTAssertTrue(
+            value.contains("rightHip:critical"),
+            "Expected rightHip to be highlighted as critical, got: \(value)"
+        )
+        XCTAssertFalse(
+            value.contains("leftKnee:"),
+            "Expected leftKnee to NOT be highlighted, got: \(value)"
+        )
+    }
     // =========================================================================
     // MARK: - Video Review: Medium Sheet
     // =========================================================================

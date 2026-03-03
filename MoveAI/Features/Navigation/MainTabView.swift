@@ -11,7 +11,7 @@ fileprivate enum MainTab: String, CaseIterable {
     case home
     case profile
     case trends
-    
+
     var iconName: String {
         switch self {
         case .home: return "house.fill"
@@ -19,15 +19,19 @@ fileprivate enum MainTab: String, CaseIterable {
         case .trends: return "chart.line.uptrend.xyaxis"
         }
     }
+
+    var accessibilityLabel: String {
+        rawValue.capitalized
+    }
 }
 
 struct MainTabView: View {
-    
+
     @StateObject private var sessionManager = SessionManager()
     @StateObject private var cameraService = CameraService()
     @State private var selectedTab: MainTab = .home
     @StateObject private var tabBarVisibility = TabBarVisibility()
-    
+
     var body: some View {
         TabView(selection: $selectedTab) {
             // Home Tab
@@ -36,13 +40,13 @@ struct MainTabView: View {
                 .environmentObject(cameraService)
                 .environmentObject(tabBarVisibility)
                 .tag(MainTab.home)
-            
+
             // Profile Tab
             ProfileView()
                 .environmentObject(sessionManager)
                 .environmentObject(tabBarVisibility)
                 .tag(MainTab.profile)
-            
+
             // Trends Tab
             TrendsView()
                 .environmentObject(sessionManager)
@@ -64,12 +68,12 @@ final class TabBarVisibility: ObservableObject {
 
 private struct CustomTabBar: View {
     @Binding var selectedTab: MainTab
-    
+
     private let barBackground = Color.black
     private let activeColor = Color.white
     private let inactiveColor = Color.white.opacity(0.45)
     private let indicatorColor = Color(red: 0.24, green: 0.86, blue: 1.0)
-    
+
     var body: some View {
         HStack(spacing: 0) {
             ForEach(MainTab.allCases, id: \.self) { tab in
@@ -79,17 +83,22 @@ private struct CustomTabBar: View {
                             .fill(indicatorColor)
                             .frame(width: 6, height: 6)
                             .opacity(selectedTab == tab ? 1 : 0)
-                        
+                            .accessibilityHidden(true)
+
                         Image(systemName: tab.iconName)
                             .font(.system(size: 22, weight: .semibold))
                             .foregroundColor(selectedTab == tab ? activeColor : inactiveColor)
                             .frame(maxWidth: .infinity)
+                            // Override SF Symbol's default a11y label so UI tests and VoiceOver are stable.
+                            .accessibilityLabel(tab.accessibilityLabel)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.top, 6)
                     .padding(.bottom, 8)
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("\(AccessibilityID.MainTabBar.button).\(tab.rawValue)")
+                .accessibilityLabel(tab.accessibilityLabel)
             }
         }
         .padding(.horizontal, 12)
@@ -100,6 +109,8 @@ private struct CustomTabBar: View {
                 .frame(height: 1),
             alignment: .top
         )
+        .accessibilityIdentifier(AccessibilityID.MainTabBar.root)
+        .accessibilityElement(children: .contain)
     }
 }
 
