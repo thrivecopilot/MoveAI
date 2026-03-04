@@ -9,13 +9,21 @@ import Foundation
 import AVFoundation
 import CoreVideo
 import CoreImage
+import ImageIO
 
 /// Helper functions for video processing and frame extraction
 public enum VideoProcessingHelpers {
+    private static let sharedCIContext = CIContext()
+
     
     // MARK: - Debug Logging Helper
     
     public static func writeDebugLog(_ message: String, data: [String: Any], location: String) {
+#if !DEBUG
+        return
+#else
+        guard ProcessInfo.processInfo.environment["MOVEAI_POSE_DEBUG"] == "1" else { return }
+#endif
         let logPath = "/Users/davemathew/Developer/MoveAI/.cursor/debug.log"
         let logEntry: [String: Any] = [
             "location": location,
@@ -78,6 +86,42 @@ public enum VideoProcessingHelpers {
         return Double(frameRate)
     }
     
+    // MARK: - Orientation
+
+    public static func visionOrientation(forPreferredTransform transform: CGAffineTransform) -> CGImagePropertyOrientation {
+        // Ignore translation; infer orientation from the 2x2 rotation/mirror matrix.
+        func normalizedComponent(_ value: CGFloat) -> Int {
+            if abs(value) < 0.001 { return 0 }
+            return value > 0 ? 1 : -1
+        }
+
+        let a = normalizedComponent(transform.a)
+        let b = normalizedComponent(transform.b)
+        let c = normalizedComponent(transform.c)
+        let d = normalizedComponent(transform.d)
+
+        switch (a, b, c, d) {
+        case (1, 0, 0, 1):
+            return .up
+        case (-1, 0, 0, -1):
+            return .down
+        case (0, 1, -1, 0):
+            return .right
+        case (0, -1, 1, 0):
+            return .left
+        case (-1, 0, 0, 1):
+            return .upMirrored
+        case (1, 0, 0, -1):
+            return .downMirrored
+        case (0, 1, 1, 0):
+            return .rightMirrored
+        case (0, -1, -1, 0):
+            return .leftMirrored
+        default:
+            return .up
+        }
+    }
+
     // MARK: - Frame Extraction
     
     /// Extract frames from video at specified intervals
@@ -237,9 +281,7 @@ public enum VideoProcessingHelpers {
         guard status == kCVReturnSuccess, let outputBuffer = downscaledBuffer else {
             return nil
         }
-        
         // Use Core Image for high-quality scaling
-        let ciContext = CIContext()
         let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
         
         // Create transform for scaling
@@ -247,7 +289,7 @@ public enum VideoProcessingHelpers {
         let scaledImage = ciImage.transformed(by: transform)
         
         // Render scaled image to output buffer
-        ciContext.render(scaledImage, to: outputBuffer)
+        sharedCIContext.render(scaledImage, to: outputBuffer)
         
         return outputBuffer
     }

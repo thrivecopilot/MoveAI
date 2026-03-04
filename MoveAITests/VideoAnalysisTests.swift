@@ -116,10 +116,32 @@ final class VideoAnalysisTests: XCTestCase {
         
         let testCase = try loadTestCase(name: testCaseName)
         let recording = try await VideoTestRunner.extractPosesOnly(testCase, testVideosDirectory: testVideosDirectory)
-        
-        XCTAssertNotNil(recording.poseData)
-        XCTAssertFalse(recording.poseData?.isEmpty ?? true)
-        print("✅ Extracted \(recording.poseData?.count ?? 0) poses")
+        guard let poseData = recording.poseData else {
+            XCTFail("Expected poseData to be non-nil")
+            return
+        }
+
+        XCTAssertFalse(poseData.isEmpty)
+
+        // Contract: offline pose extraction produces a uniformly sampled, index-addressable array.
+        let expectedCount = Int(recording.duration * 30.0)
+        XCTAssertEqual(poseData.count, expectedCount)
+
+        for (i, pose) in poseData.enumerated() {
+            XCTAssertEqual(pose.frameIndex, i)
+
+            let expectedTs = min(Double(i) / 30.0, recording.duration)
+            XCTAssertEqual(pose.timestamp.timeIntervalSince1970, expectedTs, accuracy: 1e-6)
+        }
+
+        if poseData.count >= 2 {
+            for i in 1..<poseData.count {
+                let dt = poseData[i].timestamp.timeIntervalSince1970 - poseData[i - 1].timestamp.timeIntervalSince1970
+                XCTAssertEqual(dt, 1.0 / 30.0, accuracy: 1e-6)
+            }
+        }
+
+        print("✅ Extracted \(poseData.count) poses")
     }
     
     /// Test analysis with cached poses (fast, for iteration)
