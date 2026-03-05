@@ -6,6 +6,7 @@
 //
 
 import XCTest
+import CoreGraphics
 @testable import MoveAI
 
 final class SquatMechanicsSolverTests: XCTestCase {
@@ -205,5 +206,408 @@ final class SquatMechanicsSolverTests: XCTestCase {
                 XCTAssertNotNil(stickFigure, "Stick figure should be valid at depth \(depth)")
             }
         }
+    }
+}
+
+final class CameraAngleDetectionTests: XCTestCase {
+    private func pose(frame: Int, leftKneeX: Double?, rightKneeX: Double?, confidence: Float = 1.0) -> PoseDetectionResult {
+        var keypoints: [PoseKeypoint] = []
+
+        if let x = leftKneeX {
+            keypoints.append(PoseKeypoint(name: "leftKnee", position: CGPoint(x: x, y: 0.5), confidence: confidence))
+        }
+        if let x = rightKneeX {
+            keypoints.append(PoseKeypoint(name: "rightKnee", position: CGPoint(x: x, y: 0.5), confidence: confidence))
+        }
+
+        return PoseDetectionResult(
+            keypoints: keypoints,
+            frameIndex: frame,
+            timestamp: Date(timeIntervalSince1970: Double(frame) / 30.0)
+        )
+    }
+
+    func testDetectCameraAngle_side_whenOnlyOneKneeVisible() {
+        let poses = (0..<10).map { i in
+            pose(frame: i, leftKneeX: 0.5, rightKneeX: nil)
+        }
+
+        let result = SquatAnalyzer.detectCameraAngle(from: poses)
+
+        XCTAssertEqual(result.angle, .side)
+        XCTAssertGreaterThanOrEqual(result.confidence, 0.9)
+        XCTAssertEqual(result.bothSidesFrameRatio, 0.0, accuracy: 1e-9)
+    }
+
+    func testDetectCameraAngle_front_whenBothKneesWide() {
+        let poses = (0..<10).map { i in
+            pose(frame: i, leftKneeX: 0.3, rightKneeX: 0.7)
+        }
+
+        let result = SquatAnalyzer.detectCameraAngle(from: poses)
+
+        XCTAssertEqual(result.angle, .front)
+        XCTAssertGreaterThanOrEqual(result.confidence, 0.9)
+        XCTAssertGreaterThan(result.medianKneeSeparation, 0.18)
+        XCTAssertEqual(result.bothSidesFrameRatio, 1.0, accuracy: 1e-9)
+    }
+
+    func testDetectCameraAngle_diagonal_whenKneesModerate() {
+        let poses = (0..<10).map { i in
+            pose(frame: i, leftKneeX: 0.45, rightKneeX: 0.55)
+        }
+
+        let result = SquatAnalyzer.detectCameraAngle(from: poses)
+
+        XCTAssertEqual(result.angle, .diagonal)
+        XCTAssertGreaterThanOrEqual(result.confidence, 0.9)
+        XCTAssertGreaterThan(result.medianKneeSeparation, 0.08)
+        XCTAssertLessThan(result.medianKneeSeparation, 0.18)
+    }
+
+    func testDetectCameraAngle_confidenceDropsWhenFewFramesHaveBothSides() {
+        var poses: [PoseDetectionResult] = []
+        poses.reserveCapacity(10)
+
+        for i in 0..<10 {
+            if i < 2 {
+                poses.append(pose(frame: i, leftKneeX: 0.3, rightKneeX: 0.7))
+            } else {
+                poses.append(pose(frame: i, leftKneeX: nil, rightKneeX: nil))
+            }
+        }
+
+        let result = SquatAnalyzer.detectCameraAngle(from: poses)
+
+        XCTAssertEqual(result.angle, .front)
+        XCTAssertLessThan(result.confidence, 0.6)
+        XCTAssertEqual(result.bothSidesFrameRatio, 0.2, accuracy: 1e-9)
+    }
+}
+
+final class SquatWarningTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        setenv("MOVEAI_ENABLE_SIDE_CHECKS_V2", "1", 1)
+        setenv("MOVEAI_ENABLE_FRONT_CHECKS_V2", "1", 1)
+        unsetenv("MOVEAI_ENABLE_DIAGONAL_CHECKS")
+    }
+
+    private func kp(_ name: String, x: Double, y: Double, confidence: Float = 1.0) -> PoseKeypoint {
+        PoseKeypoint(
+            name: name,
+            position: CGPoint(x: x, y: y),
+            confidence: confidence,
+            timestamp: Date(timeIntervalSince1970: 0)
+        )
+    }
+
+    private func pose(frame: Int, seconds: Double, keypoints: [PoseKeypoint]) -> PoseDetectionResult {
+        PoseDetectionResult(
+            keypoints: keypoints,
+            frameIndex: frame,
+            timestamp: Date(timeIntervalSince1970: seconds)
+        )
+    }
+
+    private func oneRepSequence(
+        frameCount: Int = 30,
+        bottomFrame: Int = 15,
+        keypointsForFrame: (Int) -> [PoseKeypoint]
+    ) -> (poses: [PoseDetectionResult], smoothedHeights: [Double], rep: SquatRep) {
+        let startHeight = 0.7
+        let bottomHeight = 0.3
+        var heights: [Double] = []
+        heights.reserveCapacity(frameCount)
+
+        for i in 0..<frameCount {
+            if i <= bottomFrame {
+                let t = Double(i) / Double(max(1, bottomFrame))
+                heights.append(startHeight + (bottomHeight - startHeight) * t)
+            } else {
+                let denom = Double(max(1, frameCount - 1 - bottomFrame))
+                let t = Double(i - bottomFrame) / denom
+                heights.append(bottomHeight + (startHeight - bottomHeight) * t)
+            }
+        }
+
+        let poses = (0..<frameCount).map { i in
+            pose(frame: i, seconds: Double(i) / 30.0, keypoints: keypointsForFrame(i))
+        }
+
+        let rep = SquatRep(
+            repNumber: 1,
+            startFrame: 0,
+            endFrame: frameCount - 1,
+            startTime: 0,
+            endTime: Double(frameCount - 1) / 30.0,
+            isFullRep: true,
+            bottomFrame: bottomFrame,
+            bottomTime: Double(bottomFrame) / 30.0,
+            reachedDepth: true,
+            returnedToStart: true
+        )
+
+        return (poses: poses, smoothedHeights: heights, rep: rep)
+    }
+
+    func testKneeValgusTriggersWhenKneesCloserThanAnkles() {
+        let seq = oneRepSequence { _ in
+            [
+                kp("leftAnkle", x: 0.2, y: 0.2),
+                kp("rightAnkle", x: 0.8, y: 0.2),
+                kp("leftKnee", x: 0.46, y: 0.5),
+                kp("rightKnee", x: 0.54, y: 0.5),
+                kp("leftHip", x: 0.4, y: 0.8),
+                kp("rightHip", x: 0.6, y: 0.8),
+            ]
+        }
+
+        let feedback = SquatAnalyzer.generateFeedback(
+            poses: seq.poses,
+            smoothedHeights: seq.smoothedHeights,
+            phases: [],
+            reps: [seq.rep],
+            depthMetrics: [],
+            kneeMetrics: [],
+            worstDepth: nil,
+            worstKnee: nil,
+            startTime: Date(timeIntervalSince1970: 0),
+            camera: (angle: .front, confidence: 0.9, medianKneeSeparation: 0.3, bothSidesFrameRatio: 1.0),
+            segmentLengths: nil,
+            formDeviations: []
+        )
+
+        XCTAssertTrue(feedback.contains(where: { $0.issueKind == .squatKneeValgus }))
+    }
+
+    func testHipShiftTriggersWhenPelvisOffsetChangesFromSetup() {
+        let seq = oneRepSequence { frame in
+            let isSetup = frame < 5
+            let hipMid = isSetup ? 0.5 : 0.56
+            return [
+                kp("leftAnkle", x: 0.2, y: 0.2),
+                kp("rightAnkle", x: 0.8, y: 0.2),
+                kp("leftHip", x: hipMid - 0.1, y: 0.8),
+                kp("rightHip", x: hipMid + 0.1, y: 0.8),
+            ]
+        }
+
+        let feedback = SquatAnalyzer.generateFeedback(
+            poses: seq.poses,
+            smoothedHeights: seq.smoothedHeights,
+            phases: [],
+            reps: [seq.rep],
+            depthMetrics: [],
+            kneeMetrics: [],
+            worstDepth: nil,
+            worstKnee: nil,
+            startTime: Date(timeIntervalSince1970: 0),
+            camera: (angle: .front, confidence: 0.9, medianKneeSeparation: 0.25, bothSidesFrameRatio: 1.0),
+            segmentLengths: nil,
+            formDeviations: []
+        )
+
+        XCTAssertTrue(feedback.contains(where: { $0.issueKind == .squatHipShift }))
+    }
+
+    func testFootCollapseTriggersWhenAnkleAndToeMoveTowardMidline() {
+        let seq = oneRepSequence { frame in
+            let isSetup = frame < 5
+            let leftAnkleX = isSetup ? 0.2 : 0.3
+            let leftToeX = isSetup ? 0.18 : 0.32
+            return [
+                kp("leftHip", x: 0.4, y: 0.8),
+                kp("rightHip", x: 0.6, y: 0.8),
+                kp("leftAnkle", x: leftAnkleX, y: 0.2),
+                kp("leftFootIndex", x: leftToeX, y: 0.18),
+            ]
+        }
+
+        let feedback = SquatAnalyzer.generateFeedback(
+            poses: seq.poses,
+            smoothedHeights: seq.smoothedHeights,
+            phases: [],
+            reps: [seq.rep],
+            depthMetrics: [],
+            kneeMetrics: [],
+            worstDepth: nil,
+            worstKnee: nil,
+            startTime: Date(timeIntervalSince1970: 0),
+            camera: (angle: .front, confidence: 0.9, medianKneeSeparation: 0.25, bothSidesFrameRatio: 1.0),
+            segmentLengths: nil,
+            formDeviations: []
+        )
+
+        XCTAssertTrue(feedback.contains(where: { $0.issueKind == .squatFootCollapse }))
+    }
+
+    func testHeelsLiftTriggersWhenHeelRisesRelativeToToe() {
+        let seq = oneRepSequence { frame in
+            let isSetup = frame < 5
+            let ankleY = isSetup ? 0.20 : 0.28
+            return [
+                kp("leftAnkle", x: 0.5, y: ankleY),
+                kp("leftKnee", x: 0.5, y: 0.6),
+            ]
+        }
+
+        let feedback = SquatAnalyzer.generateFeedback(
+            poses: seq.poses,
+            smoothedHeights: seq.smoothedHeights,
+            phases: [],
+            reps: [seq.rep],
+            depthMetrics: [],
+            kneeMetrics: [],
+            worstDepth: nil,
+            worstKnee: nil,
+            startTime: Date(timeIntervalSince1970: 0),
+            camera: (angle: .side, confidence: 0.9, medianKneeSeparation: 0.0, bothSidesFrameRatio: 0.0),
+            segmentLengths: nil,
+            formDeviations: []
+        )
+
+        XCTAssertTrue(feedback.contains(where: { $0.issueKind == .squatHeelsLift }))
+    }
+
+    func testKneesStayedBackTriggersWhenShinAngleTooVertical() {
+        let segments = AnthropometryEstimator.SegmentLengths(shinLength: 1.0, femurLength: 1.0, torsoLength: 1.0)
+
+        let seq = oneRepSequence { _ in
+            [
+                kp("leftAnkle", x: 0.5, y: 0.2),
+                kp("leftKnee", x: 0.52, y: 0.6),
+                kp("leftHeel", x: 0.48, y: 0.2),
+                kp("leftHip", x: 0.4, y: 0.8),
+            ]
+        }
+
+        let feedback = SquatAnalyzer.generateFeedback(
+            poses: seq.poses,
+            smoothedHeights: seq.smoothedHeights,
+            phases: [],
+            reps: [seq.rep],
+            depthMetrics: [],
+            kneeMetrics: [],
+            worstDepth: nil,
+            worstKnee: nil,
+            startTime: Date(timeIntervalSince1970: 0),
+            camera: (angle: .side, confidence: 0.9, medianKneeSeparation: 0.0, bothSidesFrameRatio: 0.0),
+            segmentLengths: segments,
+            formDeviations: []
+        )
+
+        XCTAssertTrue(feedback.contains(where: { $0.issueKind == .squatKneesStayedBack }))
+    }
+
+    func testDepthInconsistentTriggersAtSetLevelWhenRepDepthsVary() {
+        let fps = 30.0
+        let frameCount = 90
+        let bottomFrames = [15, 45, 75]
+
+        let poses: [PoseDetectionResult] = (0..<frameCount).map { i in
+            pose(frame: i, seconds: Double(i) / fps, keypoints: [])
+        }
+
+        let heights = Array(repeating: 0.5, count: frameCount)
+
+        let reps: [SquatRep] = (0..<3).map { idx in
+            let start = idx * 30
+            let end = start + 29
+            let bottom = bottomFrames[idx]
+            return SquatRep(
+                repNumber: idx + 1,
+                startFrame: start,
+                endFrame: end,
+                startTime: Double(start) / fps,
+                endTime: Double(end) / fps,
+                isFullRep: true,
+                bottomFrame: bottom,
+                bottomTime: Double(bottom) / fps,
+                reachedDepth: true,
+                returnedToStart: true
+            )
+        }
+
+        let depthMetrics: [DepthAnalysis] = [
+            DepthAnalysis(
+                hipHeight: 0.0,
+                kneeHeight: 0.0,
+                isAtDepth: true,
+                depthPercentage: 90.0,
+                timestamp: Date(timeIntervalSince1970: Double(bottomFrames[0]) / fps),
+                repNumber: 1
+            ),
+            DepthAnalysis(
+                hipHeight: 0.0,
+                kneeHeight: 0.0,
+                isAtDepth: true,
+                depthPercentage: 75.0,
+                timestamp: Date(timeIntervalSince1970: Double(bottomFrames[1]) / fps),
+                repNumber: 2
+            ),
+            DepthAnalysis(
+                hipHeight: 0.0,
+                kneeHeight: 0.0,
+                isAtDepth: true,
+                depthPercentage: 60.0,
+                timestamp: Date(timeIntervalSince1970: Double(bottomFrames[2]) / fps),
+                repNumber: 3
+            ),
+        ]
+
+        let feedback = SquatAnalyzer.generateFeedback(
+            poses: poses,
+            smoothedHeights: heights,
+            phases: [],
+            reps: reps,
+            depthMetrics: depthMetrics,
+            kneeMetrics: [],
+            worstDepth: nil,
+            worstKnee: nil,
+            startTime: Date(timeIntervalSince1970: 0),
+            camera: (angle: .side, confidence: 0.9, medianKneeSeparation: 0.0, bothSidesFrameRatio: 0.0),
+            segmentLengths: nil,
+            formDeviations: []
+        )
+
+        XCTAssertTrue(feedback.contains(where: { $0.issueKind == .squatDepthInconsistent && $0.repNumber == nil }))
+    }
+
+    func testBraceLeakEmitsFromTorsoInstabilityDeviation() {
+        let seq = oneRepSequence { _ in
+            [
+                kp("leftHip", x: 0.4, y: 0.8),
+                kp("rightHip", x: 0.6, y: 0.8),
+            ]
+        }
+
+        let deviations: [FormDeviationAnalyzer.FormDeviation] = [
+            FormDeviationAnalyzer.FormDeviation(
+                type: .torsoInstability,
+                severity: .severe,
+                magnitude: 26.0,
+                frameRange: 10..<12,
+                repNumber: 1,
+                message: "Torso instability detected"
+            )
+        ]
+
+        let feedback = SquatAnalyzer.generateFeedback(
+            poses: seq.poses,
+            smoothedHeights: seq.smoothedHeights,
+            phases: [],
+            reps: [seq.rep],
+            depthMetrics: [],
+            kneeMetrics: [],
+            worstDepth: nil,
+            worstKnee: nil,
+            startTime: Date(timeIntervalSince1970: 0),
+            camera: (angle: .side, confidence: 0.9, medianKneeSeparation: 0.0, bothSidesFrameRatio: 0.0),
+            segmentLengths: nil,
+            formDeviations: deviations
+        )
+
+        XCTAssertTrue(feedback.contains(where: { $0.issueKind == .squatBraceLeak }))
     }
 }

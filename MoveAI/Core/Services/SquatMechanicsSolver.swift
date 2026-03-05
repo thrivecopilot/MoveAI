@@ -218,7 +218,15 @@ struct SquatMechanicsSolver {
         
         return minShinAngle
     }
-    
+
+    /// Minimum shin angle (degrees from vertical) used by view-aware checks.
+    static func minimumShinAngle(
+        depth: Double,
+        segmentLengths: AnthropometryEstimator.SegmentLengths
+    ) -> Double {
+        calculateMinimumShinAngle(depth: depth, segmentLengths: segmentLengths)
+    }
+
     /// Calculate minimum torso angle based on anthropometry
     /// Shorter torso relative to femur requires more forward lean (higher torso angle) to maintain balance
     private static func calculateMinimumTorsoAngle(

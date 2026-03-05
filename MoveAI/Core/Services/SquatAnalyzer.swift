@@ -42,7 +42,8 @@ struct SquatAnalyzer {
         }
         
         // Detect camera angle from pose data
-        let cameraAngle = detectCameraAngle(from: poseHistory)
+        let camera = detectCameraAngle(from: poseHistory)
+        let cameraAngle = camera.angle
         
         // Filter out frames with insufficient keypoints
         // Accept frames with (leftHip AND leftKnee) OR (rightHip AND rightKnee)
@@ -182,6 +183,10 @@ struct SquatAnalyzer {
         // Estimate anthropometry from pose data
         var segmentLengths: AnthropometryEstimator.SegmentLengths? = nil
         var formDeviations: [FormDeviationAnalyzer.FormDeviation] = []
+
+        let sideViewEligible = camera.angle == .side && camera.confidence >= 0.6
+
+        if sideViewEligible {
         
         print("🔬 ===== BIOMECHANICAL ANALYSIS START =====")
         print("🔬 Analyzing \(reps.count) reps with \(validPoses.count) valid poses")
@@ -240,7 +245,9 @@ struct SquatAnalyzer {
                         observed: observedKinematics,
                         ideal: idealCurves,
                         segmentLengths: estimatedSegments,
-                        rep: rep
+                        rep: rep,
+                        confidence: Double(averageConfidence),
+                        isSideView: cameraAngle == .side
                     )
                     formDeviations.append(contentsOf: repDeviations)
                     
@@ -274,6 +281,8 @@ struct SquatAnalyzer {
             print("   (This may happen if keypoints are missing or pose data is insufficient)")
         }
         
+        }
+
         // Helper function to determine which rep a frame belongs to
         func repNumberForFrame(_ frameIndex: Int) -> Int? {
             return reps.first(where: { frameIndex >= $0.startFrame && frameIndex <= $0.endFrame })?.repNumber
@@ -353,8 +362,11 @@ struct SquatAnalyzer {
         )
         
         // Generate feedback (using relative timestamps from start of recording)
-        let startTime = validPoses.first?.timestamp ?? Date()
+        // Use the first pose timestamp (not first *valid* pose) to avoid shifting time when frames are filtered.
+        let startTime = poseHistory.first?.timestamp ?? Date()
         let feedback = generateFeedback(
+            poses: validPoses,
+            smoothedHeights: smoothedHeights,
             phases: phases,
             reps: reps,
             depthMetrics: depthMetrics,
@@ -362,7 +374,8 @@ struct SquatAnalyzer {
             worstDepth: worstDepth,
             worstKnee: worstKneeAngle,
             startTime: startTime,
-            cameraAngle: cameraAngle,
+            camera: camera,
+            segmentLengths: segmentLengths,
             formDeviations: formDeviations
         )
         
@@ -396,7 +409,21 @@ struct SquatAnalyzer {
               rawHeights.count == poses.count else { return [] }
         
         var reps: [SquatRep] = []
-        
+
+        func median(_ values: [Double]) -> Double? {
+            guard !values.isEmpty else { return nil }
+            let sorted = values.sorted()
+            let mid = sorted.count / 2
+            if sorted.count % 2 == 0 {
+                return (sorted[mid - 1] + sorted[mid]) / 2.0
+            }
+            return sorted[mid]
+        }
+
+        let setupFrameCount = min(5, smoothedHeights.count)
+        let setupHeights = Array(smoothedHeights.prefix(setupFrameCount))
+        let setupMedianHeight = median(setupHeights) ?? startHeight
+
         // Note: In normalized coordinates, Y decreases downward
         // When hip is at bottom (lowest), Y is minimum
         // When hip is at top (highest), Y is maximum
@@ -1238,8 +1265,9 @@ struct SquatAnalyzer {
             
             // Check if returned to starting height (within threshold)
             let endHeight = nextTop < smoothedHeights.count ? smoothedHeights[nextTop] : (smoothedHeights.last ?? startHeight)
-            let heightDifference = abs(endHeight - startTopHeight)
-            let returnedToStart = heightDifference < 0.05  // Within 5% of starting top height
+            let repRange = abs(startTopHeight - actualBottomHeight)
+            let tolerance = max(0.02, repRange * 0.03)
+            let returnedToStart = abs(endHeight - setupMedianHeight) <= tolerance
             
             let isFullRep = reachedDepth && returnedToStart
             
@@ -1319,8 +1347,9 @@ struct SquatAnalyzer {
                         
                         // Check if returned to starting height
                         let endHeight = smoothedHeights[endFrame]
-                        let heightDifference = abs(endHeight - startTopHeight)
-                        let returnedToStart = heightDifference < 0.05
+                        let repRange = abs(startTopHeight - bottomHeight)
+                        let tolerance = max(0.02, repRange * 0.03)
+                        let returnedToStart = abs(endHeight - setupMedianHeight) <= tolerance
                         let isFullRep = reachedDepth && returnedToStart
                         
                         let cycleDuration = endFrame - nextTop
@@ -1396,7 +1425,9 @@ struct SquatAnalyzer {
                 let absoluteDepthChange = startHeightValue - bottomHeight
                 let depthChange = startHeightValue > 0 ? absoluteDepthChange / startHeightValue : absoluteDepthChange
                 let reachedDepth = depthChange > minDepthThreshold
-                let returnedToStart = abs(smoothedHeights[endFrame] - startHeightValue) < 0.05
+                let repRange = abs(startHeightValue - bottomHeight)
+                let tolerance = max(0.02, repRange * 0.03)
+                let returnedToStart = abs(smoothedHeights[endFrame] - setupMedianHeight) <= tolerance
                 
                 let originalStartFrame = poses[0].frameIndex
                 let originalEndFrame = poses[endFrame].frameIndex
@@ -1620,68 +1651,113 @@ struct SquatAnalyzer {
     }
     
     // MARK: - Camera Angle Detection
-    
-    /// Detect camera angle from pose data
-    /// Returns .side if only one side is visible or both sides have similar x-coordinates (stacked)
-    /// Returns .front or .back if both sides are visible with significant x-coordinate separation
-    static func detectCameraAngle(from poseHistory: [PoseDetectionResult]) -> CameraAngle {
-        guard !poseHistory.isEmpty else { return .side } // Default to side if no data
-        
+
+    /// Detect camera angle from pose data.
+    ///
+    /// Returns a best-effort classification along with a confidence score.
+    ///
+    /// - Parameters:
+    ///   - poseHistory: Full pose sequence (unfiltered).
+    /// - Returns:
+    ///   - angle: `.side`, `.front`, or `.diagonal`.
+    ///   - confidence: 0...1 confidence based on joint visibility + separation margin.
+    ///   - medianKneeSeparation: median `abs(leftKnee.x - rightKnee.x)` across frames where both knees are visible.
+    ///   - bothSidesFrameRatio: fraction of frames where both knees are visible (minConfidence >= 0.3).
+    static func detectCameraAngle(from poseHistory: [PoseDetectionResult]) -> (angle: CameraAngle, confidence: Double, medianKneeSeparation: Double, bothSidesFrameRatio: Double) {
+        guard !poseHistory.isEmpty else {
+            return (angle: .side, confidence: 0.0, medianKneeSeparation: 0.0, bothSidesFrameRatio: 0.0)
+        }
+
+        let minConfidence: Float = 0.3
+
         var framesWithBothSides = 0
         var framesWithOneSide = 0
-        var totalXSeparation: Double = 0
-        var framesWithSeparation = 0
-        
+        var kneeSeparations: [Double] = []
+        kneeSeparations.reserveCapacity(poseHistory.count)
+
         for pose in poseHistory {
-            let (leftHip, rightHip) = PoseAnalysisHelpers.extractBilateralKeypoints(
-                leftName: "leftHip",
-                rightName: "rightHip",
-                from: pose
-            )
-            let (leftKnee, rightKnee) = PoseAnalysisHelpers.extractBilateralKeypoints(
-                leftName: "leftKnee",
-                rightName: "rightKnee",
-                from: pose
-            )
-            
-            let hasLeftSide = (leftHip != nil && leftKnee != nil)
-            let hasRightSide = (rightHip != nil && rightKnee != nil)
-            
-            if hasLeftSide && hasRightSide {
+            let leftKnee = PoseAnalysisHelpers.extractKeypoint("leftKnee", from: pose)
+            let rightKnee = PoseAnalysisHelpers.extractKeypoint("rightKnee", from: pose)
+
+            let hasLeft = (leftKnee?.confidence ?? 0) >= minConfidence
+            let hasRight = (rightKnee?.confidence ?? 0) >= minConfidence
+
+            if hasLeft && hasRight, let l = leftKnee, let r = rightKnee {
                 framesWithBothSides += 1
-                // Check x-coordinate separation
-                if let leftKnee = leftKnee, let rightKnee = rightKnee {
-                    let xSeparation = abs(Double(leftKnee.position.x - rightKnee.position.x))
-                    totalXSeparation += xSeparation
-                    framesWithSeparation += 1
-                    // If separation is significant (>0.1 in normalized coordinates), likely front/back view
-                    if xSeparation > 0.1 {
-                        // This is likely a front/back view
-                    }
-                }
-            } else if hasLeftSide || hasRightSide {
+                kneeSeparations.append(abs(Double(l.position.x - r.position.x)))
+            } else if hasLeft || hasRight {
                 framesWithOneSide += 1
             }
         }
-        
-        // If most frames have only one side visible, it's a side view
-        if framesWithOneSide > framesWithBothSides {
-            return .side
-        }
-        
-        // If both sides are visible but x-separation is small (average < 0.08), it's a side view
-        if framesWithSeparation > 0 {
-            let averageSeparation = totalXSeparation / Double(framesWithSeparation)
-            if averageSeparation < 0.08 {
-                return .side
+
+        func median(_ values: [Double]) -> Double? {
+            guard !values.isEmpty else { return nil }
+            let sorted = values.sorted()
+            let mid = sorted.count / 2
+            if sorted.count % 2 == 0 {
+                return (sorted[mid - 1] + sorted[mid]) / 2.0
             }
+            return sorted[mid]
         }
-        
-        // If both sides are consistently visible with good separation, it's front/back view
-        // Default to front (can't distinguish front vs back from pose data alone)
-        return .front
+
+        let total = Double(poseHistory.count)
+        let bothSidesFrameRatio = total > 0 ? Double(framesWithBothSides) / total : 0.0
+        let oneSideFrameRatio = total > 0 ? Double(framesWithOneSide) / total : 0.0
+        let medianKneeSeparation = median(kneeSeparations) ?? 0.0
+
+        // Classification thresholds (normalized coordinates).
+        let sideThreshold = 0.08
+        let frontThreshold = 0.18
+
+        let angle: CameraAngle
+        if framesWithOneSide > framesWithBothSides || medianKneeSeparation < sideThreshold {
+            angle = .side
+        } else if medianKneeSeparation > frontThreshold {
+            angle = .front
+        } else {
+            angle = .diagonal
+        }
+
+        let baseConfidence: Double = {
+            switch angle {
+            case .side:
+                return oneSideFrameRatio
+            case .front, .diagonal, .back:
+                return bothSidesFrameRatio
+            }
+        }()
+
+        // Boost as the median separation moves away from the decision boundaries.
+        let margin: Double = {
+            switch angle {
+            case .side:
+                let sepMargin = max(0.0, (sideThreshold - medianKneeSeparation) / sideThreshold)
+                let visMargin = max(0.0, (oneSideFrameRatio - bothSidesFrameRatio) / 0.5)
+                return min(1.0, max(sepMargin, visMargin))
+            case .front:
+                return min(1.0, max(0.0, (medianKneeSeparation - frontThreshold) / 0.12))
+            case .diagonal:
+                let low = sideThreshold
+                let high = frontThreshold
+                guard medianKneeSeparation > low && medianKneeSeparation < high else { return 0.0 }
+                let distToBoundary = min(medianKneeSeparation - low, high - medianKneeSeparation)
+                let halfBand = (high - low) / 2.0
+                return min(1.0, max(0.0, distToBoundary / halfBand))
+            case .back:
+                return 0.0
+            }
+        }()
+
+        let confidence = min(1.0, max(0.0, baseConfidence + (0.25 * margin)))
+
+        return (
+            angle: angle,
+            confidence: confidence,
+            medianKneeSeparation: medianKneeSeparation,
+            bothSidesFrameRatio: bothSidesFrameRatio
+        )
     }
-    
+
     // MARK: - Knee Angle Analysis
     
     /// Calculate knee angle metrics for a single pose
@@ -1730,21 +1806,21 @@ struct SquatAnalyzer {
         let maxAngle = max(left, right)
         let averageAngle = (left + right) / 2
         
-        // Calculate knee valgus (knees caving inward)
-        // Only valid for front/back views - skip for side views
+        // Calculate knee valgus (knees caving inward).
+        // Only valid for front view - skip for side/diagonal views where knees are stacked/foreshortened.
         let kneeValgus: Double
         let hasValgus: Bool
-        if cameraAngle == .side {
-            // Side view: cannot accurately detect knee valgus (knees are stacked)
+        if cameraAngle != .front {
             kneeValgus = 0
             hasValgus = false
-        } else if let leftKnee = leftKnee, let rightKnee = rightKnee {
-            // Front/back view: calculate horizontal distance between knees
-            kneeValgus = abs(Double(leftKnee.position.x - rightKnee.position.x))
-            // Check for excessive valgus (knees too close together relative to ankles)
-            hasValgus = kneeValgus > 0.05 // Threshold in normalized coordinates
+        } else if let leftKnee = leftKnee, let rightKnee = rightKnee,
+                  let leftAnkle = leftAnkle, let rightAnkle = rightAnkle {
+            let kneeSep = abs(Double(leftKnee.position.x - rightKnee.position.x))
+            let ankleSep = abs(Double(leftAnkle.position.x - rightAnkle.position.x))
+            let ratio = kneeSep / max(ankleSep, 1e-3)
+            kneeValgus = ratio
+            hasValgus = ratio < 0.85
         } else {
-            // Missing keypoints
             kneeValgus = 0
             hasValgus = false
         }
@@ -1975,6 +2051,8 @@ struct SquatAnalyzer {
     /// Generate aggregated feedback from analysis results
     /// Aggregates feedback by category across all reps
     static func generateFeedback(
+        poses: [PoseDetectionResult],
+        smoothedHeights: [Double],
         phases: [SquatPhase],
         reps: [SquatRep],
         depthMetrics: [DepthAnalysis],
@@ -1982,7 +2060,8 @@ struct SquatAnalyzer {
         worstDepth: DepthAnalysis?,
         worstKnee: KneeAnalysis?,
         startTime: Date,
-        cameraAngle: CameraAngle,
+        camera: (angle: CameraAngle, confidence: Double, medianKneeSeparation: Double, bothSidesFrameRatio: Double),
+        segmentLengths: AnthropometryEstimator.SegmentLengths?,
         formDeviations: [FormDeviationAnalyzer.FormDeviation] = []
     ) -> [FormFeedback] {
         var feedback: [FormFeedback] = []
@@ -2000,7 +2079,89 @@ struct SquatAnalyzer {
         func relativeTimestamp(from date: Date) -> TimeInterval {
             date.timeIntervalSince1970 - startTime.timeIntervalSince1970
         }
-        
+
+        let enableSideChecksV2 = ProcessInfo.processInfo.environment["MOVEAI_ENABLE_SIDE_CHECKS_V2"] == "1"
+        let enableFrontChecksV2 = ProcessInfo.processInfo.environment["MOVEAI_ENABLE_FRONT_CHECKS_V2"] == "1"
+        let enableDiagonalChecks = ProcessInfo.processInfo.environment["MOVEAI_ENABLE_DIAGONAL_CHECKS"] == "1"
+
+        let sideEligible = camera.angle == .side && camera.confidence >= 0.6
+        let frontEligible = camera.angle == .front && camera.confidence >= 0.6
+        let diagonalEligible = camera.angle == .diagonal && camera.confidence >= 0.6 && enableDiagonalChecks
+
+#if DEBUG
+        if ProcessInfo.processInfo.environment["MOVEAI_SQUAT_DEBUG"] == "1" {
+            print("📷 SquatAnalyzer: camera=\(camera.angle.rawValue) confidence=\(camera.confidence) medianKneeSep=\(camera.medianKneeSeparation) bothSidesRatio=\(camera.bothSidesFrameRatio)")
+        }
+#endif
+
+        let minKeypointConfidence: Float = 0.3
+
+        func keypoint(_ name: String, at frameIndex: Int) -> PoseKeypoint? {
+            guard frameIndex >= 0 && frameIndex < poses.count else { return nil }
+            guard let kp = PoseAnalysisHelpers.extractKeypoint(name, from: poses[frameIndex]) else { return nil }
+            guard kp.confidence >= minKeypointConfidence else { return nil }
+            return kp
+        }
+
+        func bottomFrameIndices(for rep: SquatRep, threshold: Double = 0.8) -> [Int] {
+            guard rep.startFrame >= 0, rep.endFrame < smoothedHeights.count, rep.bottomFrame < smoothedHeights.count else { return [] }
+
+            let repStart = smoothedHeights[rep.startFrame]
+            let repBottom = smoothedHeights[rep.bottomFrame]
+            let denom = repBottom - repStart
+            guard abs(denom) > 1e-6 else { return [rep.bottomFrame] }
+
+            var frames: [Int] = []
+            for i in rep.startFrame...rep.endFrame {
+                let depth = (smoothedHeights[i] - repStart) / denom
+                let clamped = max(0.0, min(1.0, depth))
+                if clamped >= threshold {
+                    frames.append(i)
+                }
+            }
+
+            if frames.isEmpty {
+                let start = max(rep.startFrame, rep.bottomFrame - 2)
+                let end = min(rep.endFrame, rep.bottomFrame + 2)
+                frames.append(contentsOf: start...end)
+            }
+
+            return frames
+        }
+
+        func earlyAscentFrameIndices(for rep: SquatRep, threshold: Double = 0.7) -> [Int] {
+            guard rep.startFrame >= 0, rep.endFrame < smoothedHeights.count, rep.bottomFrame < smoothedHeights.count else { return [] }
+
+            let repStart = smoothedHeights[rep.startFrame]
+            let repBottom = smoothedHeights[rep.bottomFrame]
+            let denom = repBottom - repStart
+            guard abs(denom) > 1e-6 else { return [] }
+
+            var frames: [Int] = []
+            let startIndex = max(rep.bottomFrame, rep.startFrame)
+            for i in startIndex...rep.endFrame {
+                let depth = (smoothedHeights[i] - repStart) / denom
+                let clamped = max(0.0, min(1.0, depth))
+                if clamped >= threshold {
+                    frames.append(i)
+                } else if i > startIndex {
+                    break
+                }
+            }
+
+            return frames
+        }
+
+        func median(_ values: [Double]) -> Double? {
+            guard !values.isEmpty else { return nil }
+            let sorted = values.sorted()
+            let mid = sorted.count / 2
+            if sorted.count % 2 == 0 {
+                return (sorted[mid - 1] + sorted[mid]) / 2.0
+            }
+            return sorted[mid]
+        }
+
         // RANGE OF MOTION - Per-rep feedback with exact timestamps
         let totalReps = reps.count
         let partialReps = reps.filter { !$0.isFullRep }
@@ -2032,7 +2193,8 @@ struct SquatAnalyzer {
         }
         print("🔍 Depth Quality Summary: \(goodDepthReps.count) excellent, \(shallowReps.count) shallow out of \(totalReps) total reps")
         
-        // Per-rep range of motion feedback: one FormFeedback per rep with exact timestamp
+        if sideEligible || diagonalEligible {
+            // Per-rep range of motion feedback: one FormFeedback per rep with exact timestamp
         for rep in reps {
             let repDepthMetrics = depthByRep[rep.repNumber] ?? []
             let deepestPoint = repDepthMetrics.max(by: { $0.depthPercentage < $1.depthPercentage })
@@ -2068,30 +2230,473 @@ struct SquatAnalyzer {
             // Skip positive feedback for reps with excellent depth
         }
         
-        // KNEE TRACKING - Per-rep feedback with exact timestamps
-        // Skip knee valgus feedback for side-view videos (valgus can only be detected from front/back)
-        if cameraAngle != .side {
-            for rep in reps {
-                let repKneeMetrics = kneeByRep[rep.repNumber] ?? []
-                guard let worstKnee = repKneeMetrics.min(by: { $0.minAngle < $1.minAngle }) else { continue }
-                
-                let timestamp = relativeTimestamp(from: worstKnee.timestamp)
-                
-                if worstKnee.hasValgus {
-                    feedback.append(FormFeedback(
-                        category: .safety,
-                        message: "Knees caving inward - push knees out to align with toes",
-                        severity: .critical,
-                        timestamp: max(0, timestamp),
-                        repNumber: rep.repNumber,
-                        issueKind: .squatKneeValgus,
-                        affectedBodyJoints: [.leftKnee, .rightKnee]
-                    ))
+        }
+
+
+        // SIDE VIEW CHECKS (Sagittal Plane) - v2 (feature-gated)
+        if enableSideChecksV2 && (sideEligible || diagonalEligible) {
+            // Depth inconsistent: set-level feedback (requires at least 3 reps with depth data)
+            if reps.count >= 3 {
+                var repDepthScores: [(repNumber: Int, reachedDepth: Bool, depthScore: Double, deepestTimestamp: Date?)] = []
+                repDepthScores.reserveCapacity(reps.count)
+
+                for rep in reps {
+                    guard let status = repDepthStatus[rep.repNumber] else { continue }
+                    let deepest = (depthByRep[rep.repNumber] ?? []).max(by: { lhs, rhs in
+                        lhs.depthPercentage < rhs.depthPercentage
+                    })
+                    repDepthScores.append(
+                        (repNumber: rep.repNumber, reachedDepth: status.isAtDepth, depthScore: status.depthPercentage, deepestTimestamp: deepest?.timestamp)
+                    )
                 }
-                // Skip positive feedback for reps with good knee tracking
+
+                if repDepthScores.count >= 3 {
+                    let reachedCount = repDepthScores.filter { item in
+                        item.reachedDepth
+                    }.count
+                    let mixedOutcomes = reachedCount > 0 && reachedCount < repDepthScores.count
+
+                    let scores = repDepthScores.map { item in
+                        item.depthScore
+                    }
+                    let mean = scores.reduce(0, +) / Double(scores.count)
+                    let variance = scores.map { value in
+                        let d = value - mean
+                        return d * d
+                    }.reduce(0, +) / Double(scores.count)
+                    let stddev = sqrt(variance)
+
+                    if mixedOutcomes || stddev > 12.0 {
+                        if let worst = repDepthScores.min(by: { lhs, rhs in
+                            lhs.depthScore < rhs.depthScore
+                        }) {
+                            let ts: TimeInterval
+                            if let deepestDate = worst.deepestTimestamp {
+                                ts = relativeTimestamp(from: deepestDate)
+                            } else if let worstRep = reps.first(where: { rep in
+                                rep.repNumber == worst.repNumber
+                            }) {
+                                ts = worstRep.bottomTime - startTime.timeIntervalSince1970
+                            } else {
+                                ts = 0
+                            }
+
+                            feedback.append(FormFeedback(
+                                category: .rangeOfMotion,
+                                message: "Depth inconsistent - aim for consistent depth each rep",
+                                severity: .warning,
+                                timestamp: max(0, ts),
+                                repNumber: nil,
+                                issueKind: .squatDepthInconsistent,
+                                affectedBodyJoints: [.leftHip, .rightHip, .leftKnee, .rightKnee]
+                            ))
+                        }
+                    }
+                }
             }
         }
-        
+
+        if enableSideChecksV2 && sideEligible {
+
+            // Heels lift (ankle-rise proxy; Vision 2D body pose does not expose toe/heel joints)
+            let setupFrames = Array(poses.indices.prefix(5))
+
+            func baselineAnkleY(_ ankleName: String) -> Double? {
+                var ys: [Double] = []
+                ys.reserveCapacity(setupFrames.count)
+
+                for frame in setupFrames {
+                    guard let ankle = keypoint(ankleName, at: frame) else { continue }
+                    ys.append(Double(ankle.position.y))
+                }
+
+                return median(ys)
+            }
+
+            let baselineLeftAnkleY = baselineAnkleY("leftAnkle")
+            let baselineRightAnkleY = baselineAnkleY("rightAnkle")
+
+            for rep in reps {
+                let frames = bottomFrameIndices(for: rep, threshold: 0.8)
+                var maxRatio: Double = 0.0
+                var worstFrame: Int? = nil
+
+                func considerAnkleLift(ankleName: String, kneeName: String, baselineY: Double?, frame: Int) {
+                    guard let baselineY = baselineY else { return }
+                    guard let ankle = keypoint(ankleName, at: frame),
+                          let knee = keypoint(kneeName, at: frame) else { return }
+
+                    let deltaY = Double(ankle.position.y) - baselineY
+                    guard deltaY > 0 else { return }
+
+                    let shinLen = PoseAnalysisHelpers.distance(from: ankle.position, to: knee.position)
+                    let ratio = deltaY / max(shinLen, 1e-3)
+                    guard ratio.isFinite else { return }
+
+                    if ratio > maxRatio {
+                        maxRatio = ratio
+                        worstFrame = frame
+                    }
+                }
+
+                for frame in frames {
+                    considerAnkleLift(ankleName: "leftAnkle", kneeName: "leftKnee", baselineY: baselineLeftAnkleY, frame: frame)
+                    considerAnkleLift(ankleName: "rightAnkle", kneeName: "rightKnee", baselineY: baselineRightAnkleY, frame: frame)
+                }
+
+                guard maxRatio > 0.08, let worstFrame = worstFrame else { continue }
+
+                let severity: FeedbackSeverity = maxRatio > 0.14 ? .critical : .warning
+                let ts = relativeTimestamp(from: poses[worstFrame].timestamp)
+
+                feedback.append(FormFeedback(
+                    category: .stability,
+                    message: "Heels lifted - keep the whole foot down",
+                    severity: severity,
+                    timestamp: max(0, ts),
+                    repNumber: rep.repNumber,
+                    issueKind: .squatHeelsLift,
+                    affectedBodyJoints: [.leftAnkle, .rightAnkle, .leftKnee, .rightKnee]
+                ))
+            }
+
+            // Knees stayed back (requires anthropometry)
+            if let segmentLengths = segmentLengths {
+                let expectedMin = SquatMechanicsSolver.minimumShinAngle(depth: 0.9, segmentLengths: segmentLengths)
+
+                for rep in reps {
+                    let frames = bottomFrameIndices(for: rep, threshold: 0.8)
+                    var angles: [Double] = []
+                    angles.reserveCapacity(frames.count)
+
+                    for frame in frames {
+                        if let leftAnkle = keypoint("leftAnkle", at: frame), let leftKnee = keypoint("leftKnee", at: frame) {
+                            angles.append(PoseAnalysisHelpers.calculateVerticalAngle(from: leftAnkle.position, to: leftKnee.position))
+                        }
+                        if let rightAnkle = keypoint("rightAnkle", at: frame), let rightKnee = keypoint("rightKnee", at: frame) {
+                            angles.append(PoseAnalysisHelpers.calculateVerticalAngle(from: rightAnkle.position, to: rightKnee.position))
+                        }
+                    }
+
+                    guard let medianAngle = median(angles) else { continue }
+
+                    let deficit = expectedMin - medianAngle
+                    guard deficit > 4.0 else { continue }
+
+                    let severity: FeedbackSeverity = deficit > 10.0 ? .critical : .warning
+                    let ts = relativeTimestamp(from: poses[rep.bottomFrame].timestamp)
+
+                    feedback.append(FormFeedback(
+                        category: .posture,
+                        message: "Knees stayed back - allow knees to travel forward while keeping the whole foot down",
+                        severity: severity,
+                        timestamp: max(0, ts),
+                        repNumber: rep.repNumber,
+                        issueKind: .squatKneesStayedBack,
+                        affectedBodyJoints: [.leftKnee, .rightKnee, .leftAnkle, .rightAnkle]
+                    ))
+                }
+            }
+
+            // Butt wink (conservative proxy)
+            for rep in reps {
+                let repDeviations = deviationsByRep[rep.repNumber] ?? []
+                let alreadyForwardLean = repDeviations.contains(where: { deviation in
+                    deviation.type == .torsoBias && deviation.severity != .none
+                })
+                guard !alreadyForwardLean else { continue }
+
+                // Only consider reps that reached meaningful depth.
+                if let status = repDepthStatus[rep.repNumber], status.depthPercentage < 80.0 {
+                    continue
+                }
+
+                let repStart = smoothedHeights[rep.startFrame]
+                let repBottom = smoothedHeights[rep.bottomFrame]
+                let denom = repBottom - repStart
+                guard abs(denom) > 1e-6 else { continue }
+
+                func depthFraction(at frame: Int) -> Double {
+                    let d = (smoothedHeights[frame] - repStart) / denom
+                    return max(0.0, min(1.0, d))
+                }
+
+                func torsoAngle(at frame: Int) -> Double? {
+                    let leftHip = keypoint("leftHip", at: frame)
+                    let rightHip = keypoint("rightHip", at: frame)
+                    let leftShoulder = keypoint("leftShoulder", at: frame)
+                    let rightShoulder = keypoint("rightShoulder", at: frame)
+
+                    let hipPos = PoseAnalysisHelpers.averagePosition(leftHip, rightHip)
+                    let shoulderPos = PoseAnalysisHelpers.averagePosition(leftShoulder, rightShoulder)
+                    guard let shoulder = shoulderPos, let hip = hipPos else { return nil }
+
+                    return PoseAnalysisHelpers.calculateVerticalAngle(from: shoulder, to: hip)
+                }
+
+                let descentRange = rep.startFrame...rep.bottomFrame
+                var best75: (frame: Int, delta: Double)? = nil
+                var best90: (frame: Int, delta: Double)? = nil
+
+                for frame in descentRange {
+                    let depth = depthFraction(at: frame)
+
+                    let d75 = abs(depth - 0.75)
+                    if best75 == nil || d75 < best75!.delta {
+                        best75 = (frame: frame, delta: d75)
+                    }
+
+                    let d90 = abs(depth - 0.90)
+                    if best90 == nil || d90 < best90!.delta {
+                        best90 = (frame: frame, delta: d90)
+                    }
+                }
+
+                guard let f75 = best75?.frame, let f90 = best90?.frame, f75 < f90 else { continue }
+                guard let a75 = torsoAngle(at: f75), let a90 = torsoAngle(at: f90) else { continue }
+
+                let deltaTorso = a90 - a75
+                guard deltaTorso > 12.0 else { continue }
+
+                let ts = relativeTimestamp(from: poses[rep.bottomFrame].timestamp)
+                feedback.append(FormFeedback(
+                    category: .posture,
+                    message: "Pelvis tucked at the bottom - own a depth you can control",
+                    severity: .warning,
+                    timestamp: max(0, ts),
+                    repNumber: rep.repNumber,
+                    issueKind: .squatButtWink,
+                    affectedBodyJoints: [.leftHip, .rightHip]
+                ))
+            }
+        }
+
+        // FRONT VIEW CHECKS (Frontal Plane)
+
+        // Knee valgus: front only (diagonal-enabled in Phase 3 with stricter thresholds).
+        if frontEligible || diagonalEligible {
+            for rep in reps {
+                let candidateFrames = bottomFrameIndices(for: rep, threshold: 0.8) + earlyAscentFrameIndices(for: rep, threshold: 0.7)
+                let uniqueFrames = Array(Set(candidateFrames)).sorted()
+
+                var ratios: [(frameIndex: Int, ratio: Double)] = []
+                ratios.reserveCapacity(uniqueFrames.count)
+
+                for frame in uniqueFrames {
+                    guard let leftKnee = keypoint("leftKnee", at: frame),
+                          let rightKnee = keypoint("rightKnee", at: frame),
+                          let leftAnkle = keypoint("leftAnkle", at: frame),
+                          let rightAnkle = keypoint("rightAnkle", at: frame) else {
+                        continue
+                    }
+
+                    let kneeSep = abs(Double(leftKnee.position.x - rightKnee.position.x))
+                    let ankleSep = abs(Double(leftAnkle.position.x - rightAnkle.position.x))
+                    let ratio = kneeSep / max(ankleSep, 1e-3)
+
+                    ratios.append((frameIndex: frame, ratio: ratio))
+                }
+
+                guard ratios.count >= 5 else { continue }
+
+                let triggerThreshold = diagonalEligible ? 0.75 : 0.85
+                let belowCount = ratios.filter { $0.ratio < triggerThreshold }.count
+                let fraction = Double(belowCount) / Double(ratios.count)
+
+                guard fraction >= 0.2 else { continue }
+                guard let worst = ratios.min(by: { $0.ratio < $1.ratio }), worst.ratio < triggerThreshold else { continue }
+
+                let severity: FeedbackSeverity = worst.ratio < 0.70 ? .critical : .warning
+                let timestamp = relativeTimestamp(from: poses[worst.frameIndex].timestamp)
+
+                feedback.append(FormFeedback(
+                    category: .safety,
+                    message: "Knees caving inward - push knees out to align with toes",
+                    severity: severity,
+                    timestamp: max(0, timestamp),
+                    repNumber: rep.repNumber,
+                    issueKind: .squatKneeValgus,
+                    affectedBodyJoints: [.leftHip, .rightHip, .leftKnee, .rightKnee]
+                ))
+            }
+        }
+
+        // Hip shift / foot collapse are optional front-view checks.
+        if enableFrontChecksV2 && (frontEligible || diagonalEligible) {
+            // HIP SHIFT
+            let setupFrames = Array(poses.indices.prefix(5))
+            var baselineOffsets: [Double] = []
+            baselineOffsets.reserveCapacity(setupFrames.count)
+
+            for frame in setupFrames {
+                guard let leftHip = keypoint("leftHip", at: frame),
+                      let rightHip = keypoint("rightHip", at: frame),
+                      let leftAnkle = keypoint("leftAnkle", at: frame),
+                      let rightAnkle = keypoint("rightAnkle", at: frame) else {
+                    continue
+                }
+
+                let hipMidX = (Double(leftHip.position.x) + Double(rightHip.position.x)) / 2.0
+                let ankleMidX = (Double(leftAnkle.position.x) + Double(rightAnkle.position.x)) / 2.0
+                let stanceWidth = abs(Double(leftAnkle.position.x - rightAnkle.position.x))
+                let offset = (hipMidX - ankleMidX) / max(stanceWidth, 1e-3)
+                baselineOffsets.append(offset)
+            }
+
+            if let baselineOffset = median(baselineOffsets) {
+                let warnThreshold = diagonalEligible ? 0.12 : 0.08
+                let critThreshold = diagonalEligible ? 0.18 : 0.14
+
+                for rep in reps {
+                    let frames = bottomFrameIndices(for: rep, threshold: 0.8)
+                    var worstDelta: (frameIndex: Int, value: Double)? = nil
+
+                    for frame in frames {
+                        guard let leftHip = keypoint("leftHip", at: frame),
+                              let rightHip = keypoint("rightHip", at: frame),
+                              let leftAnkle = keypoint("leftAnkle", at: frame),
+                              let rightAnkle = keypoint("rightAnkle", at: frame) else {
+                            continue
+                        }
+
+                        let hipMidX = (Double(leftHip.position.x) + Double(rightHip.position.x)) / 2.0
+                        let ankleMidX = (Double(leftAnkle.position.x) + Double(rightAnkle.position.x)) / 2.0
+                        let stanceWidth = abs(Double(leftAnkle.position.x - rightAnkle.position.x))
+                        let offset = (hipMidX - ankleMidX) / max(stanceWidth, 1e-3)
+                        let delta = abs(offset - baselineOffset)
+
+                        if worstDelta == nil || delta > worstDelta!.value {
+                            worstDelta = (frameIndex: frame, value: delta)
+                        }
+                    }
+
+                    guard let worst = worstDelta, worst.value > warnThreshold else { continue }
+
+                    let severity: FeedbackSeverity = worst.value > critThreshold ? .critical : .warning
+                    let timestamp = relativeTimestamp(from: poses[worst.frameIndex].timestamp)
+
+                    feedback.append(FormFeedback(
+                        category: .stability,
+                        message: "Shifted to one side - keep pressure even across both feet",
+                        severity: severity,
+                        timestamp: max(0, timestamp),
+                        repNumber: rep.repNumber,
+                        issueKind: .squatHipShift,
+                        affectedBodyJoints: [.leftHip, .rightHip, .leftKnee, .rightKnee, .leftAnkle, .rightAnkle]
+                    ))
+                }
+            }
+        }
+
+        if enableFrontChecksV2 && frontEligible {
+            // FOOT COLLAPSE (ankle-inward proxy; toe keypoints are not available in Vision 2D body pose)
+            let setupFrames = Array(poses.indices.prefix(5))
+
+            func baselineAnkleDistance(_ ankleName: String) -> Double? {
+                var ankleDistances: [Double] = []
+                ankleDistances.reserveCapacity(setupFrames.count)
+
+                for frame in setupFrames {
+                    guard let leftHip = keypoint("leftHip", at: frame),
+                          let rightHip = keypoint("rightHip", at: frame),
+                          let ankle = keypoint(ankleName, at: frame) else {
+                        continue
+                    }
+
+                    let midX = (Double(leftHip.position.x) + Double(rightHip.position.x)) / 2.0
+                    ankleDistances.append(abs(Double(ankle.position.x) - midX))
+                }
+
+                guard let ankle0 = median(ankleDistances), ankle0 > 1e-3 else { return nil }
+                return ankle0
+            }
+
+            let baselineLeft = baselineAnkleDistance("leftAnkle")
+            let baselineRight = baselineAnkleDistance("rightAnkle")
+
+            for rep in reps {
+                // Evaluate during descent/bottom (depth >= 0.5).
+                let frames = bottomFrameIndices(for: rep, threshold: 0.5)
+
+                func evaluateFootCollapse(
+                    baseline: Double?,
+                    ankleName: String
+                ) -> (triggered: Bool, minRatio: Double, worstFrame: Int)? {
+                    guard let baseline = baseline else { return nil }
+
+                    var eligible = 0
+                    var collapsed = 0
+                    var minRatio = 1.0
+                    var worstFrame = rep.bottomFrame
+
+                    for frame in frames {
+                        guard let leftHip = keypoint("leftHip", at: frame),
+                              let rightHip = keypoint("rightHip", at: frame),
+                              let ankle = keypoint(ankleName, at: frame) else {
+                            continue
+                        }
+
+                        let midX = (Double(leftHip.position.x) + Double(rightHip.position.x)) / 2.0
+                        let dAnkle = abs(Double(ankle.position.x) - midX)
+                        let rAnkle = dAnkle / max(baseline, 1e-3)
+
+                        eligible += 1
+
+                        if rAnkle < minRatio {
+                            minRatio = rAnkle
+                            worstFrame = frame
+                        }
+
+                        if rAnkle < 0.85 {
+                            collapsed += 1
+                        }
+                    }
+
+                    guard eligible >= 5 else { return nil }
+                    let fraction = Double(collapsed) / Double(eligible)
+                    return (triggered: fraction >= 0.2, minRatio: minRatio, worstFrame: worstFrame)
+                }
+
+                let leftEval = evaluateFootCollapse(baseline: baselineLeft, ankleName: "leftAnkle")
+                let rightEval = evaluateFootCollapse(baseline: baselineRight, ankleName: "rightAnkle")
+
+                var affected: [BodyJoint] = []
+                var worstFrame: Int? = nil
+                var minRatio = 1.0
+
+                if let leftEval, leftEval.triggered {
+                    affected.append(.leftAnkle)
+                    if leftEval.minRatio < minRatio {
+                        minRatio = leftEval.minRatio
+                        worstFrame = leftEval.worstFrame
+                    }
+                }
+
+                if let rightEval, rightEval.triggered {
+                    affected.append(.rightAnkle)
+                    if rightEval.minRatio < minRatio {
+                        minRatio = rightEval.minRatio
+                        worstFrame = rightEval.worstFrame
+                    }
+                }
+
+                guard !affected.isEmpty, let worstFrame = worstFrame else { continue }
+
+                let severity: FeedbackSeverity = minRatio < 0.70 ? .critical : .warning
+                let timestamp = relativeTimestamp(from: poses[worstFrame].timestamp)
+
+                feedback.append(FormFeedback(
+                    category: .stability,
+                    message: "Foot lost tripod - keep big toe and heel down",
+                    severity: severity,
+                    timestamp: max(0, timestamp),
+                    repNumber: rep.repNumber,
+                    issueKind: .squatFootCollapse,
+                    affectedBodyJoints: affected
+                ))
+            }
+        }
+
         // Debug: Log back rounding summary (for troubleshooting, but don't generate aggregated feedback)
         var severeBackReps: [Int] = []
         var moderateBackReps: [Int] = []
@@ -2134,93 +2739,71 @@ struct SquatAnalyzer {
         print("🔍 Back rounding summary: severe=\(severeBackReps), moderate=\(moderateBackReps), mild=\(mildBackReps), good=\(goodBackReps), totalWithData=\(totalWithBackData), totalReps=\(reps.count)")
         
         // INDIVIDUAL FORM DEVIATION FEEDBACK
-        // Add specific feedback for each deviation type detected
-        // Filter to only include torsoBias and balanceDrift (exclude torsoInstability and hipShoot for troubleshooting)
-        for rep in reps {
-            let repDeviations = deviationsByRep[rep.repNumber] ?? []
-            // Filter to only include torsoBias and balanceDrift
-            let filteredDeviations = repDeviations.filter { deviation in
-                deviation.type == .torsoBias || deviation.type == .balanceDrift
-            }
-            for deviation in filteredDeviations {
-                let category = mapDeviationTypeToCategory(deviation.type, severity: deviation.severity)
-                let feedbackSeverity = mapDeviationSeverityToFeedbackSeverity(deviation.severity)
-                let joints: [BodyJoint] = {
+        // - Forward lean: torsoBias (side-only).
+        // - Brace leak: torsoInstability (side-only, behind side-checks v2 flag).
+        if sideEligible {
+            for rep in reps {
+                let repDeviations = deviationsByRep[rep.repNumber] ?? []
+                let filteredDeviations = repDeviations.filter { deviation in
                     switch deviation.type {
                     case .torsoBias:
-                        return [.leftShoulder, .rightShoulder, .leftHip, .rightHip]
+                        return true
                     case .torsoInstability:
-                        return [.leftShoulder, .rightShoulder, .leftHip, .rightHip]
-                    case .hipShoot:
-                        return [.leftHip, .rightHip, .leftKnee, .rightKnee]
-                    case .balanceDrift:
-                        return [.leftAnkle, .rightAnkle]
+                        return enableSideChecksV2
+                    case .hipShoot, .balanceDrift:
+                        return false
                     }
-                }()
-                
-                // Calculate timestamp for this deviation (use midpoint of frame range)
-                // Frame indices in deviation.frameRange are absolute frame indices
-                // Rep timestamps are absolute (timeIntervalSince1970), so calculate relative to video start
-                let repStartTimeRelative = rep.startTime - startTime.timeIntervalSince1970
-                let repEndTimeRelative = rep.endTime - startTime.timeIntervalSince1970
-                let repDuration = repEndTimeRelative - repStartTimeRelative
-                let repFrameCount = rep.endFrame - rep.startFrame + 1
-                
-                // Calculate midpoint of deviation frame range
-                // Clamp to rep's frame range to ensure valid interpolation
-                let deviationFrameMid = (deviation.frameRange.lowerBound + deviation.frameRange.upperBound) / 2
-                let clampedFrameMid = max(rep.startFrame, min(rep.endFrame, deviationFrameMid))
-                let deviationFrameRelative = clampedFrameMid - rep.startFrame
-                
-                // Interpolate timestamp within rep duration (relative to video start)
-                // Ensure we don't divide by zero and clamp result to valid range
-                guard repFrameCount > 0 && repDuration > 0 else {
-                    // Fallback to rep start time if duration is invalid
-                    continue
                 }
-                let deviationTimestamp = repStartTimeRelative + (Double(deviationFrameRelative) / Double(repFrameCount)) * repDuration
-                
-                // Ensure timestamp is non-negative and within reasonable bounds
-                guard deviationTimestamp >= 0 else {
-                    continue
+
+                for deviation in filteredDeviations {
+                    let category = mapDeviationTypeToCategory(deviation.type, severity: deviation.severity)
+                    let feedbackSeverity = mapDeviationSeverityToFeedbackSeverity(deviation.severity)
+
+                    let issueKind: MovementIssueKind? = {
+                        switch deviation.type {
+                        case .torsoBias:
+                            return .squatForwardLean
+                        case .torsoInstability:
+                            return .squatBraceLeak
+                        case .hipShoot, .balanceDrift:
+                            return nil
+                        }
+                    }()
+
+                    guard let kind = issueKind else { continue }
+
+                    let joints: [BodyJoint] = [.leftShoulder, .rightShoulder, .leftHip, .rightHip]
+
+                    let midFrame = (deviation.frameRange.lowerBound + deviation.frameRange.upperBound) / 2
+                    let clampedFrame = max(0, min(poses.count - 1, midFrame))
+                    let deviationTimestamp = relativeTimestamp(from: poses[clampedFrame].timestamp)
+
+                    let metrics: [FeedbackMetric]? = {
+                        switch deviation.type {
+                        case .torsoBias:
+                            return [FeedbackMetric(kind: .squatTorsoBiasDegrees, value: deviation.magnitude, unit: .degrees, phase: .bottom)]
+                        case .torsoInstability:
+                            return [FeedbackMetric(kind: .squatTorsoInstabilityDegrees, value: deviation.magnitude, unit: .degrees)]
+                        case .hipShoot, .balanceDrift:
+                            return nil
+                        }
+                    }()
+
+                    feedback.append(FormFeedback(
+                        category: category,
+                        message: deviation.message,
+                        severity: feedbackSeverity,
+                        timestamp: max(0, deviationTimestamp),
+                        repNumber: rep.repNumber,
+                        issueKind: kind,
+                        metrics: metrics,
+                        affectedBodyJoints: joints
+                    ))
                 }
-                
-                print("📝 Adding individual deviation feedback: Rep \(rep.repNumber) - \(deviation.type) (\(deviation.severity.rawValue)): \(deviation.message)")
-                let issueKind: MovementIssueKind? = {
-                    switch deviation.type {
-                    case .balanceDrift:
-                        return .squatHeelsLift
-                    case .torsoBias, .torsoInstability, .hipShoot:
-                        return .squatForwardLean
-                    }
-                }()
-
-                let metrics: [FeedbackMetric]? = {
-                    switch deviation.type {
-                    case .torsoBias:
-                        return [FeedbackMetric(kind: .squatTorsoBiasDegrees, value: deviation.magnitude, unit: .degrees, phase: .bottom)]
-                    case .balanceDrift:
-                        return [FeedbackMetric(kind: .squatBalanceDriftShinLengths, value: deviation.magnitude, unit: .shinLengths)]
-                    case .torsoInstability:
-                        return [FeedbackMetric(kind: .squatTorsoInstabilityDegrees, value: deviation.magnitude, unit: .degrees)]
-                    case .hipShoot:
-                        return nil
-                    }
-                }()
-
-                feedback.append(FormFeedback(
-                    category: category,
-                    message: deviation.message,
-                    severity: feedbackSeverity,
-                    timestamp: max(0, deviationTimestamp),
-                    repNumber: rep.repNumber,
-                    issueKind: issueKind,
-                    metrics: metrics,
-                    affectedBodyJoints: joints
-                ))
             }
         }
-        
+
+
         return feedback
     }
     

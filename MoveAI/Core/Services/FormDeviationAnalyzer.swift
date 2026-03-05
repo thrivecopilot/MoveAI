@@ -35,14 +35,22 @@ struct FormDeviationAnalyzer {
         observed: KinematicAnalyzer.ObservedKinematics,
         ideal: SquatMechanicsSolver.IdealAngleCurves,
         segmentLengths: AnthropometryEstimator.SegmentLengths,
-        rep: SquatRep
+        rep: SquatRep,
+        confidence: Double,
+        isSideView: Bool = true
     ) -> [FormDeviation] {
         var deviations: [FormDeviation] = []
         
         print("      🔍 Checking for deviations...")
         
         // 1. Torso bias analysis
-        if let torsoBias = analyzeTorsoBias(observed: observed, ideal: ideal) {
+        let bands = SquatMechanicsSolver.predictAngleBands(
+            idealCurves: ideal,
+            confidence: confidence,
+            isSideView: isSideView
+        )
+
+        if let torsoBias = analyzeTorsoBias(observed: observed, ideal: ideal, torsoBand: bands.torsoBand) {
             deviations.append(torsoBias)
             print("        ⚠️ Torso bias detected: \(torsoBias.severity.rawValue) (magnitude: \(String(format: "%.1f", torsoBias.magnitude))°)")
         }
@@ -79,13 +87,21 @@ struct FormDeviationAnalyzer {
     /// Analyze torso bias: mean(theta_obs - theta_pred) in bottom 20% depth
     private static func analyzeTorsoBias(
         observed: KinematicAnalyzer.ObservedKinematics,
-        ideal: SquatMechanicsSolver.IdealAngleCurves
+        ideal: SquatMechanicsSolver.IdealAngleCurves,
+        torsoBand: Double
     ) -> FormDeviation? {
-        // Find frames in bottom 20% depth (depth >= 0.8)
+        // Evaluate at bottom (depth >= 0.8) and early ascent (depth >= 0.7 after bottom).
         var bottomFrames: [(index: Int, obsAngle: Double, predAngle: Double)] = []
-        
+
+        let bottomIndex = observed.depths.enumerated().max(by: { $0.element < $1.element })?.offset
+
         for (i, depth) in observed.depths.enumerated() {
-            if depth >= 0.8 && i < observed.torsoAngles.count {
+            guard i < observed.torsoAngles.count else { continue }
+
+            let isBottomWindow = depth >= 0.8
+            let isEarlyAscentWindow = bottomIndex != nil && i >= bottomIndex! && depth >= 0.7
+
+            if isBottomWindow || isEarlyAscentWindow {
                 // Interpolate ideal angle for this depth
                 let predAngle = interpolateIdealAngle(at: depth, from: ideal.torsoAngles, depths: ideal.depths)
                 let obsAngle = observed.torsoAngles[i]
@@ -103,13 +119,13 @@ struct FormDeviationAnalyzer {
         
         // Only flag if bias is significantly positive (excessive forward lean)
         // Don't penalize for being too upright (negative bias)
-        guard meanBias > 10.0 else { return nil }
+        guard meanBias > (torsoBand + 6.0) else { return nil }
         
         // Determine severity based on how much forward lean exceeds ideal
         let severity: BackRoundingSeverity
         if meanBias > 20.0 {
             severity = .severe
-        } else if meanBias > 15.0 {
+        } else if meanBias > 12.0 {
             severity = .moderate
         } else {
             severity = .mild
@@ -144,13 +160,16 @@ struct FormDeviationAnalyzer {
         observed: KinematicAnalyzer.ObservedKinematics,
         rep: SquatRep
     ) -> FormDeviation? {
-        // Find frames in last 20% descent (depth 0.8 to 1.0) and first 30% ascent (depth 1.0 to 0.7)
+        // Find frames in last 20% descent (depth >= 0.8) and first 30% ascent (depth >= 0.7 after bottom).
         var relevantFrames: [Int] = []
-        
+
+        let bottomIndex = observed.depths.enumerated().max(by: { $0.element < $1.element })?.offset ?? 0
+
         for (i, depth) in observed.depths.enumerated() {
-            // Last 20% descent: depth going from 0.8 to 1.0
-            // First 30% ascent: depth going from 1.0 to 0.7
-            if (depth >= 0.8 && depth <= 1.0) || (depth <= 0.7 && i > 0 && observed.depths[i - 1] > depth) {
+            let isLateDescent = i <= bottomIndex && depth >= 0.8
+            let isEarlyAscent = i >= bottomIndex && depth >= 0.7
+
+            if isLateDescent || isEarlyAscent {
                 relevantFrames.append(i)
             }
         }
@@ -180,7 +199,7 @@ struct FormDeviationAnalyzer {
         guard maxDelta > 15.0 else { return nil }
         
         let severity: BackRoundingSeverity
-        if maxDelta > 30.0 {
+        if maxDelta > 25.0 {
             severity = .severe
         } else if maxDelta > 20.0 {
             severity = .moderate
