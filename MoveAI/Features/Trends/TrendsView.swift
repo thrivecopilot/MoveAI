@@ -9,300 +9,397 @@ import SwiftUI
 
 struct TrendsView: View {
     @EnvironmentObject var sessionManager: SessionManager
-    
+
+    private let selectedMovement: MovementType = .squat
+    private let lookback = 5
+
+    private var snapshot: TrendsSnapshot {
+        TrendsInsightsEngine.buildSnapshot(
+            sessions: sessionManager.sessions,
+            movement: selectedMovement,
+            lookback: lookback
+        )
+    }
+
     var body: some View {
         NavigationView {
             ScrollView {
-                VStack(spacing: 24) {
-                    // Header
-                    VStack(spacing: 8) {
-                        Image(systemName: "chart.line.uptrend.xyaxis")
-                            .font(.system(size: 60))
-                            .foregroundColor(.blue)
-                        
-                        Text("Your Progress")
-                            .font(.title2)
-                            .fontWeight(.semibold)
-                    }
-                    .padding(.top)
-                    
-                    // Weekly Activity Chart
-                    VStack(alignment: .leading, spacing: 16) {
-                        HStack {
-                            Image(systemName: "calendar")
-                                .foregroundColor(.blue)
-                            Text("This Week's Activity")
-                                .font(.headline)
-                                .fontWeight(.semibold)
+                VStack(spacing: 16) {
+                    filterBar
+
+                    if let lowDataHint = snapshot.lowDataHint {
+                        TrendsCard {
+                            HStack(alignment: .top, spacing: 10) {
+                                Image(systemName: "info.circle.fill")
+                                    .foregroundColor(.orange)
+                                Text(lowDataHint)
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                            }
                         }
-                        
-                        WeeklyActivityChart(sessions: sessionManager.sessions)
                     }
-                    .padding()
-                    .background(Color(.systemGray6))
-                    .cornerRadius(12)
-                    
-                    // Movement Breakdown
-                    VStack(alignment: .leading, spacing: 16) {
-                        HStack {
-                            Image(systemName: "chart.pie")
-                                .foregroundColor(.green)
-                            Text("Movement Breakdown")
-                                .font(.headline)
-                                .fontWeight(.semibold)
-                        }
-                        
-                        MovementBreakdownView(sessions: sessionManager.sessions)
-                    }
-                    .padding()
-                    .background(Color(.systemGray6))
-                    .cornerRadius(12)
-                    
-                    // Recent Achievements
-                    VStack(alignment: .leading, spacing: 16) {
-                        HStack {
-                            Image(systemName: "trophy.fill")
-                                .foregroundColor(.orange)
-                            Text("Recent Achievements")
-                                .font(.headline)
-                                .fontWeight(.semibold)
-                        }
-                        
-                        AchievementsView(sessions: sessionManager.sessions)
-                    }
-                    .padding()
-                    .background(Color(.systemGray6))
-                    .cornerRadius(12)
-                    
-                    // Insights
-                    VStack(alignment: .leading, spacing: 16) {
-                        HStack {
-                            Image(systemName: "lightbulb.fill")
-                                .foregroundColor(.yellow)
-                            Text("Insights")
-                                .font(.headline)
-                                .fontWeight(.semibold)
-                        }
-                        
-                        InsightsView(sessions: sessionManager.sessions)
-                    }
-                    .padding()
-                    .background(Color(.systemGray6))
-                    .cornerRadius(12)
-                    
-                    Spacer(minLength: 20)
+
+                    focusSection
+                    progressSection
+                    troubleAreaSection
+                    recommendationsSection
+                    whatImprovedSection
                 }
-                .padding()
+                .padding(16)
+                .padding(.bottom, 24)
             }
             .navigationTitle("Trends")
             .navigationBarTitleDisplayMode(.large)
+            .accessibilityIdentifier(AccessibilityID.Trends.root)
+            .accessibilityElement(children: .contain)
         }
     }
-}
 
-struct WeeklyActivityChart: View {
-    let sessions: [Session]
-    
-    var body: some View {
-        VStack(spacing: 12) {
-            HStack(alignment: .bottom, spacing: 8) {
-                ForEach(0..<7) { day in
-                    VStack(spacing: 4) {
-                        let daySessions = sessionsForDay(day)
-                        let height = CGFloat(daySessions.count) * 8 + 4
-                        
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(daySessions.isEmpty ? Color.gray.opacity(0.3) : Color.blue)
-                            .frame(width: 30, height: max(height, 4))
-                        
-                        Text(dayName(day))
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                }
-            }
-            
-            Text("Sessions per day this week")
-                .font(.caption)
-                .foregroundColor(.secondary)
-        }
-    }
-    
-    private func sessionsForDay(_ dayOffset: Int) -> [Session] {
-        let calendar = Calendar.current
-        let today = Date()
-        let targetDate = calendar.date(byAdding: .day, value: -dayOffset, to: today) ?? today
-        
-        return sessions.filter { session in
-            calendar.isDate(session.timestamp, inSameDayAs: targetDate)
-        }
-    }
-    
-    private func dayName(_ dayOffset: Int) -> String {
-        let calendar = Calendar.current
-        let today = Date()
-        let targetDate = calendar.date(byAdding: .day, value: -dayOffset, to: today) ?? today
-        
-        let formatter = DateFormatter()
-        formatter.dateFormat = "E"
-        return formatter.string(from: targetDate)
-    }
-}
-
-struct MovementBreakdownView: View {
-    let sessions: [Session]
-    
-    var body: some View {
-        VStack(spacing: 12) {
-            let movementCounts = Dictionary(grouping: sessions, by: { $0.movementType })
-                .mapValues { $0.count }
-                .sorted { $0.value > $1.value }
-            
-            ForEach(movementCounts, id: \.key) { movement, count in
-                HStack {
-                    Text(movement.rawValue.capitalized)
-                        .font(.subheadline)
-                    
-                    Spacer()
-                    
-                    Text("\(count)")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .foregroundColor(.blue)
-                }
-            }
-            
-            if movementCounts.isEmpty {
-                Text("No sessions recorded yet")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-            }
-        }
-    }
-}
-
-struct AchievementsView: View {
-    let sessions: [Session]
-    
-    var body: some View {
-        VStack(spacing: 12) {
-            AchievementRow(
-                icon: "video.fill",
-                title: "First Session",
-                description: "Recorded your first workout",
-                isUnlocked: !sessions.isEmpty
-            )
-            
-            AchievementRow(
-                icon: "calendar",
-                title: "Weekly Warrior",
-                description: "Complete 3 sessions this week",
-                isUnlocked: sessionsThisWeek() >= 3
-            )
-            
-            AchievementRow(
-                icon: "trophy.fill",
-                title: "Consistency King",
-                description: "Record 10 total sessions",
-                isUnlocked: sessions.count >= 10
-            )
-        }
-    }
-    
-    private func sessionsThisWeek() -> Int {
-        let calendar = Calendar.current
-        let now = Date()
-        let weekAgo = calendar.date(byAdding: .day, value: -7, to: now) ?? now
-        
-        return sessions.filter { session in
-            session.timestamp >= weekAgo
-        }.count
-    }
-}
-
-struct AchievementRow: View {
-    let icon: String
-    let title: String
-    let description: String
-    let isUnlocked: Bool
-    
-    var body: some View {
-        HStack {
-            Image(systemName: icon)
-                .foregroundColor(isUnlocked ? .orange : .gray)
-                .frame(width: 20)
-            
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .foregroundColor(isUnlocked ? .primary : .secondary)
-                
-                Text(description)
+    private var filterBar: some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: selectedMovement.icon)
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                Text(selectedMovement.displayName)
+                    .font(.subheadline.weight(.semibold))
             }
-            
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color(red: 0.24, green: 0.86, blue: 1.0).opacity(0.16))
+            .clipShape(Capsule())
+            .accessibilityIdentifier(AccessibilityID.Trends.filterMovement)
+
+            HStack(spacing: 6) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.caption)
+                Text(snapshot.lookbackLabel)
+                    .font(.subheadline.weight(.medium))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color(.systemGray6))
+            .clipShape(Capsule())
+
             Spacer()
-            
-            if isUnlocked {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundColor(.green)
-            }
         }
     }
-}
 
-struct InsightsView: View {
-    let sessions: [Session]
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if sessions.isEmpty {
-                Text("Start recording sessions to see insights!")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-            } else {
-                InsightRow(
-                    icon: "clock.fill",
-                    text: "You've recorded \(sessions.count) session\(sessions.count == 1 ? "" : "s")"
-                )
-                
-                if sessions.count >= 3 {
-                    InsightRow(
-                        icon: "chart.line.uptrend.xyaxis",
-                        text: "You're building a great habit!"
-                    )
-                }
-                
-                if let mostRecent = sessions.max(by: { $0.timestamp < $1.timestamp }) {
-                    let daysSince = Calendar.current.dateComponents([.day], from: mostRecent.timestamp, to: Date()).day ?? 0
-                    if daysSince > 0 {
-                        InsightRow(
-                            icon: "calendar.badge.clock",
-                            text: "Last session was \(daysSince) day\(daysSince == 1 ? "" : "s") ago"
+    private var focusSection: some View {
+        TrendsCard {
+            VStack(alignment: .leading, spacing: 10) {
+                sectionTitle(icon: "scope", title: "Focus This Week")
+
+                if let focus = snapshot.focus {
+                    Text(focus.headline)
+                        .font(.headline)
+
+                    Text(focus.evidenceLine)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+
+                    HStack(spacing: 8) {
+                        TrendBadge(
+                            title: focus.direction.label,
+                            color: directionColor(focus.direction)
+                        )
+
+                        TrendBadge(
+                            title: focus.confidence.label,
+                            color: confidenceColor(focus.confidence)
                         )
                     }
+                } else {
+                    Text("No recurring issues detected yet.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+        .accessibilityIdentifier(AccessibilityID.Trends.focusCard)
+    }
+
+    private var progressSection: some View {
+        TrendsCard {
+            VStack(alignment: .leading, spacing: 12) {
+                sectionTitle(icon: "chart.line.uptrend.xyaxis", title: "Progress")
+
+                ScoreSparkline(points: snapshot.scoreTrend)
+                    .frame(height: 86)
+
+                HStack(spacing: 12) {
+                    TrendMetric(
+                        label: "Avg score (last 5)",
+                        value: formatScore(snapshot.averageScoreLastLookback)
+                    )
+
+                    TrendMetric(
+                        label: "Change vs previous 5",
+                        value: formatChange(snapshot.scoreChangeVsPreviousLookback)
+                    )
+
+                    TrendMetric(
+                        label: "Warning/Critical burden",
+                        value: snapshot.burdenTrend.label
+                    )
+                }
+            }
+        }
+        .accessibilityIdentifier(AccessibilityID.Trends.progressCard)
+    }
+
+    private var troubleAreaSection: some View {
+        TrendsCard {
+            VStack(alignment: .leading, spacing: 10) {
+                sectionTitle(icon: "exclamationmark.triangle.fill", title: "Trouble Areas")
+
+                if snapshot.troubleAreas.isEmpty {
+                    Text("No warning or critical issues in recent sessions.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                } else {
+                    ForEach(Array(snapshot.troubleAreas.enumerated()), id: \.element.id) { index, row in
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 8) {
+                                Text("#\(index + 1)")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundColor(.secondary)
+
+                                Text(row.title)
+                                    .font(.subheadline.weight(.semibold))
+
+                                Spacer()
+
+                                Image(systemName: directionIcon(row.direction))
+                                    .foregroundColor(directionColor(row.direction))
+                                    .font(.caption.weight(.semibold))
+                            }
+
+                            Text("\(row.frequencyText) • \(row.severityMixText)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.vertical, 2)
+                    }
+                }
+            }
+        }
+        .accessibilityIdentifier(AccessibilityID.Trends.troubleAreaList)
+    }
+
+    private var recommendationsSection: some View {
+        TrendsCard {
+            VStack(alignment: .leading, spacing: 12) {
+                sectionTitle(icon: "bolt.heart.fill", title: "Next Recommendations")
+
+                if snapshot.recommendations.isEmpty {
+                    Text("Keep recording sessions. Recommendations unlock as recurring patterns emerge.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                } else {
+                    ForEach(Array(snapshot.recommendations.enumerated()), id: \.element.id) { index, card in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(card.title)
+                                .font(.subheadline.weight(.semibold))
+
+                            Text(card.actionProtocol)
+                                .font(.subheadline)
+
+                            Text(card.rationale)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+
+                            Text(card.expectedOutcome)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color(.systemGray6))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .accessibilityIdentifier("\(AccessibilityID.Trends.recommendationCard).\(index)")
+                    }
                 }
             }
         }
     }
+
+    private var whatImprovedSection: some View {
+        TrendsCard {
+            VStack(alignment: .leading, spacing: 10) {
+                sectionTitle(icon: "checkmark.seal.fill", title: "What Improved")
+
+                if snapshot.improvements.isEmpty {
+                    Text("No clear improvements yet in recent sessions.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                } else {
+                    HStack(spacing: 8) {
+                        ForEach(snapshot.improvements, id: \.self) { improvement in
+                            Text(improvement)
+                                .font(.caption.weight(.medium))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 8)
+                                .background(Color.green.opacity(0.15))
+                                .clipShape(Capsule())
+                        }
+                    }
+                }
+            }
+        }
+        .accessibilityIdentifier(AccessibilityID.Trends.whatImproved)
+    }
+
+    private func sectionTitle(icon: String, title: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .foregroundColor(Color(red: 0.24, green: 0.86, blue: 1.0))
+            Text(title)
+                .font(.headline)
+            Spacer()
+        }
+    }
+
+    private func directionColor(_ direction: TrendDirection) -> Color {
+        switch direction {
+        case .improving:
+            return .green
+        case .stable:
+            return .orange
+        case .worsening:
+            return .red
+        }
+    }
+
+    private func confidenceColor(_ confidence: InsightConfidence) -> Color {
+        switch confidence {
+        case .high:
+            return .green
+        case .medium:
+            return .orange
+        case .low:
+            return .blue
+        }
+    }
+
+    private func directionIcon(_ direction: TrendDirection) -> String {
+        switch direction {
+        case .improving:
+            return "arrow.down.right"
+        case .stable:
+            return "arrow.right"
+        case .worsening:
+            return "arrow.up.right"
+        }
+    }
+
+    private func formatScore(_ value: Double?) -> String {
+        guard let value else { return "N/A" }
+        return String(format: "%.1f", value)
+    }
+
+    private func formatChange(_ value: Double?) -> String {
+        guard let value else { return "N/A" }
+        return String(format: "%+.1f", value)
+    }
 }
 
-struct InsightRow: View {
-    let icon: String
-    let text: String
-    
+private struct TrendsCard<Content: View>: View {
+    @ViewBuilder let content: Content
+
     var body: some View {
-        HStack {
-            Image(systemName: icon)
-                .foregroundColor(.blue)
-                .frame(width: 20)
-            
-            Text(text)
-                .font(.subheadline)
-            
-            Spacer()
+        content
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(Color(.secondarySystemBackground))
+            )
+    }
+}
+
+private struct TrendBadge: View {
+    let title: String
+    let color: Color
+
+    var body: some View {
+        Text(title)
+            .font(.caption.weight(.semibold))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(color.opacity(0.15))
+            .foregroundColor(color)
+            .clipShape(Capsule())
+    }
+}
+
+private struct TrendMetric: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(value)
+                .font(.subheadline.weight(.semibold))
+            Text(label)
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct ScoreSparkline: View {
+    let points: [TrendPoint]
+
+    var body: some View {
+        GeometryReader { geometry in
+            if points.count < 2 {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color(.systemGray5))
+            } else {
+                let values = points.map { $0.score }
+                let minValue = values.min() ?? 0
+                let maxValue = values.max() ?? 1
+                let range = max(maxValue - minValue, 1)
+
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color(.systemGray6))
+
+                    Path { path in
+                        for index in points.indices {
+                            let x = (CGFloat(index) / CGFloat(points.count - 1)) * geometry.size.width
+                            let yRatio = (points[index].score - minValue) / range
+                            let y = geometry.size.height - (CGFloat(yRatio) * geometry.size.height)
+
+                            if index == 0 {
+                                path.move(to: CGPoint(x: x, y: y))
+                            } else {
+                                path.addLine(to: CGPoint(x: x, y: y))
+                            }
+                        }
+                    }
+                    .stroke(
+                        Color(red: 0.24, green: 0.86, blue: 1.0),
+                        style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round)
+                    )
+
+                    ForEach(points.indices, id: \.self) { index in
+                        let x = (CGFloat(index) / CGFloat(points.count - 1)) * geometry.size.width
+                        let yRatio = (points[index].score - minValue) / range
+                        let y = geometry.size.height - (CGFloat(yRatio) * geometry.size.height)
+
+                        Circle()
+                            .fill(Color(.systemBackground))
+                            .frame(width: 8, height: 8)
+                            .overlay(
+                                Circle()
+                                    .stroke(Color(red: 0.24, green: 0.86, blue: 1.0), lineWidth: 2)
+                            )
+                            .position(x: x, y: y)
+                    }
+                }
+            }
         }
     }
 }

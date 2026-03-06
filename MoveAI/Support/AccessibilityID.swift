@@ -69,6 +69,17 @@ enum AccessibilityID {
         static let viewAllButton = "Home.ViewAll"
     }
 
+    // MARK: - Trends
+    enum Trends {
+        static let root = "TrendsView"
+        static let filterMovement = "Trends.Filter.Movement"
+        static let focusCard = "Trends.FocusCard"
+        static let progressCard = "Trends.ProgressCard"
+        static let troubleAreaList = "Trends.TroubleAreaList"
+        static let recommendationCard = "Trends.RecommendationCard" // append ".\(index)"
+        static let whatImproved = "Trends.WhatImproved"
+    }
+
     // MARK: - Main Tab Bar
     enum MainTabBar {
         static let root = "MainTabBar"

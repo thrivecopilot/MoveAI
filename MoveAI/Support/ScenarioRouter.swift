@@ -23,6 +23,7 @@ enum UIScenario: String, CaseIterable {
     case poseOverlayHighlights = "PoseOverlay_highlights"
     case poseOverlayNoPose = "PoseOverlay_noPose"
     case dataInputPrefilled = "DataInput_prefilled"
+    case trendsSquatFocus = "Trends_squat_focus"
 }
 
 struct ScenarioSettings {
@@ -171,6 +172,8 @@ private enum ScenarioViews {
             return poseOverlayView(pose: nil)
         case .dataInputPrefilled:
             return AnyView(PersonalInfoStepView(onComplete: {}))
+        case .trendsSquatFocus:
+            return AnyView(TrendsView().environmentObject(sessionManager))
         }
     }
 
@@ -244,6 +247,8 @@ private enum ScenarioFixtures {
              .videoReviewOverviewMedium,
              .videoReviewOverviewExpanded:
             return [videoReviewSession()]
+        case .trendsSquatFocus:
+            return trendsSquatFocusSessions()
         case .workoutSummaryDefault,
              .poseOverlayDetected,
              .poseOverlayHighlights,
@@ -316,6 +321,70 @@ private enum ScenarioFixtures {
         ]
     }
 
+    private static func trendsSquatFocusSessions() -> [Session] {
+        return [
+            makeAnalyzedSquatSession(
+                daysAgo: 1,
+                score: 62,
+                feedback: [
+                    FormFeedback(category: .safety, message: "Heels lifted off floor", severity: .critical, timestamp: 4.1, repNumber: 1, issueKind: .squatHeelsLift),
+                    FormFeedback(category: .rangeOfMotion, message: "Depth too shallow", severity: .warning, timestamp: 4.3, repNumber: 1, issueKind: .squatDepthTooShallow),
+                    FormFeedback(category: .safety, message: "Knees caving inward", severity: .warning, timestamp: 4.6, repNumber: 1, issueKind: .squatKneeValgus)
+                ]
+            ),
+            makeAnalyzedSquatSession(
+                daysAgo: 2,
+                score: 65,
+                feedback: [
+                    FormFeedback(category: .rangeOfMotion, message: "Heels lifting at bottom", severity: .warning, timestamp: 6.2, repNumber: 1, issueKind: .squatHeelsLift),
+                    FormFeedback(category: .rangeOfMotion, message: "Knees stayed back", severity: .warning, timestamp: 6.4, repNumber: 1, issueKind: .squatKneesStayedBack),
+                    FormFeedback(category: .stability, message: "Foot arch collapsing", severity: .warning, timestamp: 6.6, repNumber: 1, issueKind: .squatFootCollapse)
+                ]
+            ),
+            makeAnalyzedSquatSession(
+                daysAgo: 3,
+                score: 68,
+                feedback: [
+                    FormFeedback(category: .rangeOfMotion, message: "Depth too shallow", severity: .warning, timestamp: 5.1, repNumber: 1, issueKind: .squatDepthTooShallow),
+                    FormFeedback(category: .rangeOfMotion, message: "Incomplete range of motion", severity: .warning, timestamp: 5.4, repNumber: 1, issueKind: .squatIncompleteROM),
+                    FormFeedback(category: .rangeOfMotion, message: "Heels lifting at bottom", severity: .warning, timestamp: 5.8, repNumber: 1, issueKind: .squatHeelsLift)
+                ]
+            ),
+            makeAnalyzedSquatSession(
+                daysAgo: 4,
+                score: 72,
+                feedback: [
+                    FormFeedback(category: .safety, message: "Knees caving inward", severity: .warning, timestamp: 6.9, repNumber: 1, issueKind: .squatKneeValgus),
+                    FormFeedback(category: .stability, message: "Hip shift to one side", severity: .warning, timestamp: 7.2, repNumber: 1, issueKind: .squatHipShift)
+                ]
+            ),
+            makeAnalyzedSquatSession(
+                daysAgo: 5,
+                score: 74,
+                feedback: [
+                    FormFeedback(category: .rangeOfMotion, message: "Heels lifting at bottom", severity: .warning, timestamp: 5.0, repNumber: 1, issueKind: .squatHeelsLift),
+                    FormFeedback(category: .posture, message: "Torso leaning forward", severity: .warning, timestamp: 5.3, repNumber: 1, issueKind: .squatForwardLean)
+                ]
+            ),
+            makeAnalyzedSquatSession(
+                daysAgo: 6,
+                score: 66,
+                feedback: [
+                    FormFeedback(category: .rangeOfMotion, message: "Heels lifted off floor", severity: .critical, timestamp: 4.0, repNumber: 1, issueKind: .squatHeelsLift),
+                    FormFeedback(category: .rangeOfMotion, message: "Depth too shallow", severity: .critical, timestamp: 4.4, repNumber: 1, issueKind: .squatDepthTooShallow)
+                ]
+            ),
+            makeAnalyzedSquatSession(
+                daysAgo: 7,
+                score: 64,
+                feedback: [
+                    FormFeedback(category: .rangeOfMotion, message: "Heels lifting at bottom", severity: .warning, timestamp: 5.9, repNumber: 1, issueKind: .squatHeelsLift),
+                    FormFeedback(category: .posture, message: "Posterior pelvic tuck", severity: .warning, timestamp: 6.2, repNumber: 1, issueKind: .squatButtWink)
+                ]
+            )
+        ]
+    }
+
     private static func videoReviewSession() -> Session {
         let analysisResult = PreviewData.analysisResult()
         return Session(
@@ -325,6 +394,21 @@ private enum ScenarioFixtures {
             analysisResult: analysisResult,
             poseData: nil,
             notes: "Keep notes short and actionable. Focus on depth, bracing, and consistent tempo.",
+            isRecordedLive: false
+        )
+    }
+
+    private static func makeAnalyzedSquatSession(
+        daysAgo: Int,
+        score: Double,
+        feedback: [FormFeedback]
+    ) -> Session {
+        Session(
+            movementType: .squat,
+            videoURL: URL(fileURLWithPath: "/dev/null"),
+            timestamp: fixedDate(daysAgo: daysAgo),
+            analysisResult: AnalysisResult(score: score, feedback: feedback),
+            notes: "Scenario fixture for trends insights.",
             isRecordedLive: false
         )
     }

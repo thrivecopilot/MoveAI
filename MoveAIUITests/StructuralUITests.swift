@@ -267,6 +267,41 @@ final class StructuralUITests: XCTestCase {
             "Expected leftKnee to NOT be highlighted, got: \(value)"
         )
     }
+
+    // =========================================================================
+    // MARK: - Trends: Squat Focus
+    // =========================================================================
+
+    func testTrendsSquatFocus_structure() throws {
+        app = launchScenario("Trends_squat_focus")
+
+        assertExists(AID.Trends.root, timeout: 5, "Trends root must exist")
+        assertExists(AID.Trends.filterMovement, "Movement filter must exist")
+        assertExists(AID.Trends.focusCard, "Focus card must exist")
+        assertExists(AID.Trends.progressCard, "Progress card must exist")
+        assertExists(AID.Trends.troubleAreaList, "Trouble area list must exist")
+
+        XCTAssertTrue(
+            app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "last 5 sessions")).firstMatch.waitForExistence(timeout: 3),
+            "Focus content should mention last 5 sessions"
+        )
+
+        let firstRecommendation = element("\(AID.Trends.recommendationCard).0")
+        XCTAssertTrue(firstRecommendation.waitForExistence(timeout: 3), "First recommendation card must exist")
+
+        XCTAssertTrue(
+            app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "dorsiflexion")).firstMatch.waitForExistence(timeout: 3),
+            "Recommendation should include mobility wording"
+        )
+
+        XCTAssertTrue(
+            app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "/5 sessions")).firstMatch.waitForExistence(timeout: 3),
+            "Trouble area leaderboard should render at least one row"
+        )
+
+        assertExists(AID.Trends.whatImproved, "What improved section must exist")
+    }
+
     // =========================================================================
     // MARK: - Video Review: Medium Sheet
     // =========================================================================
