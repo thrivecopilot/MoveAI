@@ -184,7 +184,7 @@ struct SquatAnalyzer {
         var segmentLengths: AnthropometryEstimator.SegmentLengths? = nil
         var formDeviations: [FormDeviationAnalyzer.FormDeviation] = []
 
-        let sideViewEligible = camera.angle == .side && camera.confidence >= 0.6
+        let sideViewEligible = camera.angle == .side
 
         if sideViewEligible {
         
@@ -1670,8 +1670,13 @@ struct SquatAnalyzer {
 
         let minConfidence: Float = 0.3
 
+        // Classification thresholds (normalized coordinates).
+        let sideThreshold = 0.08
+        let frontThreshold = 0.18
+
         var framesWithBothSides = 0
         var framesWithOneSide = 0
+        var framesWithStackedBothSides = 0
         var kneeSeparations: [Double] = []
         kneeSeparations.reserveCapacity(poseHistory.count)
 
@@ -1684,7 +1689,11 @@ struct SquatAnalyzer {
 
             if hasLeft && hasRight, let l = leftKnee, let r = rightKnee {
                 framesWithBothSides += 1
-                kneeSeparations.append(abs(Double(l.position.x - r.position.x)))
+                let separation = abs(Double(l.position.x - r.position.x))
+                kneeSeparations.append(separation)
+                if separation < sideThreshold {
+                    framesWithStackedBothSides += 1
+                }
             } else if hasLeft || hasRight {
                 framesWithOneSide += 1
             }
@@ -1702,12 +1711,8 @@ struct SquatAnalyzer {
 
         let total = Double(poseHistory.count)
         let bothSidesFrameRatio = total > 0 ? Double(framesWithBothSides) / total : 0.0
-        let oneSideFrameRatio = total > 0 ? Double(framesWithOneSide) / total : 0.0
+        let sideEvidenceRatio = total > 0 ? Double(framesWithOneSide + framesWithStackedBothSides) / total : 0.0
         let medianKneeSeparation = median(kneeSeparations) ?? 0.0
-
-        // Classification thresholds (normalized coordinates).
-        let sideThreshold = 0.08
-        let frontThreshold = 0.18
 
         let angle: CameraAngle
         if framesWithOneSide > framesWithBothSides || medianKneeSeparation < sideThreshold {
@@ -1721,7 +1726,7 @@ struct SquatAnalyzer {
         let baseConfidence: Double = {
             switch angle {
             case .side:
-                return oneSideFrameRatio
+                return sideEvidenceRatio
             case .front, .diagonal, .back:
                 return bothSidesFrameRatio
             }
@@ -1732,7 +1737,7 @@ struct SquatAnalyzer {
             switch angle {
             case .side:
                 let sepMargin = max(0.0, (sideThreshold - medianKneeSeparation) / sideThreshold)
-                let visMargin = max(0.0, (oneSideFrameRatio - bothSidesFrameRatio) / 0.5)
+                let visMargin = max(0.0, (Double(framesWithOneSide - framesWithBothSides)) / max(total, 1.0))
                 return min(1.0, max(sepMargin, visMargin))
             case .front:
                 return min(1.0, max(0.0, (medianKneeSeparation - frontThreshold) / 0.12))
@@ -2084,9 +2089,25 @@ struct SquatAnalyzer {
         let enableFrontChecksV2 = ProcessInfo.processInfo.environment["MOVEAI_ENABLE_FRONT_CHECKS_V2"] == "1"
         let enableDiagonalChecks = ProcessInfo.processInfo.environment["MOVEAI_ENABLE_DIAGONAL_CHECKS"] == "1"
 
-        let sideEligible = camera.angle == .side && camera.confidence >= 0.6
+        let sideEligible = camera.angle == .side
         let frontEligible = camera.angle == .front && camera.confidence >= 0.6
         let diagonalEligible = camera.angle == .diagonal && camera.confidence >= 0.6 && enableDiagonalChecks
+
+        let majorSideFamilyEligible = sideEligible || diagonalEligible
+        let majorFrontFamilyEligible = frontEligible || diagonalEligible
+        let majorDiagonalFamilyEligible = diagonalEligible
+
+        if !majorSideFamilyEligible && !majorFrontFamilyEligible && !majorDiagonalFamilyEligible {
+            feedback.append(FormFeedback(
+                category: .safety,
+                message: "Camera angle/visibility limited analysis. Some squat checks were skipped; film a clear side or front view for full coverage.",
+                severity: .warning,
+                timestamp: 0,
+                repNumber: nil,
+                issueKind: .squatCameraAngleLimited,
+                affectedBodyJoints: nil
+            ))
+        }
 
 #if DEBUG
         if ProcessInfo.processInfo.environment["MOVEAI_SQUAT_DEBUG"] == "1" {

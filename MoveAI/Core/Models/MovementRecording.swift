@@ -78,6 +78,7 @@ struct MovementIssueKind: RawRepresentable, Codable, Hashable, CaseIterable {
     static let squatDepthTooShallow = MovementIssueKind(rawValue: "squat.depth_too_shallow")
     static let squatIncompleteROM = MovementIssueKind(rawValue: "squat.incomplete_rom")
     static let squatDepthInconsistent = MovementIssueKind(rawValue: "squat.depth_inconsistent")
+    static let squatCameraAngleLimited = MovementIssueKind(rawValue: "squat.camera_angle_limited")
 
     static var allCases: [MovementIssueKind] {
         [
@@ -92,6 +93,7 @@ struct MovementIssueKind: RawRepresentable, Codable, Hashable, CaseIterable {
             .squatDepthTooShallow,
             .squatIncompleteROM,
             .squatDepthInconsistent,
+            .squatCameraAngleLimited,
         ]
     }
 }

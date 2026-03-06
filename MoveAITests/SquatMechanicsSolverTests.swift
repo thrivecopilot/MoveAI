@@ -239,6 +239,19 @@ final class CameraAngleDetectionTests: XCTestCase {
         XCTAssertEqual(result.bothSidesFrameRatio, 0.0, accuracy: 1e-9)
     }
 
+    func testDetectCameraAngle_side_whenBothKneesStacked_hasUsefulConfidence() {
+        let poses = (0..<10).map { i in
+            pose(frame: i, leftKneeX: 0.48, rightKneeX: 0.52)
+        }
+
+        let result = SquatAnalyzer.detectCameraAngle(from: poses)
+
+        XCTAssertEqual(result.angle, .side)
+        XCTAssertGreaterThan(result.confidence, 0.6)
+        XCTAssertEqual(result.bothSidesFrameRatio, 1.0, accuracy: 1e-9)
+        XCTAssertLessThan(result.medianKneeSeparation, 0.08)
+    }
+
     func testDetectCameraAngle_front_whenBothKneesWide() {
         let poses = (0..<10).map { i in
             pose(frame: i, leftKneeX: 0.3, rightKneeX: 0.7)
@@ -609,5 +622,82 @@ final class SquatWarningTests: XCTestCase {
         )
 
         XCTAssertTrue(feedback.contains(where: { $0.issueKind == .squatBraceLeak }))
+    }
+
+    func testSideChecksRunEvenWhenSideConfidenceIsLow() {
+        let seq = oneRepSequence { _ in [] }
+
+        let shallowDepth = DepthAnalysis(
+            hipHeight: 0.0,
+            kneeHeight: 0.0,
+            isAtDepth: false,
+            depthPercentage: 65.0,
+            timestamp: Date(timeIntervalSince1970: seq.rep.bottomTime),
+            repNumber: 1
+        )
+
+        let feedback = SquatAnalyzer.generateFeedback(
+            poses: seq.poses,
+            smoothedHeights: seq.smoothedHeights,
+            phases: [],
+            reps: [seq.rep],
+            depthMetrics: [shallowDepth],
+            kneeMetrics: [],
+            worstDepth: nil,
+            worstKnee: nil,
+            startTime: Date(timeIntervalSince1970: 0),
+            camera: (angle: .side, confidence: 0.1, medianKneeSeparation: 0.02, bothSidesFrameRatio: 1.0),
+            segmentLengths: nil,
+            formDeviations: []
+        )
+
+        XCTAssertTrue(feedback.contains(where: { $0.issueKind == .squatDepthTooShallow }))
+        XCTAssertFalse(feedback.contains(where: { $0.issueKind == .squatCameraAngleLimited }))
+    }
+
+    func testCameraLimitedWarningEmittedOnceWhenAllMajorFamiliesBlocked() {
+        let seq = oneRepSequence { _ in [] }
+
+        let feedback = SquatAnalyzer.generateFeedback(
+            poses: seq.poses,
+            smoothedHeights: seq.smoothedHeights,
+            phases: [],
+            reps: [seq.rep],
+            depthMetrics: [],
+            kneeMetrics: [],
+            worstDepth: nil,
+            worstKnee: nil,
+            startTime: Date(timeIntervalSince1970: 0),
+            camera: (angle: .front, confidence: 0.2, medianKneeSeparation: 0.28, bothSidesFrameRatio: 1.0),
+            segmentLengths: nil,
+            formDeviations: []
+        )
+
+        let warnings = feedback.filter { $0.issueKind == .squatCameraAngleLimited }
+        XCTAssertEqual(warnings.count, 1)
+        XCTAssertEqual(warnings.first?.severity, .warning)
+        XCTAssertEqual(warnings.first?.repNumber, nil)
+        XCTAssertEqual(warnings.first?.timestamp ?? -1, 0, accuracy: 1e-9)
+    }
+
+    func testCameraLimitedWarningNotEmittedWhenFrontChecksAreEligible() {
+        let seq = oneRepSequence { _ in [] }
+
+        let feedback = SquatAnalyzer.generateFeedback(
+            poses: seq.poses,
+            smoothedHeights: seq.smoothedHeights,
+            phases: [],
+            reps: [seq.rep],
+            depthMetrics: [],
+            kneeMetrics: [],
+            worstDepth: nil,
+            worstKnee: nil,
+            startTime: Date(timeIntervalSince1970: 0),
+            camera: (angle: .front, confidence: 0.9, medianKneeSeparation: 0.28, bothSidesFrameRatio: 1.0),
+            segmentLengths: nil,
+            formDeviations: []
+        )
+
+        XCTAssertFalse(feedback.contains(where: { $0.issueKind == .squatCameraAngleLimited }))
     }
 }

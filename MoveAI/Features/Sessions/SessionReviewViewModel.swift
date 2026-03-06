@@ -619,6 +619,33 @@ enum SquatCueLibrary {
                 )
             )
 
+        case .squatCameraAngleLimited:
+            return Entry(
+                kind: kind,
+                name: "Camera angle limited",
+                headline: "Camera angle limited analysis",
+                oneLineDescription: "Camera angle or visibility limited reliable squat checks in this set.",
+                poseHints: [
+                    "One key side was occluded or unstable.",
+                    "View was diagonal or unclear for the checks that run.",
+                    "Both knees/ankles were not consistently visible when needed."
+                ],
+                quickFix: "Next set: film from a clear side or front view with the full body in frame.",
+                quickFixRationale: "Better visibility improves check coverage and reliability.",
+                backupCues: ["Keep the full body in frame.", "Use a stable camera angle."],
+                correctives: Correctives(strength: [], mobility: [], patterning: []),
+                commonPhases: [.setup],
+                overlayTargets: OverlayTargets(
+                    joints: [],
+                    segments: []
+                ),
+                templates: MessageTemplates(
+                    overlayShort: "Camera angle limited analysis.",
+                    repSummary: "Camera angle limited analysis for this rep.",
+                    setSummary: "Camera angle limited analysis for this set; capture a clear side or front view."
+                )
+            )
+
         default:
             return nil
         }
