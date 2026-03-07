@@ -24,26 +24,40 @@ struct TrendsView: View {
 
     var body: some View {
         NavigationView {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(spacing: 16) {
-                        filterBar
+            ZStack {
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.04, green: 0.08, blue: 0.14),
+                        Color(red: 0.06, green: 0.10, blue: 0.16),
+                        Color(.systemBackground),
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea()
 
-                        if let lowDataHint = snapshot.lowDataHint {
-                            lowDataHintCard(text: lowDataHint)
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(spacing: 18) {
+                            filterBar
+
+                            if let lowDataHint = snapshot.lowDataHint {
+                                lowDataHintCard(text: lowDataHint)
+                            }
+
+                            primaryFixSection(proxy: proxy)
+                            todaysCueSection
+                            movementQualitySection
+                            troubleAreasSection
+                            quickRoutineSection
+                            expertDiscoverySection
+                            progressSection
+                            smallWinsSection
                         }
-
-                        primaryFixSection(proxy: proxy)
-                        todaysCueSection
-                        movementQualitySection
-                        troubleAreasSection
-                        quickRoutineSection
-                        expertDiscoverySection
-                        progressSection
-                        smallWinsSection
+                        .padding(.horizontal, 16)
+                        .padding(.top, 8)
+                        .padding(.bottom, 28)
                     }
-                    .padding(16)
-                    .padding(.bottom, 24)
                 }
             }
             .navigationTitle("Trends")
@@ -71,33 +85,53 @@ struct TrendsView: View {
         Color(red: 0.24, green: 0.86, blue: 1.0)
     }
 
+    private var accentGradient: LinearGradient {
+        LinearGradient(
+            colors: [accentColor, accentColor.opacity(0.7)],
+            startPoint: .leading,
+            endPoint: .trailing
+        )
+    }
+
     private var filterBar: some View {
         HStack(spacing: 10) {
-            HStack(spacing: 6) {
-                Image(systemName: selectedMovement.icon)
-                    .font(.caption)
-                Text(selectedMovement.displayName)
-                    .font(.subheadline.weight(.semibold))
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(accentColor.opacity(0.16))
-            .clipShape(Capsule())
+            filterChip(
+                icon: selectedMovement.icon,
+                title: selectedMovement.displayName,
+                tint: accentColor,
+                isHighlighted: true
+            )
             .accessibilityIdentifier(AccessibilityID.Trends.filterMovement)
 
-            HStack(spacing: 6) {
-                Image(systemName: "clock.arrow.circlepath")
-                    .font(.caption)
-                Text(snapshot.lookbackLabel)
-                    .font(.subheadline.weight(.medium))
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(Color(.systemGray6))
-            .clipShape(Capsule())
+            filterChip(
+                icon: "clock.arrow.circlepath",
+                title: snapshot.lookbackLabel,
+                tint: .secondary,
+                isHighlighted: false
+            )
 
             Spacer()
         }
+    }
+
+    private func filterChip(icon: String, title: String, tint: Color, isHighlighted: Bool) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.caption.weight(.semibold))
+            Text(title)
+                .font(.subheadline.weight(isHighlighted ? .semibold : .medium))
+        }
+        .foregroundColor(isHighlighted ? tint : .secondary)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            Capsule()
+                .fill(isHighlighted ? tint.opacity(0.18) : Color(.secondarySystemBackground).opacity(0.88))
+        )
+        .overlay(
+            Capsule()
+                .stroke(isHighlighted ? tint.opacity(0.35) : Color.white.opacity(0.08), lineWidth: 1)
+        )
     }
 
     private func lowDataHintCard(text: String) -> some View {
@@ -105,6 +139,7 @@ struct TrendsView: View {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "info.circle.fill")
                     .foregroundColor(.orange)
+
                 Text(text)
                     .font(.subheadline)
                     .foregroundColor(.secondary)
@@ -113,13 +148,13 @@ struct TrendsView: View {
     }
 
     private func primaryFixSection(proxy: ScrollViewProxy) -> some View {
-        TrendsCard(cornerRadius: 18, useGradient: true) {
-            VStack(alignment: .leading, spacing: 12) {
-                sectionTitle(icon: "target", title: "Primary Fix This Week")
+        TrendsCard(cornerRadius: 20, useGradient: true, contentPadding: 16) {
+            VStack(alignment: .leading, spacing: 14) {
+                cardEyebrow("Primary Fix This Week")
 
                 if let primaryFix = snapshot.primaryFix {
                     Text(primaryFix.headline)
-                        .font(.headline)
+                        .font(.title3.weight(.bold))
 
                     Text(primaryFix.evidenceLine)
                         .font(.subheadline)
@@ -137,42 +172,55 @@ struct TrendsView: View {
                         )
 
                         TrendBadge(
-                            title: primaryFix.severityMixText,
+                            title: compactSeverityText(primaryFix.severityMixText),
                             color: .orange
                         )
+                        .accessibilityLabel(primaryFix.severityMixText)
                     }
 
-                    Text(primaryFix.impactStatement)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "waveform.path.ecg")
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(accentColor)
+                            .padding(.top, 2)
 
-                    HStack(spacing: 8) {
+                        Text(primaryFix.impactStatement)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+
+                    VStack(spacing: 8) {
                         actionButton(
                             title: "Fix It",
+                            systemImage: "wrench.and.screwdriver",
                             identifier: AccessibilityID.Trends.primaryFixActionFixIt,
-                            filled: true
+                            style: .primary
                         ) {
                             expandedIssueId = primaryFix.issueKind.rawValue
-                            withAnimation(.easeInOut(duration: 0.25)) {
+                            withAnimation(.spring(response: 0.32, dampingFraction: 0.88)) {
                                 proxy.scrollTo(fixCardAnchorID(primaryFix.issueKind.rawValue), anchor: .center)
                             }
                         }
 
-                        actionButton(
-                            title: "Watch Examples",
-                            identifier: AccessibilityID.Trends.primaryFixActionWatchExamples,
-                            filled: false
-                        ) {
-                            selectedExpertIssue = primaryFix.issueKind
-                            isExpertSheetPresented = true
-                        }
+                        HStack(spacing: 8) {
+                            actionButton(
+                                title: "Watch Examples",
+                                systemImage: "play.rectangle",
+                                identifier: AccessibilityID.Trends.primaryFixActionWatchExamples,
+                                style: .secondary
+                            ) {
+                                selectedExpertIssue = primaryFix.issueKind
+                                isExpertSheetPresented = true
+                            }
 
-                        actionButton(
-                            title: "Track During Workout",
-                            identifier: AccessibilityID.Trends.primaryFixActionTrackWorkout,
-                            filled: false
-                        ) {
-                            showTrackWorkout = true
+                            actionButton(
+                                title: "Track During Workout",
+                                systemImage: "record.circle",
+                                identifier: AccessibilityID.Trends.primaryFixActionTrackWorkout,
+                                style: .secondary
+                            ) {
+                                showTrackWorkout = true
+                            }
                         }
                     }
                 } else {
@@ -187,7 +235,7 @@ struct TrendsView: View {
 
     private var todaysCueSection: some View {
         TrendsCard {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 10) {
                 sectionTitle(icon: "bolt.fill", title: "Today’s Cue")
 
                 if let cue = snapshot.todayCue {
@@ -198,11 +246,14 @@ struct TrendsView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
 
-                    Button("Practice Mode") {
+                    Button {
                         showTrackWorkout = true
+                    } label: {
+                        Label("Practice Mode", systemImage: "figure.strengthtraining.traditional")
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(accentColor)
                     }
-                    .font(.caption.weight(.semibold))
-                    .foregroundColor(accentColor)
+                    .buttonStyle(.plain)
                 } else {
                     Text("Record a few sessions to get cue-specific coaching before your workout.")
                         .font(.subheadline)
@@ -215,38 +266,49 @@ struct TrendsView: View {
 
     private var movementQualitySection: some View {
         TrendsCard {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 12) {
                 sectionTitle(icon: "dial.medium", title: "Movement Quality")
 
                 ForEach(snapshot.qualitySummary) { dimension in
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 8) {
                             Text(dimension.dimension.title)
                                 .font(.subheadline.weight(.medium))
 
                             Spacer()
 
-                            Text("\(dimension.score)")
-                                .font(.subheadline.weight(.semibold))
-
                             TrendDeltaChip(
                                 text: dimension.deltaText,
                                 direction: dimension.direction
                             )
+
+                            Text("\(dimension.score)")
+                                .font(.subheadline.weight(.semibold))
+                                .monospacedDigit()
                         }
 
                         GeometryReader { geometry in
                             ZStack(alignment: .leading) {
                                 Capsule()
-                                    .fill(Color(.systemGray5))
+                                    .fill(Color.white.opacity(0.10))
 
                                 Capsule()
-                                    .fill(directionColor(dimension.direction).opacity(0.8))
+                                    .fill(directionColor(dimension.direction).opacity(0.88))
                                     .frame(width: geometry.size.width * CGFloat(Double(dimension.score) / 100.0))
                             }
                         }
-                        .frame(height: 8)
+                        .frame(height: 9)
                     }
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color(.systemBackground).opacity(0.25))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(Color.white.opacity(0.07), lineWidth: 1)
+                    )
                     .accessibilityIdentifier("\(AccessibilityID.Trends.qualityDimension).\(dimension.dimension.rawValue)")
                 }
             }
@@ -280,39 +342,53 @@ struct TrendsView: View {
 
         return VStack(alignment: .leading, spacing: 8) {
             Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
+                withAnimation(.spring(response: 0.30, dampingFraction: 0.88)) {
                     expandedIssueId = isExpanded ? nil : issue.id
                 }
             } label: {
-                HStack(spacing: 8) {
-                    Text("#\(rank)")
-                        .font(.caption.weight(.semibold))
-                        .foregroundColor(.secondary)
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Text("#\(rank)")
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(.secondary)
 
-                    Text(issue.title)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundColor(.primary)
+                        Text(issue.title)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundColor(.primary)
 
-                    Spacer()
+                        Spacer()
 
-                    Image(systemName: issue.direction.sfSymbolName)
-                        .foregroundColor(directionColor(issue.direction))
-                        .font(.caption.weight(.semibold))
+                        Image(systemName: issue.direction.sfSymbolName)
+                            .foregroundColor(directionColor(issue.direction))
+                            .font(.caption.weight(.semibold))
 
-                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .foregroundColor(.secondary)
-                        .font(.caption.weight(.semibold))
+                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                            .foregroundColor(.secondary)
+                            .font(.caption.weight(.semibold))
+                    }
+
+                    HStack(spacing: 6) {
+                        TrendBadge(title: issue.frequencyText, color: accentColor)
+                        TrendBadge(title: compactSeverityText(issue.severityMixText), color: .orange)
+                            .accessibilityLabel(issue.severityMixText)
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color(.systemBackground).opacity(0.25))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                )
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("\(AccessibilityID.Trends.fixCard).\(issue.issueKind.rawValue)")
 
-            Text("\(issue.frequencyText) • \(issue.severityMixText)")
-                .font(.caption)
-                .foregroundColor(.secondary)
-
             if isExpanded {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 10) {
                     Text(issue.likelyCause)
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -322,19 +398,34 @@ struct TrendsView: View {
                             .font(.caption.weight(.semibold))
 
                         ForEach(issue.recommendedDrills, id: \.self) { drill in
-                            Text("• \(drill)")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                            HStack(spacing: 6) {
+                                Image(systemName: "checkmark.circle")
+                                    .font(.caption)
+                                    .foregroundColor(accentColor)
+                                Text(drill)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
                         }
                     }
 
-                    Text("Usually occurs: \(issue.whenItUsuallyOccurs)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    HStack(spacing: 6) {
+                        Image(systemName: "clock")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text("Usually occurs: \(issue.whenItUsuallyOccurs)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
 
-                    Text("Target: \(issue.targetGoal)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    HStack(spacing: 6) {
+                        Image(systemName: "target")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text("Target: \(issue.targetGoal)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
 
                     Button("Watch Examples") {
                         selectedExpertIssue = issue.issueKind
@@ -342,14 +433,21 @@ struct TrendsView: View {
                     }
                     .font(.caption.weight(.semibold))
                     .foregroundColor(accentColor)
+                    .buttonStyle(.plain)
                 }
-                .padding(10)
+                .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color(.systemGray6))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color(.systemBackground).opacity(0.22))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.white.opacity(0.06), lineWidth: 1)
+                )
+                .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
-        .padding(.vertical, 2)
     }
 
     private var quickRoutineSection: some View {
@@ -358,10 +456,16 @@ struct TrendsView: View {
                 sectionTitle(icon: "list.bullet.rectangle", title: "Quick Fix Routine")
 
                 if let routine = snapshot.quickRoutine {
-                    HStack {
+                    HStack(spacing: 8) {
                         Text(routine.title)
                             .font(.subheadline.weight(.semibold))
+
                         Spacer()
+
+                        Text("\(routineCompletedDrills.count)/\(routine.drills.count) complete")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundColor(.secondary)
+
                         Text(routine.durationText)
                             .font(.caption.weight(.semibold))
                             .foregroundColor(.secondary)
@@ -371,7 +475,7 @@ struct TrendsView: View {
                         Button {
                             toggleRoutineDrill(drill)
                         } label: {
-                            HStack {
+                            HStack(spacing: 8) {
                                 Image(systemName: routineCompletedDrills.contains(drill) ? "checkmark.circle.fill" : "circle")
                                     .foregroundColor(routineCompletedDrills.contains(drill) ? .green : .secondary)
 
@@ -381,6 +485,12 @@ struct TrendsView: View {
 
                                 Spacer()
                             }
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 10)
+                            .background(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .fill(Color(.systemBackground).opacity(0.20))
+                            )
                         }
                         .buttonStyle(.plain)
                     }
@@ -392,14 +502,15 @@ struct TrendsView: View {
                     Button {
                         routineCompletedDrills = Set(routine.drills)
                     } label: {
-                        Text("Start Routine")
+                        Label("Start Routine", systemImage: "play.fill")
                             .font(.caption.weight(.semibold))
                             .padding(.horizontal, 12)
                             .padding(.vertical, 8)
-                            .background(accentColor.opacity(0.2))
+                            .background(accentGradient.opacity(0.24))
                             .foregroundColor(accentColor)
                             .clipShape(Capsule())
                     }
+                    .buttonStyle(.plain)
                     .accessibilityIdentifier(AccessibilityID.Trends.quickRoutineStart)
                 } else {
                     Text("Recommendations unlock as recurring patterns emerge across sessions.")
@@ -422,21 +533,33 @@ struct TrendsView: View {
                         .foregroundColor(.secondary)
                 } else {
                     ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 10) {
+                        HStack(spacing: 12) {
                             ForEach(Array(snapshot.expertDiscovery.enumerated()), id: \.element.id) { index, card in
                                 Button {
                                     safariRoute = SafariRoute(url: card.url)
                                 } label: {
                                     VStack(alignment: .leading, spacing: 8) {
-                                        HStack {
-                                            Image(systemName: card.thumbnailToken)
-                                                .font(.headline)
-                                                .foregroundColor(accentColor)
-                                            Spacer()
-                                            Image(systemName: "arrow.up.right.square")
-                                                .font(.caption)
-                                                .foregroundColor(.secondary)
-                                        }
+                                        RoundedRectangle(cornerRadius: 10)
+                                            .fill(
+                                                LinearGradient(
+                                                    colors: [accentColor.opacity(0.26), accentColor.opacity(0.08)],
+                                                    startPoint: .topLeading,
+                                                    endPoint: .bottomTrailing
+                                                )
+                                            )
+                                            .frame(height: 72)
+                                            .overlay(
+                                                HStack {
+                                                    Image(systemName: card.thumbnailToken)
+                                                        .font(.title3)
+                                                        .foregroundColor(accentColor)
+                                                    Spacer()
+                                                    Image(systemName: "arrow.up.right.square")
+                                                        .font(.caption.weight(.semibold))
+                                                        .foregroundColor(.secondary)
+                                                }
+                                                .padding(.horizontal, 10)
+                                            )
 
                                         Text(card.creator)
                                             .font(.caption.weight(.semibold))
@@ -452,10 +575,16 @@ struct TrendsView: View {
                                             .font(.caption2)
                                             .foregroundColor(.secondary)
                                     }
-                                    .padding(10)
-                                    .frame(width: 210, alignment: .leading)
-                                    .background(Color(.systemGray6))
-                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                                    .padding(12)
+                                    .frame(width: 224, alignment: .leading)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 14)
+                                            .fill(Color(.systemBackground).opacity(0.24))
+                                    )
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 14)
+                                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                                    )
                                 }
                                 .buttonStyle(.plain)
                                 .accessibilityIdentifier("\(AccessibilityID.Trends.expertCard).\(index)")
@@ -474,7 +603,7 @@ struct TrendsView: View {
                 sectionTitle(icon: "chart.line.uptrend.xyaxis", title: "Progress Trend")
 
                 ScoreSparkline(points: snapshot.scoreTrend)
-                    .frame(height: 86)
+                    .frame(height: 96)
 
                 HStack(spacing: 12) {
                     TrendMetric(
@@ -526,12 +655,19 @@ struct TrendsView: View {
                 } else {
                     VStack(alignment: .leading, spacing: 8) {
                         ForEach(snapshot.smallWins) { win in
-                            Text(win.text)
-                                .font(.caption.weight(.medium))
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 8)
-                                .background(Color.green.opacity(0.15))
-                                .clipShape(Capsule())
+                            HStack(spacing: 8) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                                    .font(.caption)
+
+                                Text(win.text)
+                                    .font(.caption.weight(.medium))
+                                    .foregroundColor(.primary)
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8)
+                            .background(Color.green.opacity(0.12))
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
                         }
                     }
                 }
@@ -589,37 +725,95 @@ struct TrendsView: View {
             }
     }
 
+    private func compactSeverityText(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: " critical", with: "C")
+            .replacingOccurrences(of: " warning events", with: "W")
+            .replacingOccurrences(of: " warning event", with: "W")
+            .replacingOccurrences(of: ", ", with: " • ")
+    }
+
+    private func cardEyebrow(_ title: String) -> some View {
+        Text(title.uppercased())
+            .font(.caption2.weight(.bold))
+            .kerning(0.6)
+            .foregroundColor(accentColor.opacity(0.95))
+    }
+
     private func sectionTitle(icon: String, title: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: icon)
+                .font(.subheadline.weight(.semibold))
                 .foregroundColor(accentColor)
             Text(title)
-                .font(.headline)
+                .font(.headline.weight(.semibold))
             Spacer()
         }
     }
 
+    private enum ActionButtonStyle {
+        case primary
+        case secondary
+    }
+
     private func actionButton(
         title: String,
+        systemImage: String,
         identifier: String,
-        filled: Bool,
+        style: ActionButtonStyle,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
-                .minimumScaleFactor(0.8)
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 8)
-                .background(filled ? accentColor.opacity(0.25) : Color(.systemGray6))
-                .foregroundColor(filled ? accentColor : .primary)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
+            Label {
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+            } icon: {
+                Image(systemName: systemImage)
+                    .font(.caption.weight(.semibold))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 9)
+            .background(buttonBackground(style: style))
+            .foregroundColor(buttonForeground(style: style))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(buttonBorder(style: style), lineWidth: 1)
+            )
         }
         .accessibilityIdentifier(identifier)
         .buttonStyle(.plain)
+    }
+
+    private func buttonBackground(style: ActionButtonStyle) -> some ShapeStyle {
+        switch style {
+        case .primary:
+            return AnyShapeStyle(accentColor.opacity(0.22))
+        case .secondary:
+            return AnyShapeStyle(Color(.systemBackground).opacity(0.24))
+        }
+    }
+
+    private func buttonForeground(style: ActionButtonStyle) -> Color {
+        switch style {
+        case .primary:
+            return accentColor
+        case .secondary:
+            return .primary
+        }
+    }
+
+    private func buttonBorder(style: ActionButtonStyle) -> Color {
+        switch style {
+        case .primary:
+            return accentColor.opacity(0.35)
+        case .secondary:
+            return Color.white.opacity(0.08)
+        }
     }
 
     private func directionColor(_ direction: TrendDirection) -> Color {
@@ -663,13 +857,14 @@ struct TrendsView: View {
 }
 
 private struct TrendsCard<Content: View>: View {
-    var cornerRadius: CGFloat = 14
+    var cornerRadius: CGFloat = 16
     var useGradient: Bool = false
+    var contentPadding: CGFloat = 14
     @ViewBuilder let content: Content
 
     var body: some View {
         content
-            .padding(14)
+            .padding(contentPadding)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: cornerRadius)
@@ -677,16 +872,17 @@ private struct TrendsCard<Content: View>: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius)
-                    .stroke(Color.white.opacity(useGradient ? 0.14 : 0.08), lineWidth: 1)
+                    .stroke(Color.white.opacity(useGradient ? 0.16 : 0.08), lineWidth: 1)
             )
+            .shadow(color: Color.black.opacity(useGradient ? 0.22 : 0.12), radius: 12, x: 0, y: 8)
     }
 
     private var backgroundFill: LinearGradient {
         if useGradient {
             return LinearGradient(
                 colors: [
-                    Color(red: 0.09, green: 0.16, blue: 0.23),
-                    Color(red: 0.06, green: 0.10, blue: 0.16),
+                    Color(red: 0.10, green: 0.17, blue: 0.25),
+                    Color(red: 0.07, green: 0.12, blue: 0.19),
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -694,7 +890,10 @@ private struct TrendsCard<Content: View>: View {
         }
 
         return LinearGradient(
-            colors: [Color(.secondarySystemBackground), Color(.secondarySystemBackground)],
+            colors: [
+                Color(.secondarySystemBackground).opacity(0.95),
+                Color(.tertiarySystemBackground).opacity(0.94),
+            ],
             startPoint: .top,
             endPoint: .bottom
         )
@@ -708,8 +907,11 @@ private struct TrendBadge: View {
     var body: some View {
         Text(title)
             .font(.caption.weight(.semibold))
+            .lineLimit(1)
+            .minimumScaleFactor(0.82)
+            .allowsTightening(true)
             .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            .frame(height: 28)
             .background(color.opacity(0.15))
             .foregroundColor(color)
             .clipShape(Capsule())
@@ -750,9 +952,12 @@ private struct TrendMetric: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(value)
                 .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
             Text(label)
                 .font(.caption2)
                 .foregroundColor(.secondary)
+                .lineLimit(2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -764,28 +969,62 @@ private struct ScoreSparkline: View {
     var body: some View {
         GeometryReader { geometry in
             if points.count < 2 {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color(.systemGray5))
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.white.opacity(0.08))
             } else {
                 let values = points.map { $0.score }
                 let minValue = values.min() ?? 0
                 let maxValue = values.max() ?? 1
                 let range = max(maxValue - minValue, 1)
 
+                let chartPoints: [CGPoint] = points.indices.map { index in
+                    let x = (CGFloat(index) / CGFloat(points.count - 1)) * geometry.size.width
+                    let yRatio = (points[index].score - minValue) / range
+                    let y = geometry.size.height - (CGFloat(yRatio) * geometry.size.height)
+                    return CGPoint(x: x, y: y)
+                }
+
                 ZStack {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color(.systemGray6))
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color(.systemBackground).opacity(0.22))
+
+                    VStack(spacing: 0) {
+                        ForEach(0..<3, id: \.self) { _ in
+                            Rectangle()
+                                .fill(Color.white.opacity(0.05))
+                                .frame(height: 1)
+                            Spacer()
+                        }
+                    }
+                    .padding(.vertical, 10)
 
                     Path { path in
-                        for index in points.indices {
-                            let x = (CGFloat(index) / CGFloat(points.count - 1)) * geometry.size.width
-                            let yRatio = (points[index].score - minValue) / range
-                            let y = geometry.size.height - (CGFloat(yRatio) * geometry.size.height)
+                        guard let first = chartPoints.first, let last = chartPoints.last else { return }
+                        path.move(to: CGPoint(x: first.x, y: geometry.size.height))
+                        path.addLine(to: first)
+                        for point in chartPoints.dropFirst() {
+                            path.addLine(to: point)
+                        }
+                        path.addLine(to: CGPoint(x: last.x, y: geometry.size.height))
+                        path.closeSubpath()
+                    }
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.24, green: 0.86, blue: 1.0).opacity(0.24),
+                                Color(red: 0.24, green: 0.86, blue: 1.0).opacity(0.02),
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
 
+                    Path { path in
+                        for (index, point) in chartPoints.enumerated() {
                             if index == 0 {
-                                path.move(to: CGPoint(x: x, y: y))
+                                path.move(to: point)
                             } else {
-                                path.addLine(to: CGPoint(x: x, y: y))
+                                path.addLine(to: point)
                             }
                         }
                     }
@@ -794,11 +1033,7 @@ private struct ScoreSparkline: View {
                         style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round)
                     )
 
-                    ForEach(points.indices, id: \.self) { index in
-                        let x = (CGFloat(index) / CGFloat(points.count - 1)) * geometry.size.width
-                        let yRatio = (points[index].score - minValue) / range
-                        let y = geometry.size.height - (CGFloat(yRatio) * geometry.size.height)
-
+                    ForEach(chartPoints.indices, id: \.self) { index in
                         Circle()
                             .fill(Color(.systemBackground))
                             .frame(width: 8, height: 8)
@@ -806,7 +1041,7 @@ private struct ScoreSparkline: View {
                                 Circle()
                                     .stroke(Color(red: 0.24, green: 0.86, blue: 1.0), lineWidth: 2)
                             )
-                            .position(x: x, y: y)
+                            .position(chartPoints[index])
                     }
                 }
             }
