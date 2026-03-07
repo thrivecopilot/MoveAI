@@ -72,6 +72,22 @@ enum AID {
     enum Trends {
         static let root = "TrendsView"
         static let filterMovement = "Trends.Filter.Movement"
+        static let primaryFixCard = "Trends.PrimaryFixCard"
+        static let primaryFixActionFixIt = "Trends.PrimaryFix.Action.FixIt"
+        static let primaryFixActionWatchExamples = "Trends.PrimaryFix.Action.WatchExamples"
+        static let primaryFixActionTrackWorkout = "Trends.PrimaryFix.Action.TrackWorkout"
+        static let todayCue = "Trends.TodayCue"
+        static let qualitySummary = "Trends.QualitySummary"
+        static let qualityDimension = "Trends.Quality.Dimension"
+        static let fixCard = "Trends.FixCard"
+        static let quickRoutine = "Trends.QuickRoutine"
+        static let quickRoutineStart = "Trends.QuickRoutine.Start"
+        static let expertSection = "Trends.ExpertSection"
+        static let expertCard = "Trends.ExpertCard"
+        static let progressNarrative = "Trends.ProgressNarrative"
+        static let smallWins = "Trends.SmallWins"
+
+        // Legacy IDs retained for backward compatibility.
         static let focusCard = "Trends.FocusCard"
         static let progressCard = "Trends.ProgressCard"
         static let troubleAreaList = "Trends.TroubleAreaList"

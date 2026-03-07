@@ -14,13 +14,27 @@ struct MovementSelectionView: View {
     @State private var showingCamera = false
     @State private var showingVideoImport = false
     @State private var selectedMovement: MovementType?
-    @State private var captureMode: CaptureMode = .record
+    @State private var captureMode: CaptureMode
     @State private var pendingSession: Session?
     @State private var showingSessionDetail = false
+    @State private var didAutoPresentCapture = false
+
+    private let defaultMovement: MovementType?
+    private let autoPresentCapture: Bool
     
     enum CaptureMode {
         case record
         case upload
+    }
+
+    init(
+        defaultMovement: MovementType? = nil,
+        defaultCaptureMode: CaptureMode = .record,
+        autoPresentCapture: Bool = false
+    ) {
+        self.defaultMovement = defaultMovement
+        self.autoPresentCapture = autoPresentCapture
+        _captureMode = State(initialValue: defaultCaptureMode)
     }
     
     var body: some View {
@@ -113,6 +127,21 @@ struct MovementSelectionView: View {
                     showingSessionDetail = true
                 }
             }
+            .onAppear {
+                triggerAutoCaptureIfNeeded()
+            }
+        }
+    }
+
+    private func triggerAutoCaptureIfNeeded() {
+        guard autoPresentCapture, !didAutoPresentCapture, let movement = defaultMovement else { return }
+        didAutoPresentCapture = true
+        selectedMovement = movement
+
+        if captureMode == .record {
+            showingCamera = true
+        } else {
+            showingVideoImport = true
         }
     }
 }

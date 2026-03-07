@@ -15,6 +15,28 @@ enum TrendDirection: String {
             return "Worsening"
         }
     }
+
+    var coachingLabel: String {
+        switch self {
+        case .improving:
+            return "Improving"
+        case .stable:
+            return "Stable"
+        case .worsening:
+            return "Needs Attention"
+        }
+    }
+
+    var sfSymbolName: String {
+        switch self {
+        case .improving:
+            return "arrow.down.right"
+        case .stable:
+            return "arrow.right"
+        case .worsening:
+            return "arrow.up.right"
+        }
+    }
 }
 
 enum InsightConfidence: String {
@@ -34,14 +56,42 @@ struct TrendPoint: Identifiable {
     let burden: Double
 }
 
-struct FocusInsight {
+struct PrimaryFixModel {
+    let issueKind: MovementIssueKind
     let headline: String
     let evidenceLine: String
     let direction: TrendDirection
     let confidence: InsightConfidence
+    let severityMixText: String
+    let impactStatement: String
+    let quickFixCue: String
 }
 
-struct TroubleAreaRow: Identifiable {
+struct TodayCueModel {
+    let cue: String
+    let subtitle: String
+}
+
+struct MovementQualityDimensionScore: Identifiable {
+    let dimension: MovementQualityDimension
+    let score: Int
+    let delta: Int
+    let direction: TrendDirection
+
+    var id: String { dimension.rawValue }
+
+    var deltaText: String {
+        if delta > 0 {
+            return "+\(delta)"
+        }
+        if delta < 0 {
+            return "\(delta)"
+        }
+        return "0"
+    }
+}
+
+struct TroubleFixCardModel: Identifiable {
     let id: String
     let issueKind: MovementIssueKind
     let title: String
@@ -52,6 +102,11 @@ struct TroubleAreaRow: Identifiable {
     let sessionsDenominator: Int
     let direction: TrendDirection
     let confidence: InsightConfidence
+    let likelyCause: String
+    let recommendedDrills: [String]
+    let whenItUsuallyOccurs: String
+    let targetGoal: String
+    let impactStatement: String
 
     var frequencyText: String {
         "\(sessionsSeenCount)/\(sessionsDenominator) sessions"
@@ -62,20 +117,32 @@ struct TroubleAreaRow: Identifiable {
     }
 }
 
-enum TrendsRecommendationPriority: Int {
-    case low = 0
-    case medium = 1
-    case high = 2
+struct DrillPlaylistModel {
+    let title: String
+    let durationText: String
+    let drills: [String]
+    let frequencyRecommendation: String
 }
 
-struct RecommendationCardModel: Identifiable {
+struct ExpertResourceCardModel: Identifiable, Hashable {
     let id: String
+    let creator: String
     let title: String
-    let actionProtocol: String
-    let rationale: String
-    let expectedOutcome: String
-    let priority: TrendsRecommendationPriority
-    let burden: Double
+    let issueAssociation: String
+    let url: URL
+    let thumbnailToken: String
+}
+
+struct ProgressNarrativeModel {
+    let scoreChangeText: String
+    let burdenLabel: String
+    let contributors: [String]
+    let summary: String
+}
+
+struct SmallWinModel: Identifiable, Hashable {
+    let id: String
+    let text: String
 }
 
 struct TrendsSnapshot {
@@ -86,15 +153,20 @@ struct TrendsSnapshot {
     let hasEnoughData: Bool
     let lowDataHint: String?
 
-    let focus: FocusInsight?
+    let primaryFix: PrimaryFixModel?
+    let todayCue: TodayCueModel?
+    let qualitySummary: [MovementQualityDimensionScore]
+    let troubleAreas: [TroubleFixCardModel]
+    let quickRoutine: DrillPlaylistModel?
+    let expertDiscovery: [ExpertResourceCardModel]
+
     let scoreTrend: [TrendPoint]
     let averageScoreLastLookback: Double?
     let scoreChangeVsPreviousLookback: Double?
     let burdenTrend: TrendDirection
+    let progressNarrative: ProgressNarrativeModel
 
-    let troubleAreas: [TroubleAreaRow]
-    let recommendations: [RecommendationCardModel]
-    let improvements: [String]
+    let smallWins: [SmallWinModel]
 }
 
 enum TrendsInsightsEngine {
@@ -112,14 +184,6 @@ enum TrendsInsightsEngine {
         var previousWindowBurden: Double = 0
     }
 
-    private struct RecommendationRule {
-        let id: String
-        let title: String
-        let actionProtocol: String
-        let expectedOutcome: String
-        let triggerKinds: Set<MovementIssueKind>
-    }
-
     static func buildSnapshot(
         sessions: [Session],
         movement: MovementType = .squat,
@@ -134,11 +198,12 @@ enum TrendsInsightsEngine {
 
         let lookbackLabel = "Last \(lookback) sessions"
         let hasEnoughData = recent.count >= 3
-        let lowDataHint: String? = hasEnoughData ? nil : "Record at least 3 analyzed squat sessions to unlock more reliable trends and recommendations."
+        let lowDataHint: String? = hasEnoughData
+            ? nil
+            : "Record at least 3 analyzed squat sessions to unlock reliable coaching trends."
 
         var issueAccumulators: [MovementIssueKind: IssueAccumulator] = [:]
         var perSessionBurden: [Double] = Array(repeating: 0, count: recent.count)
-        var perSessionKinds: [Set<MovementIssueKind>] = Array(repeating: [], count: recent.count)
 
         for (sessionIndex, session) in recent.enumerated() {
             guard let feedback = session.analysisResult?.feedback else { continue }
@@ -150,7 +215,6 @@ enum TrendsInsightsEngine {
 
                 let severityWeight = severityWeight(for: item.severity)
                 perSessionBurden[sessionIndex] += severityWeight
-                perSessionKinds[sessionIndex].insert(kind)
 
                 var accumulator = issueAccumulators[kind] ?? IssueAccumulator(kind: kind)
                 accumulator.burden += severityWeight * recencyWeight
@@ -172,10 +236,13 @@ enum TrendsInsightsEngine {
             }
         }
 
-        let troubleAreas: [TroubleAreaRow] = issueAccumulators.values
+        let troubleAreas: [TroubleFixCardModel] = issueAccumulators.values
             .map { accumulator in
+                let entry = SquatCueLibrary.entry(for: accumulator.kind)
                 let seenCount = accumulator.sessionsSeen.count
-                return TroubleAreaRow(
+                let drills = topDrills(for: accumulator.kind, limit: 3)
+
+                return TroubleFixCardModel(
                     id: accumulator.kind.rawValue,
                     issueKind: accumulator.kind,
                     title: issueTitle(for: accumulator.kind),
@@ -184,8 +251,13 @@ enum TrendsInsightsEngine {
                     criticalCount: accumulator.criticalCount,
                     sessionsSeenCount: seenCount,
                     sessionsDenominator: max(lookback, 1),
-                    direction: classifyTrend(newestValue: accumulator.newestWindowBurden, previousValue: accumulator.previousWindowBurden),
-                    confidence: confidence(forSessionsSeen: seenCount)
+                    direction: classifyBurdenTrend(newestValue: accumulator.newestWindowBurden, previousValue: accumulator.previousWindowBurden),
+                    confidence: confidence(forSessionsSeen: seenCount),
+                    likelyCause: entry?.oneLineDescription ?? "Recurring form pattern detected across recent sessions.",
+                    recommendedDrills: drills,
+                    whenItUsuallyOccurs: phaseSummary(for: entry?.commonPhases ?? []),
+                    targetGoal: TrendsMappings.targetGoal(for: accumulator.kind),
+                    impactStatement: TrendsMappings.impactStatement(for: accumulator.kind)
                 )
             }
             .sorted { lhs, rhs in
@@ -194,14 +266,25 @@ enum TrendsInsightsEngine {
                 return lhs.issueKind.rawValue < rhs.issueKind.rawValue
             }
 
-        let focus: FocusInsight? = troubleAreas.first.map {
-            FocusInsight(
-                headline: $0.title,
-                evidenceLine: "Seen in \($0.sessionsSeenCount) of last \(lookback) sessions",
-                direction: $0.direction,
-                confidence: $0.confidence
-            )
-        }
+        let primaryFix = buildPrimaryFix(from: troubleAreas, lookback: lookback)
+        let todayCue = buildTodayCue(from: primaryFix)
+        let qualitySummary = buildQualitySummary(from: recent)
+        let quickRoutine = buildQuickRoutine(from: primaryFix)
+
+        let topIssueFallback = troubleAreas.prefix(2).map(\.issueKind)
+        let expertDiscovery = TrendsExpertCatalog
+            .filtered(for: primaryFix?.issueKind, fallbackIssues: topIssueFallback)
+            .prefix(4)
+            .map {
+                ExpertResourceCardModel(
+                    id: $0.id,
+                    creator: $0.creator,
+                    title: $0.title,
+                    issueAssociation: $0.issueAssociation,
+                    url: $0.url,
+                    thumbnailToken: $0.thumbnailToken
+                )
+            }
 
         let scoreTrend = recent.reversed().compactMap { session -> TrendPoint? in
             guard let score = session.analysisResult?.score else { return nil }
@@ -218,19 +301,15 @@ enum TrendsInsightsEngine {
 
         let burdenNewest = mean(Array(perSessionBurden.prefix(2))) ?? 0
         let burdenPrevious = mean(Array(perSessionBurden.dropFirst(2).prefix(2))) ?? 0
-        let burdenTrend = classifyTrend(newestValue: burdenNewest, previousValue: burdenPrevious)
+        let burdenTrend = classifyBurdenTrend(newestValue: burdenNewest, previousValue: burdenPrevious)
 
-        let recommendations = buildRecommendations(
-            lookback: lookback,
-            troubleAreas: troubleAreas,
-            perSessionKinds: perSessionKinds,
-            recentSessions: recent
+        let progressNarrative = buildProgressNarrative(
+            scoreChange: scoreChange,
+            burdenTrend: burdenTrend,
+            troubleAreas: troubleAreas
         )
 
-        let improvements = troubleAreas
-            .filter { $0.direction == .improving }
-            .prefix(2)
-            .map { "\($0.title) improved over recent sessions" }
+        let smallWins = buildSmallWins(troubleAreas: troubleAreas, qualitySummary: qualitySummary)
 
         return TrendsSnapshot(
             movement: movement,
@@ -239,110 +318,212 @@ enum TrendsInsightsEngine {
             analyzedSessionCount: analyzed.count,
             hasEnoughData: hasEnoughData,
             lowDataHint: lowDataHint,
-            focus: focus,
+            primaryFix: primaryFix,
+            todayCue: todayCue,
+            qualitySummary: qualitySummary,
+            troubleAreas: Array(troubleAreas.prefix(3)),
+            quickRoutine: quickRoutine,
+            expertDiscovery: Array(expertDiscovery),
             scoreTrend: scoreTrend,
             averageScoreLastLookback: averageScoreLast,
             scoreChangeVsPreviousLookback: scoreChange,
             burdenTrend: burdenTrend,
-            troubleAreas: Array(troubleAreas.prefix(3)),
-            recommendations: recommendations,
-            improvements: improvements
+            progressNarrative: progressNarrative,
+            smallWins: smallWins
         )
     }
 
-    private static func buildRecommendations(
-        lookback: Int,
-        troubleAreas: [TroubleAreaRow],
-        perSessionKinds: [Set<MovementIssueKind>],
-        recentSessions: [Session]
-    ) -> [RecommendationCardModel] {
-        let troubleAreaByKind = Dictionary(uniqueKeysWithValues: troubleAreas.map { ($0.issueKind, $0) })
+    private static func buildPrimaryFix(from troubleAreas: [TroubleFixCardModel], lookback: Int) -> PrimaryFixModel? {
+        guard let topIssue = troubleAreas.first else { return nil }
+        let cue = SquatCueLibrary.entry(for: topIssue.issueKind)?.quickFix ?? "Apply focused control on this pattern in the next session."
 
-        let rules: [RecommendationRule] = [
-            RecommendationRule(
-                id: "ankle_mobility",
-                title: "Improve ankle dorsiflexion for depth and balance",
-                actionProtocol: "Knee-to-wall dorsiflexion + bent-knee calf stretch, 3x/week before squat sessions",
-                expectedOutcome: "Better depth consistency and more stable foot pressure at the bottom.",
-                triggerKinds: [
-                    .squatHeelsLift,
-                    .squatKneesStayedBack,
-                    .squatDepthTooShallow,
-                    .squatIncompleteROM,
-                    .squatFootCollapse,
-                ]
-            ),
-            RecommendationRule(
-                id: "knee_tracking",
-                title: "Build hip stability to improve knee tracking",
-                actionProtocol: "Lateral band walks + split squat tempo work, 3x/week",
-                expectedOutcome: "More consistent knee tracking and less frontal-plane drift under fatigue.",
-                triggerKinds: [
-                    .squatKneeValgus,
-                    .squatHipShift,
-                    .squatFootCollapse,
-                ]
-            ),
-            RecommendationRule(
-                id: "bracing_torso",
-                title: "Improve bracing and torso control under load",
-                actionProtocol: "90/90 breathing + paused goblet squat, 2-3x/week",
-                expectedOutcome: "Better trunk control out of the hole and fewer forward collapses.",
-                triggerKinds: [
-                    .squatForwardLean,
-                    .squatBraceLeak,
-                    .squatButtWink,
-                ]
-            ),
-        ]
+        return PrimaryFixModel(
+            issueKind: topIssue.issueKind,
+            headline: topIssue.title,
+            evidenceLine: "Seen in \(topIssue.sessionsSeenCount) of last \(lookback) sessions",
+            direction: topIssue.direction,
+            confidence: topIssue.confidence,
+            severityMixText: topIssue.severityMixText,
+            impactStatement: topIssue.impactStatement,
+            quickFixCue: cue
+        )
+    }
 
-        let recentCount = max(lookback, 1)
-        var cards: [RecommendationCardModel] = []
+    private static func buildTodayCue(from primaryFix: PrimaryFixModel?) -> TodayCueModel? {
+        guard let primaryFix else { return nil }
+        return TodayCueModel(
+            cue: primaryFix.quickFixCue,
+            subtitle: "Use this cue on your first 3 working sets."
+        )
+    }
 
-        for rule in rules {
-            let rows = rule.triggerKinds.compactMap { troubleAreaByKind[$0] }
-            let burden = rows.reduce(0) { $0 + $1.burden }
-            let criticalCount = rows.reduce(0) { $0 + $1.criticalCount }
-            let warningCount = rows.reduce(0) { $0 + $1.warningCount }
+    private static func buildQuickRoutine(from primaryFix: PrimaryFixModel?) -> DrillPlaylistModel? {
+        guard let primaryFix else { return nil }
 
-            let sessionsWithPattern = perSessionKinds.filter { !$0.isDisjoint(with: rule.triggerKinds) }.count
-            let triggerReached = sessionsWithPattern >= 3 || burden >= 2.4
-            guard triggerReached else { continue }
+        let drills = topDrills(for: primaryFix.issueKind, limit: 3)
+        guard !drills.isEmpty else { return nil }
 
-            let newestBurden = sessionWindowBurden(for: rule.triggerKinds, sessions: recentSessions, range: 0..<2)
-            let previousBurden = sessionWindowBurden(for: rule.triggerKinds, sessions: recentSessions, range: 2..<4)
-            let direction = classifyTrend(newestValue: newestBurden, previousValue: previousBurden)
+        let durationMinutes = max(6, drills.count * 2)
+        return DrillPlaylistModel(
+            title: "Quick Fix Routine",
+            durationText: "\(durationMinutes) min",
+            drills: drills,
+            frequencyRecommendation: TrendsMappings.frequencyRecommendation(for: primaryFix.issueKind)
+        )
+    }
 
-            let priority: TrendsRecommendationPriority = {
-                if criticalCount >= 2 || direction == .worsening {
-                    return .high
+    private static func buildQualitySummary(from sessions: [Session]) -> [MovementQualityDimensionScore] {
+        MovementQualityDimension.allCases.map { dimension in
+            var weightedPenalty = 0.0
+            var newestPenalty = 0.0
+            var previousPenalty = 0.0
+
+            for (index, session) in sessions.enumerated() {
+                guard let feedback = session.analysisResult?.feedback else { continue }
+                let recencyWeight = recencyWeightForIndex(index)
+
+                for item in feedback {
+                    guard item.severity == .warning || item.severity == .critical else { continue }
+                    guard let kind = MovementIssueResolver.resolve(for: item) else { continue }
+                    guard TrendsMappings.dimensions(for: kind).contains(dimension) else { continue }
+
+                    let weight = severityWeight(for: item.severity)
+                    weightedPenalty += weight * recencyWeight
+
+                    if index < 2 {
+                        newestPenalty += weight
+                    } else if index < 4 {
+                        previousPenalty += weight
+                    }
                 }
-                return .medium
-            }()
+            }
 
-            let rationale = "\(sessionsWithPattern) of last \(recentCount) sessions show this pattern (\(criticalCount) critical, \(warningCount) warning events)."
+            let score = clampedScore(100 - (weightedPenalty * 8.0))
+            let newestScore = clampedScore(100 - (newestPenalty * 10.0))
+            let previousScore = clampedScore(100 - (previousPenalty * 10.0))
+            let delta = newestScore - previousScore
+            let direction = qualityDirection(forDelta: delta)
 
-            cards.append(
-                RecommendationCardModel(
-                    id: rule.id,
-                    title: rule.title,
-                    actionProtocol: rule.actionProtocol,
-                    rationale: rationale,
-                    expectedOutcome: rule.expectedOutcome,
-                    priority: priority,
-                    burden: burden
-                )
+            return MovementQualityDimensionScore(
+                dimension: dimension,
+                score: Int(score.rounded()),
+                delta: Int(delta.rounded()),
+                direction: direction
             )
         }
+    }
 
-        return cards
-            .sorted { lhs, rhs in
-                if lhs.priority.rawValue != rhs.priority.rawValue { return lhs.priority.rawValue > rhs.priority.rawValue }
-                if lhs.burden != rhs.burden { return lhs.burden > rhs.burden }
-                return lhs.title < rhs.title
+    private static func buildProgressNarrative(
+        scoreChange: Double?,
+        burdenTrend: TrendDirection,
+        troubleAreas: [TroubleFixCardModel]
+    ) -> ProgressNarrativeModel {
+        let contributors = Array(troubleAreas.prefix(2).map(\.title))
+
+        let scoreChangeText: String = {
+            guard let scoreChange else { return "N/A" }
+            return String(format: "%+.1f", scoreChange)
+        }()
+
+        let summary: String = {
+            if let scoreChange {
+                if scoreChange >= 2 {
+                    return "Movement score is trending up. Keep reinforcing your top cue and routine."
+                }
+                if scoreChange <= -2 {
+                    return "Score dipped versus the previous block. Focus on your primary fix before adding load."
+                }
             }
+
+            switch burdenTrend {
+            case .improving:
+                return "Warning and critical burden is improving even with stable score changes."
+            case .stable:
+                return "Form trend is stable. Consistency work will unlock clearer gains."
+            case .worsening:
+                return "Issue burden is rising. Address the top trouble area before progressing intensity."
+            }
+        }()
+
+        return ProgressNarrativeModel(
+            scoreChangeText: scoreChangeText,
+            burdenLabel: burdenTrend.coachingLabel,
+            contributors: contributors,
+            summary: summary
+        )
+    }
+
+    private static func buildSmallWins(
+        troubleAreas: [TroubleFixCardModel],
+        qualitySummary: [MovementQualityDimensionScore]
+    ) -> [SmallWinModel] {
+        var wins: [SmallWinModel] = troubleAreas
+            .filter { $0.direction == .improving }
             .prefix(2)
-            .map { $0 }
+            .map {
+                SmallWinModel(
+                    id: "improvement.\($0.issueKind.rawValue)",
+                    text: "\($0.title) improved over recent sessions"
+                )
+            }
+
+        if wins.isEmpty {
+            let stableDimensions = qualitySummary
+                .filter { $0.score >= 70 && $0.direction != .worsening }
+                .prefix(2)
+
+            wins.append(contentsOf: stableDimensions.map {
+                SmallWinModel(
+                    id: "dimension.\($0.dimension.rawValue)",
+                    text: "\($0.dimension.title) stayed consistent"
+                )
+            })
+        }
+
+        if wins.isEmpty {
+            wins = [
+                SmallWinModel(
+                    id: "fallback.consistency",
+                    text: "Consistency is improving. Keep collecting sessions for clearer trend signals."
+                )
+            ]
+        }
+
+        return Array(wins.prefix(2))
+    }
+
+    private static func topDrills(for kind: MovementIssueKind, limit: Int) -> [String] {
+        guard let entry = SquatCueLibrary.entry(for: kind) else { return [] }
+
+        let ordered = entry.correctives.mobility + entry.correctives.patterning + entry.correctives.strength
+        var unique: [String] = []
+
+        for drill in ordered {
+            let cleaned = drill.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !cleaned.isEmpty else { continue }
+            if unique.contains(cleaned) { continue }
+            unique.append(cleaned)
+            if unique.count == limit { break }
+        }
+
+        return unique
+    }
+
+    private static func phaseSummary(for phases: Set<SquatPhaseType>) -> String {
+        if phases.isEmpty {
+            return "Varies by rep and fatigue."
+        }
+
+        let preferredOrder: [SquatPhaseType] = [.setup, .descent, .bottom, .ascent]
+        let labels = preferredOrder
+            .filter { phases.contains($0) }
+            .map { $0.rawValue.capitalized }
+
+        if labels.isEmpty {
+            return "Varies by rep and fatigue."
+        }
+
+        return labels.joined(separator: " + ")
     }
 
     private static func recencyWeightForIndex(_ index: Int) -> Double {
@@ -369,7 +550,7 @@ enum TrendsInsightsEngine {
         return .low
     }
 
-    private static func classifyTrend(newestValue: Double, previousValue: Double) -> TrendDirection {
+    private static func classifyBurdenTrend(newestValue: Double, previousValue: Double) -> TrendDirection {
         if previousValue <= 0 {
             if newestValue > 0 { return .worsening }
             return .stable
@@ -381,23 +562,18 @@ enum TrendsInsightsEngine {
         return .stable
     }
 
-    private static func sessionWindowBurden(
-        for kinds: Set<MovementIssueKind>,
-        sessions: [Session],
-        range: Range<Int>
-    ) -> Double {
-        guard !sessions.isEmpty else { return 0 }
-
-        var total = 0.0
-        for index in range where index < sessions.count {
-            guard let feedback = sessions[index].analysisResult?.feedback else { continue }
-            for item in feedback {
-                guard item.severity == .warning || item.severity == .critical else { continue }
-                guard let kind = MovementIssueResolver.resolve(for: item), kinds.contains(kind) else { continue }
-                total += severityWeight(for: item.severity)
-            }
+    private static func qualityDirection(forDelta delta: Double) -> TrendDirection {
+        if delta >= 3 {
+            return .improving
         }
-        return total
+        if delta <= -3 {
+            return .worsening
+        }
+        return .stable
+    }
+
+    private static func clampedScore(_ rawValue: Double) -> Double {
+        min(max(rawValue, 40), 100)
     }
 
     private static func mean(_ values: [Double]) -> Double? {

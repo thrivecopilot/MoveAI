@@ -277,29 +277,34 @@ final class StructuralUITests: XCTestCase {
 
         assertExists(AID.Trends.root, timeout: 5, "Trends root must exist")
         assertExists(AID.Trends.filterMovement, "Movement filter must exist")
-        assertExists(AID.Trends.focusCard, "Focus card must exist")
-        assertExists(AID.Trends.progressCard, "Progress card must exist")
+        assertExists(AID.Trends.primaryFixCard, "Primary fix card must exist")
+        assertExists(AID.Trends.todayCue, "Today cue must exist")
+        assertExists(AID.Trends.qualitySummary, "Quality summary must exist")
         assertExists(AID.Trends.troubleAreaList, "Trouble area list must exist")
+        assertExists(AID.Trends.quickRoutine, "Quick routine card must exist")
+        assertExists(AID.Trends.expertSection, "Expert section must exist")
+        assertExists(AID.Trends.progressNarrative, "Progress narrative card must exist")
+        assertExists(AID.Trends.smallWins, "Small wins section must exist")
 
-        XCTAssertTrue(
-            app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "last 5 sessions")).firstMatch.waitForExistence(timeout: 3),
-            "Focus content should mention last 5 sessions"
+        let fixItById = element(AID.Trends.primaryFixActionFixIt)
+        let fixIt = fixItById.exists ? fixItById : (app.buttons["Fix It"].exists ? app.buttons["Fix It"] : app.staticTexts["Fix It"])
+        XCTAssertTrue(fixIt.waitForExistence(timeout: 3), "Fix It action must exist")
+
+        let watchExamplesById = element(AID.Trends.primaryFixActionWatchExamples)
+        let watchExamples = watchExamplesById.exists ? watchExamplesById : (app.buttons["Watch Examples"].exists ? app.buttons["Watch Examples"] : app.staticTexts["Watch Examples"])
+        XCTAssertTrue(watchExamples.waitForExistence(timeout: 3), "Watch Examples action must exist")
+
+        let trackWorkoutById = element(AID.Trends.primaryFixActionTrackWorkout)
+        let trackWorkout = trackWorkoutById.exists ? trackWorkoutById : (app.buttons["Track During Workout"].exists ? app.buttons["Track During Workout"] : app.staticTexts["Track During Workout"])
+        XCTAssertTrue(trackWorkout.waitForExistence(timeout: 3), "Track During Workout action must exist")
+
+        let expertCard = element("\(AID.Trends.expertCard).0")
+        XCTAssertTrue(expertCard.waitForExistence(timeout: 3), "At least one expert card should render")
+
+        XCTAssertFalse(
+            app.staticTexts["No clear improvements yet in recent sessions."].exists,
+            "Discouraging legacy copy should not appear"
         )
-
-        let firstRecommendation = element("\(AID.Trends.recommendationCard).0")
-        XCTAssertTrue(firstRecommendation.waitForExistence(timeout: 3), "First recommendation card must exist")
-
-        XCTAssertTrue(
-            app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "dorsiflexion")).firstMatch.waitForExistence(timeout: 3),
-            "Recommendation should include mobility wording"
-        )
-
-        XCTAssertTrue(
-            app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "/5 sessions")).firstMatch.waitForExistence(timeout: 3),
-            "Trouble area leaderboard should render at least one row"
-        )
-
-        assertExists(AID.Trends.whatImproved, "What improved section must exist")
     }
 
     // =========================================================================
