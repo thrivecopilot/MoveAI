@@ -27,11 +27,14 @@ struct MoveAIApp: App {
             #if DEBUG
             if let scenarioView = ScenarioRouter.rootView() {
                 scenarioView
+                    .tint(CoachTheme.Palette.accent)
             } else {
                 ContentView()
+                    .tint(CoachTheme.Palette.accent)
             }
             #else
             ContentView()
+                .tint(CoachTheme.Palette.accent)
             #endif
         }
     }

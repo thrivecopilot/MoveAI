@@ -11,176 +11,160 @@ import HealthKit
 struct HealthPermissionStepView: View {
     @ObservedObject var healthManager: HealthManager
     let onPermissionGranted: () -> Void
-    
+
     @AppStorage("userHeight") private var userHeight: Double = 0
     @AppStorage("userWeight") private var userWeight: Double = 0
     @AppStorage("userAge") private var userAge: Int = 0
-    
+
     @State private var isRequesting = false
     @State private var errorMessage: String?
     @State private var showPermissionDenied = false
     @State private var hasSyncedData = false
-    
+
     var body: some View {
-        VStack(spacing: 32) {
-            Spacer()
-            
-            VStack(spacing: 24) {
-                Image(systemName: "heart.fill")
-                    .font(.system(size: 60))
-                    .foregroundColor(.red)
-                
-                VStack(spacing: 16) {
-                    Text("Connect Apple Health")
-                        .font(.title2)
-                        .fontWeight(.semibold)
-                    
-                    Text("Sync your health data to automatically fill your profile")
-                        .font(.body)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-            }
-            
-            Spacer()
-            
-            VStack(spacing: 16) {
-                // Request permissions button
-                Button(action: {
-                    if hasSyncedData {
-                        onPermissionGranted()
-                    } else {
-                        requestHealthPermissions()
-                    }
-                }) {
-                    HStack {
-                        Image(systemName: "heart.fill")
-                        Text(hasSyncedData ? "Continue" : "Connect Apple Health")
-                    }
-                    .font(.headline)
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 50)
-                    .background(Color.red)
-                    .cornerRadius(8)
-                }
-                .buttonStyle(.plain)
-                .disabled(isRequesting)
-                
-                if isRequesting {
-                    HStack {
-                        ProgressView()
-                            .scaleEffect(0.8)
-                        Text("Waiting for your response...")
-                            .font(.caption)
+        VStack(spacing: 20) {
+            Spacer(minLength: 20)
+
+            CoachCard(elevated: true) {
+                VStack(spacing: 18) {
+                    Image(systemName: "heart.fill")
+                        .font(.system(size: 54, weight: .semibold))
+                        .foregroundColor(.red)
+
+                    VStack(spacing: 10) {
+                        Text("Connect Apple Health")
+                            .font(CoachTheme.Typography.cardTitle)
+
+                        Text("Sync your health data to automatically fill your profile")
+                            .font(CoachTheme.Typography.body)
                             .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
                     }
                 }
-                
-                // Show synced data summary
-                if hasSyncedData {
-                    VStack(spacing: 8) {
-                        Text("✓ Data synced successfully!")
-                            .font(.caption)
-                            .foregroundColor(.green)
-                        
-                        if userHeight > 0 || userWeight > 0 || userAge > 0 {
-                            VStack(spacing: 4) {
-                                if userHeight > 0 {
-                                    Text("Height: \(formatHeight(userHeight))")
-                                        .font(.caption2)
-                                        .foregroundColor(.secondary)
-                                }
-                                if userWeight > 0 {
-                                    Text("Weight: \(formatWeight(userWeight))")
-                                        .font(.caption2)
-                                        .foregroundColor(.secondary)
-                                }
-                                if userAge > 0 {
-                                    Text("Age: \(userAge) years")
-                                        .font(.caption2)
-                                        .foregroundColor(.secondary)
+                .frame(maxWidth: .infinity)
+            }
+
+            CoachCard {
+                VStack(spacing: 12) {
+                    Button(action: {
+                        if hasSyncedData {
+                            onPermissionGranted()
+                        } else {
+                            requestHealthPermissions()
+                        }
+                    }) {
+                        Label(hasSyncedData ? "Continue" : "Connect Apple Health", systemImage: "heart.fill")
+                    }
+                    .buttonStyle(CoachPrimaryButtonStyle())
+                    .disabled(isRequesting)
+
+                    if isRequesting {
+                        HStack {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                            Text("Waiting for your response...")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    if hasSyncedData {
+                        VStack(spacing: 8) {
+                            Text("✓ Data synced successfully!")
+                                .font(.caption)
+                                .foregroundColor(.green)
+
+                            if userHeight > 0 || userWeight > 0 || userAge > 0 {
+                                VStack(spacing: 4) {
+                                    if userHeight > 0 {
+                                        Text("Height: \(formatHeight(userHeight))")
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    if userWeight > 0 {
+                                        Text("Weight: \(formatWeight(userWeight))")
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    if userAge > 0 {
+                                        Text("Age: \(userAge) years")
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+                                    }
                                 }
                             }
                         }
+                        .padding()
+                        .background(Color.green.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                     }
-                    .padding()
-                    .background(Color.green.opacity(0.1))
-                    .cornerRadius(8)
-                }
-                
-                // Show permission denied message with retry option
-                if showPermissionDenied {
-                    VStack(spacing: 12) {
-                        Text("Health permissions were not granted")
-                            .font(.caption)
-                            .foregroundColor(.orange)
-                        
-                        Text("You can enable them later in Settings > Privacy & Security > Health, or try again now.")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                        
-                        Button("Try Again") {
-                            showPermissionDenied = false
-                            requestHealthPermissions()
+
+                    if showPermissionDenied {
+                        VStack(spacing: 10) {
+                            Text("Health permissions were not granted")
+                                .font(.caption)
+                                .foregroundColor(.orange)
+
+                            Text("You can enable them later in Settings > Privacy & Security > Health, or try again now.")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+
+                            Button("Try Again") {
+                                showPermissionDenied = false
+                                requestHealthPermissions()
+                            }
+                            .buttonStyle(CoachSecondaryButtonStyle())
                         }
-                        .buttonStyle(.bordered)
-                        .font(.caption)
+                        .padding()
+                        .background(Color.orange.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                     }
-                    .padding()
-                    .background(Color.orange.opacity(0.1))
-                    .cornerRadius(8)
-                }
-                
-                // Skip button for users who want to proceed without HealthKit
-                Button("Skip for now") {
-                    onPermissionGranted()
-                }
-                .buttonStyle(.bordered)
-                .disabled(isRequesting)
-                
-                // Error message
-                if let errorMessage = errorMessage {
-                    Text(errorMessage)
-                        .font(.caption)
-                        .foregroundColor(.red)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal)
+
+                    Button("Skip for now") {
+                        onPermissionGranted()
+                    }
+                    .buttonStyle(CoachSecondaryButtonStyle())
+                    .disabled(isRequesting)
+
+                    if let errorMessage = errorMessage {
+                        Text(errorMessage)
+                            .font(.caption)
+                            .foregroundColor(.red)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
+                    }
                 }
             }
-            .padding(.horizontal)
-            
-            Spacer()
-            
+
+            Spacer(minLength: 20)
         }
-        .padding()
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
         .onAppear {
-            // Check if permissions are already granted
             if healthManager.hasPermissions {
                 onPermissionGranted()
             }
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(AccessibilityID.Onboarding.health)
     }
-    
+
     private func requestHealthPermissions() {
         isRequesting = true
         errorMessage = nil
         showPermissionDenied = false
-        
+
         Task {
             do {
                 let granted = try await healthManager.requestPermissions()
-                
+
                 await MainActor.run {
                     isRequesting = false
-                    
+
                     if granted {
-                        // Try to sync health data
                         syncHealthData()
                     } else {
-                        // If permissions were denied, show retry option
-                        // This could be due to timing issues or actual denial
                         showPermissionDenied = true
                     }
                 }
@@ -192,15 +176,13 @@ struct HealthPermissionStepView: View {
             }
         }
     }
-    
+
     private func syncHealthData() {
         Task {
-            // Use HealthService to sync with HealthKit
             let healthService = HealthService()
             do {
                 let profile = try await healthService.fetchProfile()
                 await MainActor.run {
-                    // Update AppStorage with synced data
                     if profile.heightFeet > 0 {
                         userHeight = Double(profile.heightFeet * 12 + profile.heightInches)
                     }
@@ -210,25 +192,24 @@ struct HealthPermissionStepView: View {
                     if profile.age > 0 {
                         userAge = profile.age
                     }
-                    
+
                     hasSyncedData = true
                 }
             } catch {
                 await MainActor.run {
-                    // Even if no data was synced, we still have permissions
                     hasSyncedData = true
                 }
             }
         }
     }
-    
+
     private func formatHeight(_ heightInCm: Double) -> String {
         let totalInches = heightInCm / 2.54
         let feet = Int(totalInches / 12)
         let inches = Int(totalInches.truncatingRemainder(dividingBy: 12))
         return "\(feet)'\(inches)\""
     }
-    
+
     private func formatWeight(_ weightInKg: Double) -> String {
         let pounds = weightInKg * 2.20462
         return "\(Int(pounds)) lbs"

@@ -10,28 +10,27 @@ import SwiftUI
 struct GroupedIssuesTabView: View {
     let analysisResult: AnalysisResult
     var onSeekToTime: ((TimeInterval) -> Void)?
-    
+
     private var grouped: [GroupedIssue] {
         GroupedIssue.from(analysisResult.feedback)
     }
-    
+
     var body: some View {
         ScrollView {
-            LazyVStack(spacing: 0) {
+            LazyVStack(spacing: 10) {
                 ForEach(grouped) { group in
                     GroupedIssueCard(
                         group: group,
                         onSeekToTime: onSeekToTime
                     )
-                    if group.id != grouped.last?.id {
-                        Divider()
-                            .padding(.vertical, 8)
-                    }
+                    .accessibilityIdentifier("\(AccessibilityID.Issues.issueCard).\(group.id.uuidString)")
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 16)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
         }
+        .accessibilityIdentifier(AccessibilityID.Issues.root)
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -47,7 +46,7 @@ struct GroupedIssue: Identifiable {
     let worstMetric: String?
     let timestamps: [TimeInterval]
     let feedback: [FormFeedback]
-    
+
     static func from(_ feedback: [FormFeedback]) -> [GroupedIssue] {
         let byKey = Dictionary(grouping: feedback) { item -> String in
             "\(item.category.rawValue):\(item.message)"
@@ -87,9 +86,11 @@ private func severityOrder(_ s: FeedbackSeverity) -> Int {
 }
 
 struct GroupedIssueCard: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     let group: GroupedIssue
     var onSeekToTime: ((TimeInterval) -> Void)?
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 10) {
@@ -102,18 +103,19 @@ struct GroupedIssueCard: View {
                     .foregroundColor(.primary)
                 Spacer(minLength: 0)
             }
+
             HStack(spacing: 8) {
-                Text("\(group.count) moment\(group.count == 1 ? "" : "s")")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                CoachChip(
+                    title: "\(group.count) moment\(group.count == 1 ? "" : "s")",
+                    tint: group.isIssue ? .orange : .green
+                )
                 if let metric = group.worstMetric {
-                    Text("·")
-                        .foregroundColor(.secondary)
                     Text(metric)
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
             }
+
             FlowLayout(spacing: 6) {
                 ForEach(Array(group.timestamps.enumerated()), id: \.offset) { _, t in
                     Button {
@@ -123,7 +125,7 @@ struct GroupedIssueCard: View {
                             .font(.caption)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
-                            .background(Color(.systemGray5))
+                            .background(CoachTheme.Palette.secondarySurface(for: colorScheme))
                             .foregroundColor(.primary)
                             .cornerRadius(6)
                     }
@@ -131,14 +133,22 @@ struct GroupedIssueCard: View {
                 }
             }
         }
-        .padding(.vertical, 14)
-        .padding(.horizontal, 4)
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(CoachTheme.Palette.surfaceFill(for: colorScheme))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(CoachTheme.Palette.stroke(for: colorScheme), lineWidth: 1)
+        )
         .contentShape(Rectangle())
         .onTapGesture {
             onSeekToTime?(group.worstTimestamp)
         }
     }
-    
+
     private func timeString(_ t: TimeInterval) -> String {
         let m = Int(t) / 60
         let s = Int(t) % 60
@@ -149,19 +159,19 @@ struct GroupedIssueCard: View {
 /// Simple flow layout for timestamp chips.
 struct FlowLayout: Layout {
     var spacing: CGFloat = 8
-    
+
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let result = arrange(subviews: subviews, in: proposal.width ?? .infinity)
         return result.size
     }
-    
+
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         let result = arrange(subviews: subviews, in: bounds.width)
         for (idx, pos) in result.positions.enumerated() where idx < subviews.count {
             subviews[idx].place(at: CGPoint(x: bounds.minX + pos.x, y: bounds.minY + pos.y), proposal: .unspecified)
         }
     }
-    
+
     private func arrange(subviews: Subviews, in width: CGFloat) -> (size: CGSize, positions: [CGPoint]) {
         var positions: [CGPoint] = []
         var x: CGFloat = 0

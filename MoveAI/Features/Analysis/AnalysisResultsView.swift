@@ -22,6 +22,7 @@ struct AnalysisResultsView: View {
     @State private var showScoreInfo = false
     
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
     
     init(recording: MovementRecording, sessionId: UUID? = nil, sessionManager: SessionManager, existingAnalysisResult: AnalysisResult? = nil, isEmbeddedInSessionDetail: Bool = false, onSeekToTime: ((TimeInterval) -> Void)? = nil) {
         self.recording = recording
@@ -48,6 +49,7 @@ struct AnalysisResultsView: View {
                 resultsView(result)
             }
         }
+        .coachScreenContainer()
         .onAppear {
             // If we have existing analysis, use it directly
             if let existing = existingAnalysisResult {
@@ -114,13 +116,13 @@ struct AnalysisResultsView: View {
                     Button("Try Again") {
                         performAnalysis()
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(CoachPrimaryButtonStyle())
                     .controlSize(.large)
                     
                     Button("Back to Recording") {
                         dismiss()
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(CoachSecondaryButtonStyle())
                 }
             }
             .padding()
@@ -144,8 +146,8 @@ struct AnalysisResultsView: View {
             }
         }
         .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(12)
+        .background(CoachTheme.Palette.secondarySurface(for: colorScheme))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
     
     private func userTipsSection(_ tips: [String]) -> some View {
@@ -171,8 +173,8 @@ struct AnalysisResultsView: View {
             .padding(.leading, 24)
         }
         .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(12)
+        .background(CoachTheme.Palette.secondarySurface(for: colorScheme))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
     
     private func recoverySuggestionCard(_ suggestion: String) -> some View {
@@ -490,8 +492,8 @@ struct AnalysisResultsView: View {
             }
         }
         .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(12)
+        .background(CoachTheme.Palette.secondarySurface(for: colorScheme))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
     
     private func scoreColor(_ score: Double) -> Color {
@@ -572,6 +574,7 @@ struct AnalysisResultsView: View {
 
 struct ScoreInfoSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
     
     var body: some View {
         NavigationView {
@@ -612,8 +615,8 @@ struct ScoreInfoSheet: View {
                         }
                     }
                     .padding()
-                    .background(Color(.systemGray6))
-                    .cornerRadius(12)
+                    .background(CoachTheme.Palette.secondarySurface(for: colorScheme))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     
                     // Factors Considered
                     VStack(alignment: .leading, spacing: 16) {
@@ -710,8 +713,8 @@ struct ScoreInfoSheet: View {
                         }
                     }
                     .padding()
-                    .background(Color(.systemGray6))
-                    .cornerRadius(12)
+                    .background(CoachTheme.Palette.secondarySurface(for: colorScheme))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     
                     // Example
                     VStack(alignment: .leading, spacing: 12) {
@@ -744,8 +747,8 @@ struct ScoreInfoSheet: View {
                         }
                     }
                     .padding()
-                    .background(Color(.systemGray6))
-                    .cornerRadius(12)
+                    .background(CoachTheme.Palette.secondarySurface(for: colorScheme))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
                 .padding()
             }
@@ -764,6 +767,7 @@ struct ScoreInfoSheet: View {
 
 struct FeedbackCard: View {
     let feedback: FormFeedback
+    @Environment(\.colorScheme) private var colorScheme
     var onSeekToTime: ((TimeInterval) -> Void)? = nil
     
     var body: some View {
@@ -813,8 +817,8 @@ struct FeedbackCard: View {
             }
         }
         .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(12)
+        .background(CoachTheme.Palette.secondarySurface(for: colorScheme))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
     
     private var severityColor: Color {

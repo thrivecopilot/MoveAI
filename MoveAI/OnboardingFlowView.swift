@@ -10,35 +10,33 @@ import SwiftUI
 struct OnboardingFlowView: View {
     @Binding var isSignedIn: Bool
     @Binding var hasHealthPermissions: Bool
-    
+
     @State private var currentStep = 0
     @State private var appleAuthManager = AppleAuthManager()
     @State private var healthManager = HealthManager()
-    // User profile data is now managed via @AppStorage in individual views
-    
-    // Define onboarding steps
+
     private let steps = ["Welcome", "Apple Sign In", "Health Permissions", "Personal Info"]
-    
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // Progress indicator
-                HStack {
+                HStack(spacing: 8) {
                     ForEach(0..<steps.count, id: \.self) { index in
-                        Rectangle()
-                            .fill(index <= currentStep ? Color.accentColor : Color.gray.opacity(0.3))
-                            .frame(height: 4)
-                            .animation(.easeInOut(duration: 0.3), value: currentStep)
+                        Capsule()
+                            .fill(index <= currentStep ? CoachTheme.Palette.accent : Color.gray.opacity(0.30))
+                            .frame(height: 6)
+                            .animation(CoachTheme.Motion.standard, value: currentStep)
                     }
                 }
-                .padding(.horizontal)
-                .padding(.top)
-                
-                // Step content with smooth transitions
+                .padding(.horizontal, 16)
+                .padding(.top, 14)
+                .accessibilityIdentifier(AccessibilityID.Onboarding.progress)
+
                 TabView(selection: $currentStep) {
                     WelcomeStepView()
                         .tag(0)
-                    
+                        .accessibilityIdentifier(AccessibilityID.Onboarding.welcome)
+
                     AppleSignInStepView(
                         appleAuthManager: appleAuthManager,
                         onSignInSuccess: {
@@ -47,7 +45,8 @@ struct OnboardingFlowView: View {
                         }
                     )
                     .tag(1)
-                    
+                    .accessibilityIdentifier(AccessibilityID.Onboarding.signIn)
+
                     HealthPermissionStepView(
                         healthManager: healthManager,
                         onPermissionGranted: {
@@ -56,24 +55,28 @@ struct OnboardingFlowView: View {
                         }
                     )
                     .tag(2)
-                    
+                    .accessibilityIdentifier(AccessibilityID.Onboarding.health)
+
                     PersonalInfoStepView(
                         onComplete: {
-                            // Onboarding complete - ContentView will handle navigation
-                            // No need to call moveToNextStep() as this is the final step
+                            // Final onboarding step intentionally keeps this closure-only behavior.
                         }
                     )
                     .tag(3)
+                    .accessibilityIdentifier(AccessibilityID.Onboarding.personalInfo)
                 }
                 .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
-                .animation(.easeInOut(duration: 0.5), value: currentStep)
+                .animation(CoachTheme.Motion.standard, value: currentStep)
             }
             .navigationBarHidden(true)
+            .coachScreenContainer()
+            .accessibilityIdentifier(AccessibilityID.Onboarding.root)
+            .accessibilityElement(children: .contain)
         }
     }
-    
+
     private func moveToNextStep() {
-        withAnimation(.easeInOut(duration: 0.5)) {
+        withAnimation(CoachTheme.Motion.standard) {
             currentStep += 1
         }
     }

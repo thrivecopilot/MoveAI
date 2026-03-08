@@ -21,7 +21,7 @@ struct MovementSelectionView: View {
 
     private let defaultMovement: MovementType?
     private let autoPresentCapture: Bool
-    
+
     enum CaptureMode {
         case record
         case upload
@@ -36,23 +36,24 @@ struct MovementSelectionView: View {
         self.autoPresentCapture = autoPresentCapture
         _captureMode = State(initialValue: defaultCaptureMode)
     }
-    
+
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                // Mode Selection
+            VStack(spacing: 10) {
                 Picker("Mode", selection: $captureMode) {
                     Text("Record").tag(CaptureMode.record)
                     Text("Upload").tag(CaptureMode.upload)
                 }
                 .pickerStyle(.segmented)
-                .padding()
-                
+                .padding(.horizontal, 16)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier(AccessibilityID.MovementSelection.modePicker)
+
                 ScrollView {
                     LazyVGrid(columns: [
                         GridItem(.flexible()),
-                        GridItem(.flexible())
-                    ], spacing: 20) {
+                        GridItem(.flexible()),
+                    ], spacing: 14) {
                         ForEach(MovementType.allCases) { movement in
                             MovementSelectionCard(
                                 movement: movement,
@@ -65,9 +66,12 @@ struct MovementSelectionView: View {
                                     }
                                 }
                             )
+                            .accessibilityIdentifier("\(AccessibilityID.MovementSelection.card).\(movement.rawValue)")
                         }
                     }
-                    .padding()
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .accessibilityIdentifier(AccessibilityID.MovementSelection.grid)
                 }
             }
             .navigationTitle(captureMode == .record ? "Record Movement" : "Upload Video")
@@ -90,10 +94,7 @@ struct MovementSelectionView: View {
                         movementType: movement,
                         cameraService: cameraService,
                         sessionManager: sessionManager,
-                        onRecordingComplete: { recording in
-                            // Session is created in CameraCaptureView
-                            print("Recording completed: \(recording.id)")
-                        },
+                        onRecordingComplete: { _ in },
                         onSessionCreated: { session in
                             pendingSession = session
                             showingCamera = false
@@ -106,10 +107,7 @@ struct MovementSelectionView: View {
                     VideoImportView(
                         movementType: movement,
                         sessionManager: sessionManager,
-                        onVideoProcessed: { recording in
-                            // Session is created in VideoImportView
-                            print("Video processed: \(recording.id)")
-                        },
+                        onVideoProcessed: { _ in },
                         onSessionCreated: { session in
                             pendingSession = session
                             showingVideoImport = false
@@ -130,6 +128,9 @@ struct MovementSelectionView: View {
             .onAppear {
                 triggerAutoCaptureIfNeeded()
             }
+            .coachNavigationChrome()
+            .coachScreenContainer()
+            .accessibilityIdentifier(AccessibilityID.MovementSelection.root)
         }
     }
 
@@ -147,33 +148,42 @@ struct MovementSelectionView: View {
 }
 
 struct MovementSelectionCard: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     let movement: MovementType
     let onTap: () -> Void
-    
+
     var body: some View {
         Button(action: onTap) {
-            VStack(spacing: 16) {
+            VStack(spacing: 12) {
                 Image(systemName: movement.icon)
-                    .font(.system(size: 40))
-                    .foregroundColor(.accentColor)
-                
-                VStack(spacing: 8) {
+                    .font(.system(size: 36, weight: .semibold))
+                    .foregroundColor(CoachTheme.Palette.accent)
+
+                VStack(spacing: 6) {
                     Text(movement.displayName)
-                        .font(.headline)
+                        .font(CoachTheme.Typography.subtitle)
                         .foregroundColor(.primary)
-                    
+
                     Text(movement.description)
-                        .font(.caption)
+                        .font(CoachTheme.Typography.meta)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
                         .lineLimit(3)
                 }
             }
             .frame(maxWidth: .infinity)
-            .frame(height: 160)
-            .padding()
-            .background(Color(.systemGray6))
-            .cornerRadius(16)
+            .frame(height: 168)
+            .padding(.horizontal, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(CoachTheme.Palette.surfaceFill(for: colorScheme))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(CoachTheme.Palette.stroke(for: colorScheme), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.18 : 0.06), radius: 10, x: 0, y: 6)
         }
         .buttonStyle(.plain)
     }

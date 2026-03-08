@@ -484,6 +484,69 @@ final class StructuralUITests: XCTestCase {
         runA11yAudit()
     }
 
+
+    // =========================================================================
+    // MARK: - Profile: Loaded
+    // =========================================================================
+
+    func testProfileLoaded_structure() throws {
+        app = launchScenario("Profile_loaded")
+
+        assertExists(AID.Profile.root, timeout: 5, "Profile root must exist")
+        assertExists(AID.Profile.header, "Profile header must exist")
+        assertExists(AID.Profile.healthCard, "Profile health card must exist")
+        assertExists(AID.Profile.quickStatsCard, "Profile quick stats card must exist")
+        assertExists(AID.Profile.settingsCard, "Profile settings card must exist")
+    }
+
+    // =========================================================================
+    // MARK: - Movement Selection: Default
+    // =========================================================================
+
+    func testMovementSelectionDefault_structure() throws {
+        app = launchScenario("MovementSelection_default")
+
+        assertExists(AID.MovementSelection.root, timeout: 5, "Movement selection root must exist")
+        let modePickerById = element(AID.MovementSelection.modePicker)
+        let hasModeLabels = (app.buttons["Record"].exists || app.staticTexts["Record"].exists)
+            && (app.buttons["Upload"].exists || app.staticTexts["Upload"].exists)
+        XCTAssertTrue(modePickerById.exists || hasModeLabels, "Movement mode picker must exist")
+
+        assertExists(AID.MovementSelection.grid, "Movement grid must exist")
+
+        assertExists("\(AID.MovementSelection.card).squat", "Squat movement card must exist")
+        assertExists("\(AID.MovementSelection.card).deadlift", "Deadlift movement card must exist")
+        assertExists("\(AID.MovementSelection.card).bench_press", "Bench Press movement card must exist")
+    }
+
+    // =========================================================================
+    // MARK: - Onboarding: Welcome
+    // =========================================================================
+
+    func testOnboardingWelcome_structure() throws {
+        app = launchScenario("Onboarding_welcome")
+
+        let welcomeById = element(AID.Onboarding.welcome)
+        let welcomeHeadline = app.staticTexts["Welcome to MoveAI"]
+        XCTAssertTrue(welcomeById.waitForExistence(timeout: 5) || welcomeHeadline.waitForExistence(timeout: 5), "Onboarding welcome step must exist")
+        XCTAssertTrue(welcomeHeadline.exists, "Welcome headline must be visible")
+    }
+
+    // =========================================================================
+    // MARK: - Onboarding: Health
+    // =========================================================================
+
+    func testOnboardingHealth_structure() throws {
+        app = launchScenario("Onboarding_health")
+
+        let healthById = element(AID.Onboarding.health)
+        let connectButton = app.buttons["Connect Apple Health"]
+        let skipButton = app.buttons["Skip for now"]
+        XCTAssertTrue(healthById.waitForExistence(timeout: 5) || connectButton.waitForExistence(timeout: 5), "Onboarding health step must exist")
+        XCTAssertTrue(connectButton.exists, "Connect Apple Health action must be visible")
+        XCTAssertTrue(skipButton.exists, "Skip action must be visible")
+    }
+
     // =========================================================================
     // MARK: - Structural Snapshots
     // =========================================================================

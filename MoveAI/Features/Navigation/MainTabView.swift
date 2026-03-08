@@ -34,27 +34,24 @@ struct MainTabView: View {
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            // Home Tab
             MovementMasteryHomeView()
                 .environmentObject(sessionManager)
                 .environmentObject(cameraService)
                 .environmentObject(tabBarVisibility)
                 .tag(MainTab.home)
 
-            // Profile Tab
             ProfileView()
                 .environmentObject(sessionManager)
                 .environmentObject(tabBarVisibility)
                 .tag(MainTab.profile)
 
-            // Trends Tab
             TrendsView()
                 .environmentObject(sessionManager)
                 .environmentObject(tabBarVisibility)
                 .tag(MainTab.trends)
         }
         .toolbar(.hidden, for: .tabBar)
-        .safeAreaInset(edge: .bottom) {
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             if !tabBarVisibility.isHidden {
                 CustomTabBar(selectedTab: $selectedTab)
             }
@@ -67,48 +64,63 @@ final class TabBarVisibility: ObservableObject {
 }
 
 private struct CustomTabBar: View {
+    @Environment(\.colorScheme) private var colorScheme
     @Binding var selectedTab: MainTab
 
-    private let barBackground = Color.black
     private let activeColor = Color.white
-    private let inactiveColor = Color.white.opacity(0.45)
-    private let indicatorColor = Color(red: 0.24, green: 0.86, blue: 1.0)
+    private let inactiveColor = Color.white.opacity(0.48)
 
     var body: some View {
-        HStack(spacing: 0) {
-            ForEach(MainTab.allCases, id: \.self) { tab in
-                Button(action: { selectedTab = tab }) {
-                    VStack(spacing: 6) {
-                        Circle()
-                            .fill(indicatorColor)
-                            .frame(width: 6, height: 6)
-                            .opacity(selectedTab == tab ? 1 : 0)
-                            .accessibilityHidden(true)
-
-                        Image(systemName: tab.iconName)
-                            .font(.system(size: 22, weight: .semibold))
-                            .foregroundColor(selectedTab == tab ? activeColor : inactiveColor)
-                            .frame(maxWidth: .infinity)
-                            // Override SF Symbol's default a11y label so UI tests and VoiceOver are stable.
-                            .accessibilityLabel(tab.accessibilityLabel)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 6)
-                    .padding(.bottom, 8)
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("\(AccessibilityID.MainTabBar.button).\(tab.rawValue)")
-                .accessibilityLabel(tab.accessibilityLabel)
-            }
-        }
-        .padding(.horizontal, 12)
-        .background(barBackground)
-        .overlay(
+        VStack(spacing: 0) {
             Rectangle()
-                .fill(Color.white.opacity(0.08))
-                .frame(height: 1),
-            alignment: .top
-        )
+                .fill(CoachTheme.Palette.stroke(for: colorScheme))
+                .frame(height: 1)
+
+            HStack(spacing: 0) {
+                ForEach(MainTab.allCases, id: \.self) { tab in
+                    Button(action: {
+                        withAnimation(CoachTheme.Motion.quick) {
+                            selectedTab = tab
+                        }
+                    }) {
+                        VStack(spacing: 6) {
+                            Circle()
+                                .fill(CoachTheme.Palette.accent)
+                                .frame(width: 7, height: 7)
+                                .opacity(selectedTab == tab ? 1 : 0)
+                                .accessibilityHidden(true)
+
+                            Image(systemName: tab.iconName)
+                                .font(.system(size: 22, weight: .semibold))
+                                .foregroundColor(selectedTab == tab ? activeColor : inactiveColor)
+                                .frame(maxWidth: .infinity)
+                                .accessibilityLabel(tab.accessibilityLabel)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 6)
+                        .padding(.bottom, 8)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("\(AccessibilityID.MainTabBar.button).\(tab.rawValue)")
+                    .accessibilityLabel(tab.accessibilityLabel)
+                }
+            }
+            .padding(.horizontal, 12)
+            .background(
+                CoachTheme.Palette.chromeBackground(for: colorScheme)
+                    .overlay(
+                        LinearGradient(
+                            colors: [
+                                Color.black.opacity(colorScheme == .dark ? 0.20 : 0.06),
+                                Color.clear,
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+            )
+        }
+        .background(CoachTheme.Palette.chromeBackground(for: colorScheme))
         .accessibilityIdentifier(AccessibilityID.MainTabBar.root)
         .accessibilityElement(children: .contain)
     }

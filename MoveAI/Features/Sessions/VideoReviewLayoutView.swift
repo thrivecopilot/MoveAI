@@ -39,6 +39,7 @@ struct VideoReviewLayoutView: View {
     @ObservedObject var sessionManager: SessionManager
     let onExit: (() -> Void)?
     @Environment(\.dismiss) var dismiss
+    @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var tabBarVisibility: TabBarVisibility
     
     @State private var selectedTab: AnalysisSheetTab = .overview
@@ -288,7 +289,7 @@ struct VideoReviewLayoutView: View {
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(.white)
                     .frame(width: 32, height: 32)
-                    .background(Color.black.opacity(0.45))
+                    .background(CoachTheme.Palette.secondarySurface(for: colorScheme))
                     .clipShape(Circle())
                     .frame(width: 44, height: 44)
             }
@@ -314,7 +315,11 @@ struct VideoReviewLayoutView: View {
         .padding(.bottom, 8)
         .background(
             LinearGradient(
-                colors: [Color.black.opacity(0.6), Color.black.opacity(0.0)],
+                colors: [
+                    Color.black.opacity(colorScheme == .dark ? 0.62 : 0.36),
+                    CoachTheme.Palette.accent.opacity(colorScheme == .dark ? 0.14 : 0.10),
+                    Color.black.opacity(0.0),
+                ],
                 startPoint: .top,
                 endPoint: .bottom
             )

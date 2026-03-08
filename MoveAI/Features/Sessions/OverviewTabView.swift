@@ -8,6 +8,8 @@
 import SwiftUI
 
 struct OverviewTabView: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     let analysisResult: AnalysisResult
     var isCompact: Bool = false
 
@@ -53,12 +55,12 @@ struct OverviewTabView: View {
 
     private var fullBody: some View {
         ScrollView {
-            VStack(spacing: 28) {
+            VStack(spacing: 20) {
                 scoreAndSummaryRow
                 topFixesSection
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 24)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 16)
         }
     }
 
@@ -67,18 +69,17 @@ struct OverviewTabView: View {
             scoreAndSummaryRow
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
     }
 
     private var scoreAndSummaryRow: some View {
         let stats = repStats
         return AnyView(
-            HStack(alignment: .center, spacing: 16) {
+            HStack(alignment: .center, spacing: 14) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Score")
-                        .font(.caption)
-                        .fontWeight(.semibold)
+                        .font(.caption.weight(.semibold))
                         .foregroundColor(.secondary)
                         .accessibilityIdentifier("WorkoutSummary.ScoreTitle")
                     Text("\(Int(analysisResult.score))")
@@ -88,12 +89,12 @@ struct OverviewTabView: View {
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
-                .background(Color.white.opacity(0.06))
+                .background(CoachTheme.Palette.secondarySurface(for: colorScheme))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 14)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(CoachTheme.Palette.stroke(for: colorScheme), lineWidth: 1)
                 )
-                .cornerRadius(14)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
                 if stats.total > 0 {
                     VStack(alignment: .leading, spacing: 6) {
@@ -110,7 +111,16 @@ struct OverviewTabView: View {
                     Spacer(minLength: 0)
                 }
             }
+            .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(CoachTheme.Palette.surfaceFill(for: colorScheme))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(CoachTheme.Palette.stroke(for: colorScheme), lineWidth: 1)
+            )
         )
     }
 
@@ -150,7 +160,16 @@ struct OverviewTabView: View {
                     }
                 }
             }
+            .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(CoachTheme.Palette.surfaceFill(for: colorScheme))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(CoachTheme.Palette.stroke(for: colorScheme), lineWidth: 1)
+            )
             .accessibilityIdentifier("WorkoutSummary.TopFixesSection")
         )
     }

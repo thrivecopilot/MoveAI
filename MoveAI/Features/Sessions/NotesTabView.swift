@@ -8,10 +8,12 @@
 import SwiftUI
 
 struct NotesTabView: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     @Binding var notes: String
     @Binding var isEditing: Bool
     let onSave: () -> Void
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -21,12 +23,15 @@ struct NotesTabView: View {
                 Spacer()
                 Button(isEditing ? "Save" : "Edit") {
                     if isEditing { onSave() }
-                    isEditing.toggle()
+                    withAnimation(CoachTheme.Motion.quick) {
+                        isEditing.toggle()
+                    }
                 }
-                .font(.subheadline)
-                .foregroundColor(.accentColor)
+                .font(.subheadline.weight(.semibold))
+                .foregroundColor(CoachTheme.Palette.accent)
                 .accessibilityIdentifier(AccessibilityID.Notes.editButton)
             }
+
             if isEditing {
                 TextField("Add notes about this session...", text: $notes, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
@@ -38,13 +43,22 @@ struct NotesTabView: View {
                     .foregroundColor(notes.isEmpty ? .secondary : .primary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
-                    .background(Color(.systemGray6))
-                    .cornerRadius(8)
+                    .background(CoachTheme.Palette.secondarySurface(for: colorScheme))
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                     .accessibilityIdentifier(AccessibilityID.Notes.notesText)
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 24)
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(CoachTheme.Palette.surfaceFill(for: colorScheme))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(CoachTheme.Palette.stroke(for: colorScheme), lineWidth: 1)
+        )
+        .padding(.horizontal, 16)
+        .padding(.vertical, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .accessibilityIdentifier(AccessibilityID.Notes.root)
         .accessibilityElement(children: .contain)

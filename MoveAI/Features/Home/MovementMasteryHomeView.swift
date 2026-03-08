@@ -14,44 +14,40 @@ struct MovementMasteryHomeView: View {
     @AppStorage("userHeight") private var userHeight: Double = 0
     @AppStorage("userWeight") private var userWeight: Double = 0
     @AppStorage("userAge") private var userAge: Int = 0
-    
+
     @State private var selectedMovement: MovementType?
     @State private var showingCamera = false
     @State private var showingVideoImport = false
     @StateObject private var sessionManager: SessionManager
     @StateObject private var cameraService = CameraService()
 
-    /// Default initializer — creates a fresh `SessionManager`.
     init() {
         _sessionManager = StateObject(wrappedValue: SessionManager())
     }
 
-    /// Injected initializer for deterministic testing scenarios.
     init(sessionManager: SessionManager) {
         _sessionManager = StateObject(wrappedValue: sessionManager)
     }
+
     @State private var showingSessionHistory = false
     @State private var cameraView: CameraCaptureView?
     @State private var showingActionSheet = false
     @State private var pendingSession: Session?
     @State private var showingSessionDetail = false
-    
+
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 24) {
-                    // Welcome Header
+                VStack(spacing: 20) {
                     welcomeHeader
-                    
-                    // Movement Categories
                     movementCategoriesSection
-                    
-                    // Recent Activity (if we have sessions)
+
                     if !sessionManager.sessions.isEmpty {
                         recentActivitySection
                     }
                 }
-                .padding()
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
             }
             .navigationTitle("MoveAI")
             .navigationBarTitleDisplayMode(.large)
@@ -67,6 +63,9 @@ struct MovementMasteryHomeView: View {
                     )
                 }
             }
+            .coachNavigationChrome()
+            .coachScreenContainer()
+            .accessibilityIdentifier(AccessibilityID.Home.root)
         }
         .sheet(isPresented: $showingCamera) {
             if let cameraView = cameraView {
@@ -78,10 +77,7 @@ struct MovementMasteryHomeView: View {
                 VideoImportView(
                     movementType: movement,
                     sessionManager: sessionManager,
-                    onVideoProcessed: { _ in
-                        // Session is now created in VideoImportView
-                        // This callback is kept for any additional processing if needed
-                    },
+                    onVideoProcessed: { _ in },
                     onSessionCreated: { session in
                         pendingSession = session
                         showingVideoImport = false
@@ -91,36 +87,30 @@ struct MovementMasteryHomeView: View {
         }
         .confirmationDialog("Choose Option", isPresented: $showingActionSheet, presenting: selectedMovement) { movement in
             Button("Record New Video") {
-                // Create camera view
                 cameraView = CameraCaptureView(
                     movementType: movement,
                     cameraService: cameraService,
                     sessionManager: sessionManager,
-                    onRecordingComplete: { _ in
-                        // Session is now created in CameraCaptureView
-                        // This callback is kept for any additional processing if needed
-                    },
+                    onRecordingComplete: { _ in },
                     onSessionCreated: { session in
                         pendingSession = session
                         showingCamera = false
                     }
                 )
-                
+
                 showingCamera = true
             }
-            
+
             Button("Upload Existing Video") {
                 showingVideoImport = true
             }
-            
+
             Button("Cancel", role: .cancel) {
                 selectedMovement = nil
             }
         }
         .onChange(of: showingCamera) { isShowing in
-            print("🏠 MovementMasteryHomeView: showingCamera changed to: \(isShowing)")
             if !isShowing {
-                print("🏠 MovementMasteryHomeView: Camera sheet dismissed, resetting selectedMovement")
                 selectedMovement = nil
                 cameraView = nil
                 if pendingSession != nil {
@@ -136,42 +126,36 @@ struct MovementMasteryHomeView: View {
                 }
             }
         }
-        .accessibilityIdentifier(AccessibilityID.Home.root)
     }
-    
+
     private var welcomeHeader: some View {
-        VStack(spacing: 16) {
-            HStack {
+        CoachCard(elevated: true) {
+            HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Master Your Movements")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                    
+                        .font(CoachTheme.Typography.cardTitle)
+
                     Text("Start a new session or review your recent workouts")
-                        .font(.subheadline)
+                        .font(CoachTheme.Typography.body)
                         .foregroundColor(.secondary)
                 }
-                
+
                 Spacer()
-                
+
                 Image(systemName: "dumbbell.fill")
-                    .font(.system(size: 40))
-                    .foregroundColor(.accentColor)
+                    .font(.system(size: 36, weight: .semibold))
+                    .foregroundColor(CoachTheme.Palette.accent)
             }
         }
-        .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(16)
         .accessibilityIdentifier(AccessibilityID.Home.welcomeHeader)
     }
 
     private var movementCategoriesSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 14) {
             Text("Start Session")
-                .font(.headline)
+                .font(CoachTheme.Typography.title)
                 .padding(.horizontal, 4)
-            
-            // Powerlifting Category
+
             MovementCategoryCard(
                 title: "Powerlifting",
                 description: "Master the fundamental compound movements",
@@ -198,14 +182,12 @@ struct MovementMasteryHomeView: View {
                     )
                 ],
                 onMovementSelected: { movementType in
-                    print("🏠 MovementMasteryHomeView: Movement selected: \(movementType.displayName)")
                     selectedMovement = movementType
                     showingActionSheet = true
                 }
             )
             .accessibilityIdentifier(AccessibilityID.Home.powerliftingCard)
 
-            // Coming Soon Categories
             VStack(spacing: 12) {
                 ComingSoonCategoryCard(
                     title: "Olympic Lifting",
@@ -213,7 +195,7 @@ struct MovementMasteryHomeView: View {
                     icon: "figure.strengthtraining.traditional",
                     color: .orange
                 )
-                
+
                 ComingSoonCategoryCard(
                     title: "Bodyweight",
                     description: "Push-ups, Pull-ups, Dips",
@@ -225,24 +207,23 @@ struct MovementMasteryHomeView: View {
         .accessibilityIdentifier(AccessibilityID.Home.startSessionSection)
     }
 
-
     private var recentActivitySection: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Text("Recent Sessions")
-                    .font(.headline)
+                    .font(CoachTheme.Typography.title)
                     .padding(.horizontal, 4)
-                
+
                 Spacer()
-                
+
                 NavigationLink(destination: SessionHistoryView(sessionManager: sessionManager)) {
                     Text("View All")
-                        .font(.subheadline)
-                        .foregroundColor(.accentColor)
+                        .font(CoachTheme.Typography.subtitle)
+                        .foregroundColor(CoachTheme.Palette.accent)
                 }
                 .accessibilityIdentifier(AccessibilityID.Home.viewAllButton)
             }
-            
+
             if sessionManager.sessions.isEmpty {
                 EmptyStateCard(
                     icon: "video.fill",
@@ -250,19 +231,18 @@ struct MovementMasteryHomeView: View {
                     description: "Start by recording your first movement to see your progress here"
                 )
             } else {
-                VStack(spacing: 8) {
+                VStack(spacing: 10) {
                     ForEach(sessionManager.recentSessions(limit: 3)) { session in
                         NavigationLink(destination: SessionDetailView(session: session, sessionManager: sessionManager, onExit: nil)) {
                             RecentSessionCard(session: session)
                         }
-                        .buttonStyle(PlainButtonStyle())
+                        .buttonStyle(.plain)
                     }
                 }
             }
         }
         .accessibilityIdentifier(AccessibilityID.Home.recentSessions)
     }
-
 }
 
 struct MovementCategoryCard: View {
@@ -272,44 +252,40 @@ struct MovementCategoryCard: View {
     let color: Color
     let movements: [MovementOption]
     let onMovementSelected: (MovementType) -> Void
-    
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // Category Header
-            HStack {
-                Image(systemName: icon)
-                    .font(.title2)
-                    .foregroundColor(color)
-                    .frame(width: 30)
-                
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title)
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                    
-                    Text(description)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+        CoachCard {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Image(systemName: icon)
+                        .font(.title2)
+                        .foregroundColor(color)
+                        .frame(width: 30)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(title)
+                            .font(CoachTheme.Typography.subtitle)
+
+                        Text(description)
+                            .font(CoachTheme.Typography.meta)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
                 }
-                
-                Spacer()
-            }
-            
-            // Movement Options
-            VStack(spacing: 8) {
-                ForEach(movements, id: \.type) { movement in
-                    MovementOptionRow(
-                        movement: movement,
-                        onTap: {
-                            onMovementSelected(movement.type)
-                        }
-                    )
+
+                VStack(spacing: 8) {
+                    ForEach(movements, id: \.type) { movement in
+                        MovementOptionRow(
+                            movement: movement,
+                            onTap: {
+                                onMovementSelected(movement.type)
+                            }
+                        )
+                    }
                 }
             }
         }
-        .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(16)
     }
 }
 
@@ -320,49 +296,41 @@ struct MovementOption {
     let difficulty: DifficultyLevel
 }
 
-
 struct MovementOptionRow: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     let movement: MovementOption
     let onTap: () -> Void
-    
+
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 12) {
                 Image(systemName: movement.type.icon)
                     .font(.title3)
-                    .foregroundColor(.accentColor)
+                    .foregroundColor(CoachTheme.Palette.accent)
                     .frame(width: 24)
-                
+
                 VStack(alignment: .leading, spacing: 2) {
                     Text(movement.title)
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                    
+                        .font(CoachTheme.Typography.subtitle)
+
                     Text(movement.description)
-                        .font(.caption)
+                        .font(CoachTheme.Typography.meta)
                         .foregroundColor(.secondary)
                 }
-                
+
                 Spacer()
-                
-                // Difficulty Badge
-                Text(movement.difficulty.rawValue)
-                    .font(.caption2)
-                    .fontWeight(.medium)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color(movement.difficulty.color).opacity(0.2))
-                    .foregroundColor(Color(movement.difficulty.color))
-                    .cornerRadius(6)
-                
+
+                CoachChip(title: movement.difficulty.rawValue, tint: Color(movement.difficulty.color))
+
                 Image(systemName: "chevron.right")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
             .padding(.vertical, 8)
             .padding(.horizontal, 12)
-            .background(Color(.systemBackground))
-            .cornerRadius(12)
+            .background(CoachTheme.Palette.secondarySurface(for: colorScheme))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("\(AccessibilityID.Home.movementOption).\(movement.type.rawValue)")
@@ -370,44 +338,43 @@ struct MovementOptionRow: View {
 }
 
 struct ComingSoonCategoryCard: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     let title: String
     let description: String
     let icon: String
     let color: Color
-    
+
     var body: some View {
-        HStack {
-            Image(systemName: icon)
-                .font(.title2)
-                .foregroundColor(color.opacity(0.6))
-                .frame(width: 30)
-            
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.secondary)
-                
-                Text(description)
-                    .font(.caption)
+        CoachCard {
+            HStack {
+                Image(systemName: icon)
+                    .font(.title2)
+                    .foregroundColor(color.opacity(0.7))
+                    .frame(width: 30)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(CoachTheme.Typography.subtitle)
+                        .foregroundColor(.secondary)
+
+                    Text(description)
+                        .font(CoachTheme.Typography.meta)
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                Text("Coming Soon")
+                    .font(CoachTheme.Typography.caption)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(CoachTheme.Palette.secondarySurface(for: colorScheme))
+                    .clipShape(Capsule())
                     .foregroundColor(.secondary)
             }
-            
-            Spacer()
-            
-            Text("Coming Soon")
-                .font(.caption2)
-                .fontWeight(.medium)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Color.gray.opacity(0.2))
-                .foregroundColor(.secondary)
-                .cornerRadius(6)
         }
-        .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(16)
-        .opacity(0.7)
+        .opacity(0.85)
     }
 }
 
@@ -416,25 +383,22 @@ struct StatCard: View {
     let title: String
     let value: String
     let color: Color
-    
+
     var body: some View {
-        VStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.title3)
-                .foregroundColor(color)
-            
-            Text(title)
-                .font(.caption)
-                .foregroundColor(.secondary)
-            
-            Text(value)
-                .font(.subheadline)
-                .fontWeight(.semibold)
+        CoachCard {
+            VStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.title3)
+                    .foregroundColor(color)
+
+                Text(title)
+                    .font(CoachTheme.Typography.meta)
+                    .foregroundColor(.secondary)
+
+                Text(value)
+                    .font(CoachTheme.Typography.subtitle)
+            }
         }
-        .frame(maxWidth: .infinity)
-        .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(12)
     }
 }
 
@@ -442,60 +406,53 @@ struct EmptyStateCard: View {
     let icon: String
     let title: String
     let description: String
-    
+
     var body: some View {
-        VStack(spacing: 12) {
-            Image(systemName: icon)
-                .font(.system(size: 40))
-                .foregroundColor(.secondary)
-            
-            Text(title)
-                .font(.headline)
-                .foregroundColor(.secondary)
-            
-            Text(description)
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
+        CoachCard {
+            VStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 40))
+                    .foregroundColor(.secondary)
+
+                Text(title)
+                    .font(CoachTheme.Typography.subtitle)
+                    .foregroundColor(.secondary)
+
+                Text(description)
+                    .font(CoachTheme.Typography.meta)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity)
         }
-        .frame(maxWidth: .infinity)
-        .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(16)
     }
 }
 
 struct RecentSessionCard: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     let session: Session
-    
+
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: session.movementType.icon)
                 .font(.title3)
-                .foregroundColor(.accentColor)
+                .foregroundColor(CoachTheme.Palette.accent)
                 .frame(width: 24)
-            
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(session.displayName)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                
+                    .font(CoachTheme.Typography.subtitle)
+
                 Text(session.formattedDate)
-                    .font(.caption)
+                    .font(CoachTheme.Typography.meta)
                     .foregroundColor(.secondary)
             }
-            
+
             Spacer()
-            
+
             if let score = session.score {
-                Text("\(Int(score))")
-                    .font(.headline)
-                    .fontWeight(.bold)
-                    .foregroundColor(scoreColor(Int(score)))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color(.systemGray6))
-                    .cornerRadius(6)
+                CoachChip(title: "\(Int(score))", tint: scoreColor(Int(score)))
             } else {
                 Image(systemName: "clock")
                     .font(.caption)
@@ -504,10 +461,10 @@ struct RecentSessionCard: View {
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 12)
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
+        .background(CoachTheme.Palette.secondarySurface(for: colorScheme))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
-    
+
     private func scoreColor(_ score: Int) -> Color {
         if score >= 80 {
             return .green

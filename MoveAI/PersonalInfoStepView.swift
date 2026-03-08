@@ -20,140 +20,126 @@ struct PersonalInfoStepView: View {
     @State private var age: Int = 25
 
     var body: some View {
-        VStack(spacing: 32) {
-            Spacer()
+        ScrollView {
+            VStack(spacing: 18) {
+                CoachCard(elevated: true) {
+                    VStack(spacing: 14) {
+                        Image(systemName: "person.crop.circle.fill")
+                            .font(.system(size: 56, weight: .semibold))
+                            .foregroundColor(CoachTheme.Palette.accent)
+                            .accessibilityIdentifier("DataInput.Icon")
 
-            VStack(spacing: 24) {
-                Image(systemName: "person.crop.circle.fill")
-                    .font(.system(size: 60))
-                    .foregroundColor(.blue)
-                    .accessibilityIdentifier("DataInput.Icon")
+                        Text("Review Your Information")
+                            .font(CoachTheme.Typography.cardTitle)
+                            .accessibilityIdentifier("DataInput.Title")
 
-                VStack(spacing: 16) {
-                    Text("Review Your Information")
-                        .font(.title2)
-                        .fontWeight(.semibold)
-                        .accessibilityIdentifier("DataInput.Title")
-
-                    Text(hasExistingData ? "Your information was synced from Apple Health. You can edit it below if needed." : "This helps us personalize your movement analysis")
-                        .font(.body)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                        .accessibilityIdentifier("DataInput.Subtitle")
-                }
-            }
-
-            Spacer()
-
-            VStack(spacing: 20) {
-                // Height Input
-                VStack(alignment: .leading) {
-                    Text("Height")
-                        .font(.headline)
-                        .accessibilityIdentifier("DataInput.HeightTitle")
-                    HStack {
-                        Picker("Feet", selection: $heightFeet) {
-                            ForEach(0..<9) { feet in
-                                Text("\(feet) ft").tag(feet)
-                            }
-                        }
-                        .pickerStyle(.wheel)
-                        .frame(width: 100, height: 120)
-                        .clipped()
-                        .accessibilityIdentifier("DataInput.HeightFeetPicker")
-
-                        Picker("Inches", selection: $heightInches) {
-                            ForEach(0..<12) { inches in
-                                Text("\(inches) in").tag(inches)
-                            }
-                        }
-                        .pickerStyle(.wheel)
-                        .frame(width: 100, height: 120)
-                        .clipped()
-                        .accessibilityIdentifier("DataInput.HeightInchesPicker")
+                        Text(hasExistingData ? "Your information was synced from Apple Health. You can edit it below if needed." : "This helps us personalize your movement analysis")
+                            .font(CoachTheme.Typography.body)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .accessibilityIdentifier("DataInput.Subtitle")
                     }
-                    .padding(.horizontal)
-                    .onChange(of: heightFeet) { _, _ in updateProfile() }
-                    .onChange(of: heightInches) { _, _ in updateProfile() }
-                    Text("(\(String(format: "%.0f", (Double(heightFeet * 12 + heightInches) * 2.54))) cm)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .accessibilityIdentifier("DataInput.HeightValue")
-                }
-
-                // Weight Input
-                VStack(alignment: .leading) {
-                    Text("Weight")
-                        .font(.headline)
-                        .accessibilityIdentifier("DataInput.WeightTitle")
-                    Slider(
-                        value: $weightPounds,
-                        in: 50...500,
-                        step: 1
-                    ) {
-                        Text("Weight")
-                    } minimumValueLabel: {
-                        Text("50 lbs")
-                    } maximumValueLabel: {
-                        Text("500 lbs")
-                    }
-                    .accessibilityIdentifier("DataInput.WeightSlider")
-                    Text("\(Int(weightPounds)) lbs (\(String(format: "%.0f", weightPounds * 0.453592)) kg)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .accessibilityIdentifier("DataInput.WeightValue")
-                        .onChange(of: weightPounds) { _, _ in updateProfile() }
-                }
-
-                // Age Input
-                VStack(alignment: .leading) {
-                    Text("Age")
-                        .font(.headline)
-                        .accessibilityIdentifier("DataInput.AgeTitle")
-                    Slider(
-                        value: Binding(get: { Double(age) }, set: { age = Int($0) }),
-                        in: 10...100,
-                        step: 1
-                    ) {
-                        Text("Age")
-                    } minimumValueLabel: {
-                        Text("10")
-                    } maximumValueLabel: {
-                        Text("100")
-                    }
-                    .accessibilityIdentifier("DataInput.AgeSlider")
-                    Text("\(age) years")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .accessibilityIdentifier("DataInput.AgeValue")
-                        .onChange(of: age) { _, _ in updateProfile() }
-                }
-            }
-            .padding(.horizontal)
-
-            Spacer()
-
-            // Continue button
-            Button(action: onComplete) {
-                Text("Continue")
-                    .font(.headline)
-                    .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 50)
-                    .background(canContinue ? Color.accentColor : Color.gray)
-                    .cornerRadius(8)
-            }
-            .disabled(!canContinue)
-            .accessibilityIdentifier("DataInput.ContinueButton")
-            .padding(.horizontal)
+                }
 
-            Spacer()
+                CoachCard {
+                    VStack(spacing: 18) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Height")
+                                .font(.headline)
+                                .accessibilityIdentifier("DataInput.HeightTitle")
+                            HStack {
+                                Picker("Feet", selection: $heightFeet) {
+                                    ForEach(0..<9) { feet in
+                                        Text("\(feet) ft").tag(feet)
+                                    }
+                                }
+                                .pickerStyle(.wheel)
+                                .frame(width: 100, height: 120)
+                                .clipped()
+                                .accessibilityIdentifier("DataInput.HeightFeetPicker")
+
+                                Picker("Inches", selection: $heightInches) {
+                                    ForEach(0..<12) { inches in
+                                        Text("\(inches) in").tag(inches)
+                                    }
+                                }
+                                .pickerStyle(.wheel)
+                                .frame(width: 100, height: 120)
+                                .clipped()
+                                .accessibilityIdentifier("DataInput.HeightInchesPicker")
+                            }
+                            .padding(.horizontal)
+                            .onChange(of: heightFeet) { _, _ in updateProfile() }
+                            .onChange(of: heightInches) { _, _ in updateProfile() }
+                            Text("(\(String(format: "%.0f", (Double(heightFeet * 12 + heightInches) * 2.54))) cm)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .accessibilityIdentifier("DataInput.HeightValue")
+                        }
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Weight")
+                                .font(.headline)
+                                .accessibilityIdentifier("DataInput.WeightTitle")
+                            Slider(
+                                value: $weightPounds,
+                                in: 50...500,
+                                step: 1
+                            ) {
+                                Text("Weight")
+                            } minimumValueLabel: {
+                                Text("50 lbs")
+                            } maximumValueLabel: {
+                                Text("500 lbs")
+                            }
+                            .accessibilityIdentifier("DataInput.WeightSlider")
+                            Text("\(Int(weightPounds)) lbs (\(String(format: "%.0f", weightPounds * 0.453592)) kg)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .accessibilityIdentifier("DataInput.WeightValue")
+                                .onChange(of: weightPounds) { _, _ in updateProfile() }
+                        }
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Age")
+                                .font(.headline)
+                                .accessibilityIdentifier("DataInput.AgeTitle")
+                            Slider(
+                                value: Binding(get: { Double(age) }, set: { age = Int($0) }),
+                                in: 10...100,
+                                step: 1
+                            ) {
+                                Text("Age")
+                            } minimumValueLabel: {
+                                Text("10")
+                            } maximumValueLabel: {
+                                Text("100")
+                            }
+                            .accessibilityIdentifier("DataInput.AgeSlider")
+                            Text("\(age) years")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .accessibilityIdentifier("DataInput.AgeValue")
+                                .onChange(of: age) { _, _ in updateProfile() }
+                        }
+                    }
+                }
+
+                Button(action: onComplete) {
+                    Text("Continue")
+                }
+                .buttonStyle(CoachPrimaryButtonStyle())
+                .disabled(!canContinue)
+                .opacity(canContinue ? 1 : 0.6)
+                .accessibilityIdentifier("DataInput.ContinueButton")
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
         }
-        .padding()
         .accessibilityIdentifier("DataInputScreen")
         .accessibilityElement(children: .contain)
         .onAppear {
-            // Load existing values from AppStorage or use defaults
             if userHeight > 0 {
                 let totalInches = userHeight / 2.54
                 heightFeet = Int(totalInches / 12)
@@ -180,23 +166,19 @@ struct PersonalInfoStepView: View {
     }
 
     private var canContinue: Bool {
-        return heightFeet > 0 && heightInches >= 0 && heightInches < 12 &&
-               weightPounds >= 50 && weightPounds <= 500 && age >= 10 && age <= 100
+        heightFeet > 0 && heightInches >= 0 && heightInches < 12 &&
+        weightPounds >= 50 && weightPounds <= 500 && age >= 10 && age <= 100
     }
 
     private var hasExistingData: Bool {
-        return userHeight > 0 || userWeight > 0 || userAge > 0
+        userHeight > 0 || userWeight > 0 || userAge > 0
     }
 
     private func updateProfile() {
-        // Convert feet and inches to centimeters
         let totalInches = Double(heightFeet * 12 + heightInches)
         let heightInCm = totalInches * 2.54
-
-        // Convert pounds to kilograms
         let weightInKg = weightPounds * 0.453592
 
-        // Save to AppStorage for persistence
         userHeight = heightInCm
         userWeight = weightInKg
         userAge = age

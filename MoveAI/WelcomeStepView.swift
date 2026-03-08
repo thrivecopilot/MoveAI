@@ -9,55 +9,57 @@ import SwiftUI
 
 struct WelcomeStepView: View {
     var body: some View {
-        VStack(spacing: 32) {
-            Spacer()
-            
-            // App icon and branding
-            VStack(spacing: 24) {
-                Image(systemName: "dumbbell.fill")
-                    .font(.system(size: 80))
-                    .foregroundColor(.accentColor)
-                
-                VStack(spacing: 16) {
-                    Text("Welcome to MoveAI")
-                        .font(.largeTitle)
-                        .fontWeight(.bold)
-                    
-                    Text("Master your movements with AI-powered form analysis")
-                        .font(.title3)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal)
+        VStack(spacing: 20) {
+            Spacer(minLength: 18)
+
+            CoachCard(elevated: true) {
+                VStack(spacing: 20) {
+                    Image(systemName: "dumbbell.fill")
+                        .font(.system(size: 72, weight: .semibold))
+                        .foregroundColor(CoachTheme.Palette.accent)
+
+                    VStack(spacing: 12) {
+                        Text("Welcome to MoveAI")
+                            .font(CoachTheme.Typography.screenTitle)
+                            .multilineTextAlignment(.center)
+
+                        Text("Master your movements with AI-powered form analysis")
+                            .font(CoachTheme.Typography.body)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            }
+
+            CoachCard {
+                VStack(spacing: 14) {
+                    FeatureRow(
+                        icon: "applelogo",
+                        title: "Sign in with Apple",
+                        description: "Secure authentication with your Apple ID"
+                    )
+
+                    FeatureRow(
+                        icon: "heart.fill",
+                        title: "Health Integration",
+                        description: "Connect with Apple Health for personalized insights"
+                    )
+
+                    FeatureRow(
+                        icon: "brain.head.profile",
+                        title: "AI Analysis",
+                        description: "Get instant feedback on your movement technique"
+                    )
                 }
             }
-            
-            Spacer()
-            
-            // Feature highlights
-            VStack(spacing: 16) {
-                FeatureRow(
-                    icon: "applelogo",
-                    title: "Sign in with Apple",
-                    description: "Secure authentication with your Apple ID"
-                )
-                
-                FeatureRow(
-                    icon: "heart.fill",
-                    title: "Health Integration",
-                    description: "Connect with Apple Health for personalized insights"
-                )
-                
-                FeatureRow(
-                    icon: "brain.head.profile",
-                    title: "AI Analysis",
-                    description: "Get instant feedback on your movement technique"
-                )
-            }
-            .padding(.horizontal)
-            
-            Spacer()
+
+            Spacer(minLength: 18)
         }
-        .padding()
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(AccessibilityID.Onboarding.welcome)
     }
 }
 
@@ -65,22 +67,22 @@ struct FeatureRow: View {
     let icon: String
     let title: String
     let description: String
-    
+
     var body: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 12) {
             Image(systemName: icon)
-                .font(.title2)
-                .foregroundColor(.accentColor)
-                .frame(width: 30)
-            
-            VStack(alignment: .leading, spacing: 4) {
+                .font(.title3)
+                .foregroundColor(CoachTheme.Palette.accent)
+                .frame(width: 28)
+
+            VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.headline)
+                    .font(CoachTheme.Typography.subtitle)
                 Text(description)
-                    .font(.caption)
+                    .font(CoachTheme.Typography.meta)
                     .foregroundColor(.secondary)
             }
-            
+
             Spacer()
         }
     }
@@ -89,4 +91,3 @@ struct FeatureRow: View {
 #Preview {
     WelcomeStepView()
 }
-

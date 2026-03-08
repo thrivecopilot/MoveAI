@@ -15,6 +15,12 @@ enum UIScenario: String, CaseIterable {
     case sessionHistoryError = "SessionHistory_error"
     case sessionHistoryLongText = "SessionHistory_longText"
     case homeLoaded = "Home_loaded"
+    case profileLoaded = "Profile_loaded"
+    case movementSelectionDefault = "MovementSelection_default"
+    case onboardingWelcome = "Onboarding_welcome"
+    case onboardingSignin = "Onboarding_signin"
+    case onboardingHealth = "Onboarding_health"
+    case onboardingPersonalInfo = "Onboarding_personalInfo"
     case videoReviewOverviewCollapsed = "VideoReview_overview_collapsed"
     case videoReviewOverviewMedium = "VideoReview_overview_medium"
     case videoReviewOverviewExpanded = "VideoReview_overview_expanded"
@@ -153,6 +159,18 @@ private enum ScenarioViews {
             return AnyView(SessionHistoryView(sessionManager: sessionManager, notesLineLimit: 3))
         case .homeLoaded:
             return AnyView(MovementMasteryHomeView(sessionManager: sessionManager))
+        case .profileLoaded:
+            return AnyView(ProfileView().environmentObject(sessionManager))
+        case .movementSelectionDefault:
+            return AnyView(MovementSelectionView())
+        case .onboardingWelcome:
+            return AnyView(WelcomeStepView())
+        case .onboardingSignin:
+            return AnyView(AppleSignInStepView(appleAuthManager: AppleAuthManager(), onSignInSuccess: {}))
+        case .onboardingHealth:
+            return AnyView(HealthPermissionStepView(healthManager: HealthManager(), onPermissionGranted: {}))
+        case .onboardingPersonalInfo:
+            return AnyView(PersonalInfoStepView(onComplete: {}))
         case .videoReviewOverviewCollapsed:
             return videoReviewView(sessionManager: sessionManager, sheetState: .collapsed)
         case .videoReviewOverviewMedium:
@@ -237,12 +255,20 @@ private enum ScenarioFixtures {
         switch scenario {
         case .sessionHistoryLoaded, .homeLoaded:
             return loadedSessions()
+        case .profileLoaded:
+            return loadedSessions()
         case .sessionHistoryEmpty:
             return []
         case .sessionHistoryError:
             return []
         case .sessionHistoryLongText:
             return longTextSessions()
+        case .movementSelectionDefault,
+             .onboardingWelcome,
+             .onboardingSignin,
+             .onboardingHealth,
+             .onboardingPersonalInfo:
+            return []
         case .videoReviewOverviewCollapsed,
              .videoReviewOverviewMedium,
              .videoReviewOverviewExpanded:
@@ -259,7 +285,7 @@ private enum ScenarioFixtures {
     }
 
     static func configurePersistentState(for scenario: UIScenario) {
-        guard scenario == .dataInputPrefilled else { return }
+        guard scenario == .dataInputPrefilled || scenario == .onboardingPersonalInfo else { return }
 
         let defaults = UserDefaults.standard
         defaults.set(177.8, forKey: "userHeight")

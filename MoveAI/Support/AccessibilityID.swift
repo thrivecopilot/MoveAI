@@ -69,6 +69,33 @@ enum AccessibilityID {
         static let viewAllButton = "Home.ViewAll"
     }
 
+    // MARK: - Profile
+    enum Profile {
+        static let root = "ProfileView"
+        static let header = "Profile.Header"
+        static let healthCard = "Profile.HealthCard"
+        static let quickStatsCard = "Profile.QuickStatsCard"
+        static let settingsCard = "Profile.SettingsCard"
+    }
+
+    // MARK: - Movement Selection
+    enum MovementSelection {
+        static let root = "MovementSelectionView"
+        static let modePicker = "MovementSelection.ModePicker"
+        static let grid = "MovementSelection.Grid"
+        static let card = "MovementSelection.Card"               // append ".\(movement)"
+    }
+
+    // MARK: - Onboarding
+    enum Onboarding {
+        static let root = "OnboardingFlow"
+        static let progress = "Onboarding.Progress"
+        static let welcome = "Onboarding.Welcome"
+        static let signIn = "Onboarding.SignIn"
+        static let health = "Onboarding.Health"
+        static let personalInfo = "Onboarding.PersonalInfo"
+    }
+
     // MARK: - Trends
     enum Trends {
         static let root = "TrendsView"
