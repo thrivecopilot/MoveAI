@@ -119,6 +119,13 @@ enum TrendsMappings {
                 frequencyRecommendation: "Every session",
                 dimensions: [.balance, .depth, .kneeTracking, .torsoControl, .footStability]
             )
+        case .muayThaiAnalysisCoverageLimited:
+            return TrendsIssueMetadata(
+                impactStatement: "Some requested Muay Thai checks are not yet detectable with current keypoints.",
+                targetGoal: "Capture cleaner footage and focus on currently supported checks.",
+                frequencyRecommendation: "Every session",
+                dimensions: [.balance, .torsoControl]
+            )
         default:
             return TrendsIssueMetadata(
                 impactStatement: "A recurring movement pattern is reducing form quality.",

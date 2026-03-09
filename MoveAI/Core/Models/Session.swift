@@ -10,6 +10,8 @@ import Foundation
 struct Session: Identifiable, Codable {
     let id: UUID
     let movementType: MovementType
+    let technique: MuayThaiTechnique?
+    let fightStance: FightStance?
     let videoURL: URL
     let timestamp: Date
     let analysisResult: AnalysisResult?
@@ -20,6 +22,8 @@ struct Session: Identifiable, Codable {
     init(
         id: UUID = UUID(),
         movementType: MovementType,
+        technique: MuayThaiTechnique? = nil,
+        fightStance: FightStance? = nil,
         videoURL: URL,
         timestamp: Date = Date(),
         analysisResult: AnalysisResult? = nil,
@@ -29,6 +33,8 @@ struct Session: Identifiable, Codable {
     ) {
         self.id = id
         self.movementType = movementType
+        self.technique = technique
+        self.fightStance = fightStance
         self.videoURL = videoURL
         self.timestamp = timestamp
         self.analysisResult = analysisResult
@@ -38,6 +44,9 @@ struct Session: Identifiable, Codable {
     }
     
     var displayName: String {
+        if movementType == .muayThai, let technique {
+            return "\(movementType.displayName) - \(technique.displayName)"
+        }
         return movementType.displayName
     }
     
@@ -62,6 +71,8 @@ struct Session: Identifiable, Codable {
 struct SessionMetadata: Codable {
     let id: UUID
     let movementType: MovementType
+    let technique: MuayThaiTechnique?
+    let fightStance: FightStance?
     let timestamp: Date
     let videoURL: URL
     let hasAnalysis: Bool
@@ -70,6 +81,8 @@ struct SessionMetadata: Codable {
     init(from session: Session) {
         self.id = session.id
         self.movementType = session.movementType
+        self.technique = session.technique
+        self.fightStance = session.fightStance
         self.timestamp = session.timestamp
         self.videoURL = session.videoURL
         self.hasAnalysis = session.hasAnalysis

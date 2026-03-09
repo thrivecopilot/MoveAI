@@ -200,7 +200,7 @@ enum TrendsInsightsEngine {
         let hasEnoughData = recent.count >= 3
         let lowDataHint: String? = hasEnoughData
             ? nil
-            : "Record at least 3 analyzed squat sessions to unlock reliable coaching trends."
+            : "Record at least 3 analyzed \(movement.displayName.lowercased()) sessions to unlock reliable coaching trends."
 
         var issueAccumulators: [MovementIssueKind: IssueAccumulator] = [:]
         var perSessionBurden: [Double] = Array(repeating: 0, count: recent.count)
@@ -238,7 +238,7 @@ enum TrendsInsightsEngine {
 
         let troubleAreas: [TroubleFixCardModel] = issueAccumulators.values
             .map { accumulator in
-                let entry = SquatCueLibrary.entry(for: accumulator.kind)
+                let entry = MovementCueCatalog.entry(for: accumulator.kind)
                 let seenCount = accumulator.sessionsSeen.count
                 let drills = topDrills(for: accumulator.kind, limit: 3)
 
@@ -255,7 +255,7 @@ enum TrendsInsightsEngine {
                     confidence: confidence(forSessionsSeen: seenCount),
                     likelyCause: entry?.oneLineDescription ?? "Recurring form pattern detected across recent sessions.",
                     recommendedDrills: drills,
-                    whenItUsuallyOccurs: phaseSummary(for: entry?.commonPhases ?? []),
+                    whenItUsuallyOccurs: entry?.phaseSummaryText ?? "Varies by rep and fatigue.",
                     targetGoal: TrendsMappings.targetGoal(for: accumulator.kind),
                     impactStatement: TrendsMappings.impactStatement(for: accumulator.kind)
                 )
@@ -335,7 +335,7 @@ enum TrendsInsightsEngine {
 
     private static func buildPrimaryFix(from troubleAreas: [TroubleFixCardModel], lookback: Int) -> PrimaryFixModel? {
         guard let topIssue = troubleAreas.first else { return nil }
-        let cue = SquatCueLibrary.entry(for: topIssue.issueKind)?.quickFix ?? "Apply focused control on this pattern in the next session."
+        let cue = MovementCueCatalog.entry(for: topIssue.issueKind)?.quickFix ?? "Apply focused control on this pattern in the next session."
 
         return PrimaryFixModel(
             issueKind: topIssue.issueKind,
@@ -493,9 +493,9 @@ enum TrendsInsightsEngine {
     }
 
     private static func topDrills(for kind: MovementIssueKind, limit: Int) -> [String] {
-        guard let entry = SquatCueLibrary.entry(for: kind) else { return [] }
+        guard let entry = MovementCueCatalog.entry(for: kind) else { return [] }
 
-        let ordered = entry.correctives.mobility + entry.correctives.patterning + entry.correctives.strength
+        let ordered = entry.recommendedDrills
         var unique: [String] = []
 
         for drill in ordered {
@@ -507,23 +507,6 @@ enum TrendsInsightsEngine {
         }
 
         return unique
-    }
-
-    private static func phaseSummary(for phases: Set<SquatPhaseType>) -> String {
-        if phases.isEmpty {
-            return "Varies by rep and fatigue."
-        }
-
-        let preferredOrder: [SquatPhaseType] = [.setup, .descent, .bottom, .ascent]
-        let labels = preferredOrder
-            .filter { phases.contains($0) }
-            .map { $0.rawValue.capitalized }
-
-        if labels.isEmpty {
-            return "Varies by rep and fatigue."
-        }
-
-        return labels.joined(separator: " + ")
     }
 
     private static func recencyWeightForIndex(_ index: Int) -> Double {
@@ -582,7 +565,7 @@ enum TrendsInsightsEngine {
     }
 
     private static func issueTitle(for kind: MovementIssueKind) -> String {
-        if let entry = SquatCueLibrary.entry(for: kind) {
+        if let entry = MovementCueCatalog.entry(for: kind) {
             return entry.headline
         }
 

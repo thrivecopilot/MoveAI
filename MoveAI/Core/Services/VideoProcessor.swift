@@ -41,6 +41,8 @@ class VideoProcessor: ObservableObject {
     func processVideo(
         _ url: URL,
         movementType: MovementType,
+        technique: MuayThaiTechnique? = nil,
+        fightStance: FightStance? = nil,
         progressHandler: ((Double) -> Void)? = nil
     ) async throws -> MovementRecording {
         isProcessing = true
@@ -117,6 +119,8 @@ class VideoProcessor: ObservableObject {
 
         return MovementRecording(
             movementType: movementType,
+            technique: technique,
+            fightStance: fightStance,
             videoURL: url,
             duration: duration,
             poseData: poseResults

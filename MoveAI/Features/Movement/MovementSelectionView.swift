@@ -13,7 +13,10 @@ struct MovementSelectionView: View {
     @State private var cameraService = CameraService()
     @State private var showingCamera = false
     @State private var showingVideoImport = false
+    @State private var showingMuayThaiTechniqueSelection = false
     @State private var selectedMovement: MovementType?
+    @State private var selectedTechnique: MuayThaiTechnique?
+    @State private var selectedFightStance: FightStance?
     @State private var captureMode: CaptureMode
     @State private var pendingSession: Session?
     @State private var showingSessionDetail = false
@@ -21,6 +24,10 @@ struct MovementSelectionView: View {
 
     private let defaultMovement: MovementType?
     private let autoPresentCapture: Bool
+
+    private var strengthMovements: [MovementType] {
+        MovementType.allCases.filter { $0 != .muayThai }
+    }
 
     enum CaptureMode {
         case record
@@ -50,28 +57,46 @@ struct MovementSelectionView: View {
                 .accessibilityIdentifier(AccessibilityID.MovementSelection.modePicker)
 
                 ScrollView {
-                    LazyVGrid(columns: [
-                        GridItem(.flexible()),
-                        GridItem(.flexible()),
-                    ], spacing: CoachTheme.Surfaces.groupSpacing) {
-                        ForEach(MovementType.allCases) { movement in
-                            MovementSelectionCard(
-                                movement: movement,
-                                onTap: {
-                                    selectedMovement = movement
-                                    if captureMode == .record {
-                                        showingCamera = true
-                                    } else {
-                                        showingVideoImport = true
+                    VStack(alignment: .leading, spacing: CoachTheme.Surfaces.groupSpacing) {
+                        Text("Muay Thai")
+                            .font(.headline)
+                            .padding(.horizontal, CoachTheme.Surfaces.screenHorizontalPadding)
+
+                        MovementSelectionCard(
+                            movement: .muayThai,
+                            onTap: {
+                                selectedMovement = .muayThai
+                                showingMuayThaiTechniqueSelection = true
+                            }
+                        )
+                        .padding(.horizontal, CoachTheme.Surfaces.screenHorizontalPadding)
+                        .accessibilityIdentifier("\(AccessibilityID.MovementSelection.card).\(MovementType.muayThai.rawValue)")
+
+                        Text("Strength Training")
+                            .font(.headline)
+                            .padding(.horizontal, CoachTheme.Surfaces.screenHorizontalPadding)
+
+                        LazyVGrid(columns: [
+                            GridItem(.flexible()),
+                            GridItem(.flexible()),
+                        ], spacing: CoachTheme.Surfaces.groupSpacing) {
+                            ForEach(strengthMovements) { movement in
+                                MovementSelectionCard(
+                                    movement: movement,
+                                    onTap: {
+                                        selectedMovement = movement
+                                        selectedTechnique = nil
+                                        selectedFightStance = nil
+                                        presentCaptureFlow()
                                     }
-                                }
-                            )
-                            .accessibilityIdentifier("\(AccessibilityID.MovementSelection.card).\(movement.rawValue)")
+                                )
+                                .accessibilityIdentifier("\(AccessibilityID.MovementSelection.card).\(movement.rawValue)")
+                            }
                         }
+                        .padding(.horizontal, CoachTheme.Surfaces.screenHorizontalPadding)
+                        .accessibilityIdentifier(AccessibilityID.MovementSelection.grid)
                     }
-                    .padding(.horizontal, CoachTheme.Surfaces.screenHorizontalPadding)
                     .padding(.vertical, CoachTheme.Surfaces.rowVerticalPadding)
-                    .accessibilityIdentifier(AccessibilityID.MovementSelection.grid)
                 }
             }
             .navigationTitle(captureMode == .record ? "Record Movement" : "Upload Video")
@@ -88,10 +113,20 @@ struct MovementSelectionView: View {
                     )
                 }
             }
+            .sheet(isPresented: $showingMuayThaiTechniqueSelection) {
+                MuayThaiTechniqueSelectionView { technique, stance in
+                    selectedMovement = .muayThai
+                    selectedTechnique = technique
+                    selectedFightStance = stance
+                    presentCaptureFlow()
+                }
+            }
             .sheet(isPresented: $showingCamera) {
                 if let movement = selectedMovement {
                     CameraCaptureView(
                         movementType: movement,
+                        technique: movement == .muayThai ? selectedTechnique : nil,
+                        fightStance: movement == .muayThai ? selectedFightStance : nil,
                         cameraService: cameraService,
                         sessionManager: sessionManager,
                         onRecordingComplete: { _ in },
@@ -106,6 +141,8 @@ struct MovementSelectionView: View {
                 if let movement = selectedMovement {
                     VideoImportView(
                         movementType: movement,
+                        technique: movement == .muayThai ? selectedTechnique : nil,
+                        fightStance: movement == .muayThai ? selectedFightStance : nil,
                         sessionManager: sessionManager,
                         onVideoProcessed: { _ in },
                         onSessionCreated: { session in
@@ -134,16 +171,25 @@ struct MovementSelectionView: View {
         }
     }
 
-    private func triggerAutoCaptureIfNeeded() {
-        guard autoPresentCapture, !didAutoPresentCapture, let movement = defaultMovement else { return }
-        didAutoPresentCapture = true
-        selectedMovement = movement
-
+    private func presentCaptureFlow() {
         if captureMode == .record {
             showingCamera = true
         } else {
             showingVideoImport = true
         }
+    }
+
+    private func triggerAutoCaptureIfNeeded() {
+        guard autoPresentCapture, !didAutoPresentCapture, let movement = defaultMovement else { return }
+        didAutoPresentCapture = true
+
+        selectedMovement = movement
+        if movement == .muayThai {
+            showingMuayThaiTechniqueSelection = true
+            return
+        }
+
+        presentCaptureFlow()
     }
 }
 

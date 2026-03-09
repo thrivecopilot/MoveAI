@@ -215,14 +215,33 @@ final class FormFeedbackCodableTests: XCTestCase {
         XCTAssertEqual(summaries[0].worstOccurrence.metrics.first?.kind, .squatTorsoBiasDegrees)
     }
 
-    func testSquatCueLibraryHasEntriesForAllDefinedKinds() {
-        for kind in MovementIssueKind.allCases {
+    func testSquatCueLibraryHasEntriesForAllSquatKinds() {
+        for kind in MovementIssueKind.squatCases {
             let entry = SquatCueLibrary.entry(for: kind)
-            XCTAssertNotNil(entry, "Missing catalog entry for \(kind.rawValue)")
+            XCTAssertNotNil(entry, "Missing squat catalog entry for \(kind.rawValue)")
             XCTAssertFalse(entry?.name.isEmpty ?? true)
             XCTAssertFalse(entry?.headline.isEmpty ?? true)
             XCTAssertFalse(entry?.quickFix.isEmpty ?? true)
             XCTAssertFalse(entry?.oneLineDescription.isEmpty ?? true)
+        }
+    }
+
+    func testMuayThaiCueLibraryHasEntriesForAllMuayThaiKinds() {
+        for kind in MovementIssueKind.muayThaiCases where kind != .muayThaiAnalysisCoverageLimited {
+            let entry = MuayThaiCueLibrary.entry(for: kind)
+            XCTAssertNotNil(entry, "Missing Muay Thai catalog entry for \(kind.rawValue)")
+            XCTAssertFalse(entry?.headline.isEmpty ?? true)
+            XCTAssertFalse(entry?.quickFix.isEmpty ?? true)
+            XCTAssertFalse(entry?.oneLineDescription.isEmpty ?? true)
+        }
+    }
+
+    func testMovementCueCatalogResolvesAllDefinedKinds() {
+        for kind in MovementIssueKind.allCases where kind != .muayThaiAnalysisCoverageLimited {
+            let entry = MovementCueCatalog.entry(for: kind)
+            XCTAssertNotNil(entry, "Missing movement cue catalog entry for \(kind.rawValue)")
+            XCTAssertFalse(entry?.headline.isEmpty ?? true)
+            XCTAssertFalse(entry?.quickFix.isEmpty ?? true)
         }
     }
 }

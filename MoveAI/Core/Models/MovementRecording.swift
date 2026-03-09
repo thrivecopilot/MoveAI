@@ -11,15 +11,26 @@ import UIKit
 struct MovementRecording: Identifiable, Codable {
     let id: UUID
     let movementType: MovementType
+    let technique: MuayThaiTechnique?
+    let fightStance: FightStance?
     let videoURL: URL
     let timestamp: Date
     let duration: TimeInterval
     let poseData: [PoseDetectionResult]?
     var analysisResult: AnalysisResult?
-    
-    init(movementType: MovementType, videoURL: URL, duration: TimeInterval, poseData: [PoseDetectionResult]? = nil) {
+
+    init(
+        movementType: MovementType,
+        technique: MuayThaiTechnique? = nil,
+        fightStance: FightStance? = nil,
+        videoURL: URL,
+        duration: TimeInterval,
+        poseData: [PoseDetectionResult]? = nil
+    ) {
         self.id = UUID()
         self.movementType = movementType
+        self.technique = technique
+        self.fightStance = fightStance
         self.videoURL = videoURL
         self.timestamp = Date()
         self.duration = duration
@@ -34,7 +45,7 @@ struct AnalysisResult: Codable {
     let timestamp: Date
     let reps: [SquatRep]? // Optional for backward compatibility
     let depthMetrics: [DepthAnalysis]? // Optional depth metrics for shallow rep detection
-    
+
     init(score: Double, feedback: [FormFeedback], reps: [SquatRep]? = nil, depthMetrics: [DepthAnalysis]? = nil) {
         self.score = score
         self.feedback = feedback
@@ -80,7 +91,7 @@ struct MovementIssueKind: RawRepresentable, Codable, Hashable, CaseIterable {
     static let squatDepthInconsistent = MovementIssueKind(rawValue: "squat.depth_inconsistent")
     static let squatCameraAngleLimited = MovementIssueKind(rawValue: "squat.camera_angle_limited")
 
-    static var allCases: [MovementIssueKind] {
+    static var squatCases: [MovementIssueKind] {
         [
             .squatKneeValgus,
             .squatHeelsLift,
@@ -95,6 +106,18 @@ struct MovementIssueKind: RawRepresentable, Codable, Hashable, CaseIterable {
             .squatDepthInconsistent,
             .squatCameraAngleLimited,
         ]
+    }
+
+    static var allCases: [MovementIssueKind] {
+        squatCases + muayThaiCases
+    }
+
+    var isSquatIssue: Bool {
+        rawValue.hasPrefix("squat.")
+    }
+
+    var isMuayThaiIssue: Bool {
+        rawValue.hasPrefix("muay_thai.")
     }
 }
 
@@ -165,7 +188,7 @@ struct FormFeedback: Codable, Identifiable {
     let timestamp: TimeInterval // When in the video this applies
     let repNumber: Int? // Which rep this feedback applies to (1-indexed)
     let affectedBodyJoints: [BodyJoint]? // Body joints affected by this feedback
-    
+
     init(category: FeedbackCategory, message: String, severity: FeedbackSeverity, timestamp: TimeInterval, repNumber: Int? = nil, issueKind: MovementIssueKind? = nil, metrics: [FeedbackMetric]? = nil, affectedBodyJoints: [BodyJoint]? = nil) {
         self.id = UUID()
         self.category = category
@@ -185,7 +208,7 @@ enum FeedbackCategory: String, CaseIterable, Codable {
     case tempo = "tempo"
     case stability = "stability"
     case safety = "safety"
-    
+
     var displayName: String {
         switch self {
         case .posture:
@@ -200,7 +223,7 @@ enum FeedbackCategory: String, CaseIterable, Codable {
             return "Safety"
         }
     }
-    
+
     var icon: String {
         switch self {
         case .posture:
@@ -222,7 +245,7 @@ enum FeedbackSeverity: String, CaseIterable, Codable {
     case good = "good"
     case warning = "warning"
     case critical = "critical"
-    
+
     var displayName: String {
         switch self {
         case .excellent:
@@ -235,7 +258,7 @@ enum FeedbackSeverity: String, CaseIterable, Codable {
             return "Critical Issue"
         }
     }
-    
+
     var color: String {
         switch self {
         case .excellent:
@@ -249,4 +272,3 @@ enum FeedbackSeverity: String, CaseIterable, Codable {
         }
     }
 }
-

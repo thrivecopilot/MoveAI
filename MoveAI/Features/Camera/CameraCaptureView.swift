@@ -11,6 +11,8 @@ import AVFoundation
 
 struct CameraCaptureView: View {
     let movementType: MovementType
+    let technique: MuayThaiTechnique?
+    let fightStance: FightStance?
     @ObservedObject var cameraService: CameraService
     let sessionManager: SessionManager
     let onRecordingComplete: (MovementRecording) -> Void
@@ -19,9 +21,11 @@ struct CameraCaptureView: View {
     @State private var previewLayer: AVCaptureVideoPreviewLayer?
     @Environment(\.dismiss) private var dismiss
     
-    init(movementType: MovementType, cameraService: CameraService, sessionManager: SessionManager, onRecordingComplete: @escaping (MovementRecording) -> Void, onSessionCreated: @escaping (Session) -> Void) {
+    init(movementType: MovementType, technique: MuayThaiTechnique? = nil, fightStance: FightStance? = nil, cameraService: CameraService, sessionManager: SessionManager, onRecordingComplete: @escaping (MovementRecording) -> Void, onSessionCreated: @escaping (Session) -> Void) {
         print("📷 CameraCaptureView: Initializing for movement: \(movementType.displayName)")
         self.movementType = movementType
+        self.technique = technique
+        self.fightStance = fightStance
         self.cameraService = cameraService
         self.sessionManager = sessionManager
         self.onRecordingComplete = onRecordingComplete
@@ -271,6 +275,8 @@ struct CameraCaptureView: View {
         
         let recording = MovementRecording(
             movementType: movementType,
+            technique: technique,
+            fightStance: fightStance,
             videoURL: videoURL,
             duration: cameraService.recordingDuration,
             poseData: cameraService.poseAnalysisService.poseHistory
@@ -279,6 +285,8 @@ struct CameraCaptureView: View {
         // Create a session from the recorded movement (live-recorded)
         let session = Session(
             movementType: recording.movementType,
+            technique: recording.technique,
+            fightStance: recording.fightStance,
             videoURL: recording.videoURL,
             timestamp: recording.timestamp,
             poseData: recording.poseData,

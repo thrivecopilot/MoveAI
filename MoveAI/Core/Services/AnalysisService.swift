@@ -88,6 +88,27 @@ class MockAnalysisService: AnalysisServiceProtocol {
                     timestamp: 2.9
                 )
             ]
+        case .muayThai:
+            return [
+                FormFeedback(
+                    category: .posture,
+                    message: "Rear hand stayed active in guard on most attempts",
+                    severity: .good,
+                    timestamp: 0.9
+                ),
+                FormFeedback(
+                    category: .safety,
+                    message: "Turn your hip through the punch for more power",
+                    severity: .warning,
+                    timestamp: 1.7
+                ),
+                FormFeedback(
+                    category: .stability,
+                    message: "Keep your stance width stable during movement",
+                    severity: .warning,
+                    timestamp: 2.4
+                )
+            ]
         }
     }
     

@@ -138,7 +138,7 @@ enum IssueSummaryBuilder {
             let issueSeverity = worstItem?.severity ?? first.severity
             let issueCategory = worstItem?.category ?? first.category
             let resolvedKind = MovementIssueResolver.resolve(for: worstItem ?? first)
-            let entry = resolvedKind.flatMap { SquatCueLibrary.entry(for: $0) }
+            let entry = resolvedKind.flatMap { MovementCueCatalog.entry(for: $0) }
 
             let title: String
             let cues: [CoachingCue]
@@ -176,7 +176,7 @@ enum IssueSummaryBuilder {
         }
     }
 
-    private static func cuesFromEntry(_ entry: SquatCueLibrary.Entry, severity: FeedbackSeverity) -> [CoachingCue] {
+    private static func cuesFromEntry(_ entry: MovementCueCatalog.Entry, severity: FeedbackSeverity) -> [CoachingCue] {
         switch severity {
         case .warning, .critical:
             var cues: [CoachingCue] = []

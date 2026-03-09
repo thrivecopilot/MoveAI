@@ -12,6 +12,8 @@ import AVFoundation
 
 struct VideoImportView: View {
     let movementType: MovementType
+    let technique: MuayThaiTechnique?
+    let fightStance: FightStance?
     let sessionManager: SessionManager
     let onVideoProcessed: (MovementRecording) -> Void
     let onSessionCreated: (Session) -> Void
@@ -22,6 +24,22 @@ struct VideoImportView: View {
     @State private var showingError = false
     
     @Environment(\.dismiss) private var dismiss
+
+    init(
+        movementType: MovementType,
+        technique: MuayThaiTechnique? = nil,
+        fightStance: FightStance? = nil,
+        sessionManager: SessionManager,
+        onVideoProcessed: @escaping (MovementRecording) -> Void,
+        onSessionCreated: @escaping (Session) -> Void
+    ) {
+        self.movementType = movementType
+        self.technique = technique
+        self.fightStance = fightStance
+        self.sessionManager = sessionManager
+        self.onVideoProcessed = onVideoProcessed
+        self.onSessionCreated = onSessionCreated
+    }
     
     var body: some View {
         NavigationStack {
@@ -195,7 +213,9 @@ struct VideoImportView: View {
             // Process video
             let recording = try await videoProcessor.processVideo(
                 tempURL,
-                movementType: movementType
+                movementType: movementType,
+                technique: technique,
+                fightStance: fightStance
             ) { progress in
                 // Progress updates handled by VideoProcessor's @Published properties
             }
@@ -208,6 +228,8 @@ struct VideoImportView: View {
                 // Create a session from the processed video (uploaded, not live-recorded)
                 let session = Session(
                     movementType: recording.movementType,
+                    technique: recording.technique,
+                    fightStance: recording.fightStance,
                     videoURL: recording.videoURL,
                     timestamp: recording.timestamp,
                     poseData: recording.poseData,
