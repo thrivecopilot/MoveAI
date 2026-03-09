@@ -22,6 +22,9 @@ struct MovementMasteryHomeView: View {
     @StateObject private var cameraService = CameraService()
     @State private var powerliftingRowHeights: [String: CGFloat] = [:]
     @State private var powerliftingChipWidths: [String: CGFloat] = [:]
+    @State private var showingMuayThaiTechniqueSelection = false
+    @State private var selectedMuayThaiTechnique: MuayThaiTechnique?
+    @State private var selectedFightStance: FightStance?
 
     init() {
         _sessionManager = StateObject(wrappedValue: SessionManager())
@@ -79,6 +82,8 @@ struct MovementMasteryHomeView: View {
             if let movement = selectedMovement {
                 VideoImportView(
                     movementType: movement,
+                    technique: movement == .muayThai ? selectedMuayThaiTechnique : nil,
+                    fightStance: movement == .muayThai ? selectedFightStance : nil,
                     sessionManager: sessionManager,
                     onVideoProcessed: { _ in },
                     onSessionCreated: { session in
@@ -88,10 +93,25 @@ struct MovementMasteryHomeView: View {
                 )
             }
         }
+        .sheet(isPresented: $showingMuayThaiTechniqueSelection, onDismiss: {
+            if selectedMuayThaiTechnique == nil {
+                selectedMovement = nil
+                selectedFightStance = nil
+            }
+        }) {
+            MuayThaiTechniqueSelectionView { technique, stance in
+                selectedMovement = .muayThai
+                selectedMuayThaiTechnique = technique
+                selectedFightStance = stance
+                showingActionSheet = true
+            }
+        }
         .confirmationDialog("Choose Option", isPresented: $showingActionSheet, presenting: selectedMovement) { movement in
             Button("Record New Video") {
                 cameraView = CameraCaptureView(
                     movementType: movement,
+                    technique: movement == .muayThai ? selectedMuayThaiTechnique : nil,
+                    fightStance: movement == .muayThai ? selectedFightStance : nil,
                     cameraService: cameraService,
                     sessionManager: sessionManager,
                     onRecordingComplete: { _ in },
@@ -110,11 +130,15 @@ struct MovementMasteryHomeView: View {
 
             Button("Cancel", role: .cancel) {
                 selectedMovement = nil
+                selectedMuayThaiTechnique = nil
+                selectedFightStance = nil
             }
         }
         .onChange(of: showingCamera) { isShowing in
             if !isShowing {
                 selectedMovement = nil
+                selectedMuayThaiTechnique = nil
+                selectedFightStance = nil
                 cameraView = nil
                 if pendingSession != nil {
                     showingSessionDetail = true
@@ -124,6 +148,8 @@ struct MovementMasteryHomeView: View {
         .onChange(of: showingVideoImport) { isShowing in
             if !isShowing {
                 selectedMovement = nil
+                selectedMuayThaiTechnique = nil
+                selectedFightStance = nil
                 if pendingSession != nil {
                     showingSessionDetail = true
                 }
@@ -185,8 +211,7 @@ struct MovementMasteryHomeView: View {
                         )
                     ],
                     onMovementSelected: { movementType in
-                        selectedMovement = movementType
-                        showingActionSheet = true
+                        beginSessionSelection(for: movementType)
                     },
                     onRowHeightsChanged: { rowHeights in
                         powerliftingRowHeights = rowHeights
@@ -197,6 +222,24 @@ struct MovementMasteryHomeView: View {
                 )
                 .accessibilityIdentifier(AccessibilityID.Home.powerliftingCard)
             }
+
+            MovementCategoryCard(
+                title: "Muay Thai",
+                description: "Technique-focused analysis for striking fundamentals",
+                icon: "figure.kickboxing",
+                color: .red,
+                movements: [
+                    MovementOption(
+                        type: .muayThai,
+                        title: "Muay Thai",
+                        subtitle: nil,
+                        difficulty: .intermediate
+                    )
+                ],
+                onMovementSelected: { movementType in
+                    beginSessionSelection(for: movementType)
+                }
+            )
 
             VStack(spacing: CoachTheme.Surfaces.groupSpacing) {
                 ComingSoonCategoryCard(
@@ -251,6 +294,18 @@ struct MovementMasteryHomeView: View {
             }
         }
         .accessibilityIdentifier(AccessibilityID.Home.recentSessions)
+    }
+
+    private func beginSessionSelection(for movementType: MovementType) {
+        selectedMovement = movementType
+        if movementType == .muayThai {
+            selectedMuayThaiTechnique = nil
+            selectedFightStance = nil
+            showingMuayThaiTechniqueSelection = true
+            return
+        }
+
+        showingActionSheet = true
     }
 
     private var expectedPowerliftingMovementIDs: [String] {
