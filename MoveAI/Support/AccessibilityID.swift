@@ -64,6 +64,7 @@ enum AccessibilityID {
         static let welcomeHeader = "Home.WelcomeHeader"
         static let startSessionSection = "Home.StartSession"
         static let powerliftingCard = "Home.Powerlifting"
+        static let powerliftingLayoutProbe = "Home.Powerlifting.LayoutProbe"
         static let movementOption = "Home.Movement"              // append ".\(type)"
         static let recentSessions = "Home.RecentSessions"
         static let viewAllButton = "Home.ViewAll"

@@ -117,6 +117,15 @@ enum CoachTheme {
     }
 
     enum Surfaces {
+        static let screenHorizontalPadding: CGFloat = 16
+        static let screenVerticalPadding: CGFloat = 12
+        static let sectionSpacing: CGFloat = 16
+        static let groupSpacing: CGFloat = 12
+        static let rowHorizontalPadding: CGFloat = 12
+        static let rowVerticalPadding: CGFloat = 10
+        static let rowMinHeight: CGFloat = 56
+        static let rowCornerRadius: CGFloat = 12
+        static let difficultyChipMinWidth: CGFloat = 108
         static let cardPadding: CGFloat = 14
         static let cardSpacing: CGFloat = 12
     }

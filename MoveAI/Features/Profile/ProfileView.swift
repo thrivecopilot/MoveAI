@@ -16,14 +16,14 @@ struct ProfileView: View {
     var body: some View {
         NavigationView {
             ScrollView {
-                VStack(spacing: 18) {
+                VStack(spacing: CoachTheme.Surfaces.sectionSpacing) {
                     headerCard
 
                     CoachCard {
-                        VStack(alignment: .leading, spacing: 12) {
+                        VStack(alignment: .leading, spacing: CoachTheme.Surfaces.groupSpacing) {
                             CoachSectionHeader(icon: "heart.fill", title: "Health Information", tint: .red)
 
-                            VStack(spacing: 12) {
+                            VStack(spacing: CoachTheme.Surfaces.groupSpacing) {
                                 ProfileInfoRow(
                                     icon: "ruler",
                                     title: "Height",
@@ -47,10 +47,10 @@ struct ProfileView: View {
                     .accessibilityIdentifier(AccessibilityID.Profile.healthCard)
 
                     CoachCard {
-                        VStack(alignment: .leading, spacing: 12) {
+                        VStack(alignment: .leading, spacing: CoachTheme.Surfaces.groupSpacing) {
                             CoachSectionHeader(icon: "chart.bar.fill", title: "Quick Stats", tint: .green)
 
-                            VStack(spacing: 12) {
+                            VStack(spacing: CoachTheme.Surfaces.groupSpacing) {
                                 ProfileInfoRow(
                                     icon: "video.fill",
                                     title: "Total Sessions",
@@ -74,7 +74,7 @@ struct ProfileView: View {
                     .accessibilityIdentifier(AccessibilityID.Profile.quickStatsCard)
 
                     CoachCard {
-                        VStack(alignment: .leading, spacing: 12) {
+                        VStack(alignment: .leading, spacing: CoachTheme.Surfaces.groupSpacing) {
                             CoachSectionHeader(icon: "gearshape.fill", title: "Settings", tint: .secondary)
 
                             VStack(spacing: 0) {
@@ -104,10 +104,10 @@ struct ProfileView: View {
                     }
                     .accessibilityIdentifier(AccessibilityID.Profile.settingsCard)
 
-                    Spacer(minLength: 20)
+                    Spacer(minLength: CoachTheme.Surfaces.sectionSpacing)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding(.horizontal, CoachTheme.Surfaces.screenHorizontalPadding)
+                .padding(.vertical, CoachTheme.Surfaces.screenVerticalPadding)
             }
             .navigationTitle("Profile")
             .navigationBarTitleDisplayMode(.large)
@@ -210,7 +210,7 @@ struct SettingsRow: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
-            .padding(.vertical, 10)
+            .padding(.vertical, CoachTheme.Surfaces.rowVerticalPadding)
         }
         .buttonStyle(.plain)
     }

@@ -20,6 +20,8 @@ struct MovementMasteryHomeView: View {
     @State private var showingVideoImport = false
     @StateObject private var sessionManager: SessionManager
     @StateObject private var cameraService = CameraService()
+    @State private var powerliftingRowHeights: [String: CGFloat] = [:]
+    @State private var powerliftingChipWidths: [String: CGFloat] = [:]
 
     init() {
         _sessionManager = StateObject(wrappedValue: SessionManager())
@@ -38,7 +40,7 @@ struct MovementMasteryHomeView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 20) {
+                VStack(spacing: CoachTheme.Surfaces.sectionSpacing) {
                     welcomeHeader
                     movementCategoriesSection
 
@@ -46,8 +48,8 @@ struct MovementMasteryHomeView: View {
                         recentActivitySection
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding(.horizontal, CoachTheme.Surfaces.screenHorizontalPadding)
+                .padding(.vertical, CoachTheme.Surfaces.screenVerticalPadding)
             }
             .navigationTitle("MoveAI")
             .navigationBarTitleDisplayMode(.large)
@@ -66,6 +68,7 @@ struct MovementMasteryHomeView: View {
             .coachNavigationChrome()
             .coachScreenContainer()
             .accessibilityIdentifier(AccessibilityID.Home.root)
+            .accessibilityValue(powerliftingLayoutProbeValue)
         }
         .sheet(isPresented: $showingCamera) {
             if let cameraView = cameraView {
@@ -151,44 +154,51 @@ struct MovementMasteryHomeView: View {
     }
 
     private var movementCategoriesSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: CoachTheme.Surfaces.groupSpacing) {
             Text("Start Session")
                 .font(CoachTheme.Typography.title)
-                .padding(.horizontal, 4)
 
-            MovementCategoryCard(
-                title: "Powerlifting",
-                description: "Master the fundamental compound movements",
-                icon: "figure.strengthtraining.traditional",
-                color: .blue,
-                movements: [
-                    MovementOption(
-                        type: .squat,
-                        title: "Squat",
-                        description: "Lower body compound movement",
-                        difficulty: .intermediate
-                    ),
-                    MovementOption(
-                        type: .deadlift,
-                        title: "Deadlift",
-                        description: "Full body compound movement",
-                        difficulty: .intermediate
-                    ),
-                    MovementOption(
-                        type: .benchPress,
-                        title: "Bench Press",
-                        description: "Upper body compound movement",
-                        difficulty: .beginner
-                    )
-                ],
-                onMovementSelected: { movementType in
-                    selectedMovement = movementType
-                    showingActionSheet = true
-                }
-            )
-            .accessibilityIdentifier(AccessibilityID.Home.powerliftingCard)
+            VStack(spacing: 0) {
+                MovementCategoryCard(
+                    title: "Powerlifting",
+                    description: "Master the fundamental compound movements",
+                    icon: "figure.strengthtraining.traditional",
+                    color: .blue,
+                    movements: [
+                        MovementOption(
+                            type: .squat,
+                            title: "Squat",
+                            subtitle: nil,
+                            difficulty: .intermediate
+                        ),
+                        MovementOption(
+                            type: .deadlift,
+                            title: "Deadlift",
+                            subtitle: nil,
+                            difficulty: .intermediate
+                        ),
+                        MovementOption(
+                            type: .benchPress,
+                            title: "Bench Press",
+                            subtitle: nil,
+                            difficulty: .beginner
+                        )
+                    ],
+                    onMovementSelected: { movementType in
+                        selectedMovement = movementType
+                        showingActionSheet = true
+                    },
+                    onRowHeightsChanged: { rowHeights in
+                        powerliftingRowHeights = rowHeights
+                    },
+                    onChipWidthsChanged: { chipWidths in
+                        powerliftingChipWidths = chipWidths
+                    }
+                )
+                .accessibilityIdentifier(AccessibilityID.Home.powerliftingCard)
+            }
 
-            VStack(spacing: 12) {
+            VStack(spacing: CoachTheme.Surfaces.groupSpacing) {
                 ComingSoonCategoryCard(
                     title: "Olympic Lifting",
                     description: "Snatch, Clean & Jerk",
@@ -208,11 +218,10 @@ struct MovementMasteryHomeView: View {
     }
 
     private var recentActivitySection: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: CoachTheme.Surfaces.groupSpacing) {
             HStack {
                 Text("Recent Sessions")
                     .font(CoachTheme.Typography.title)
-                    .padding(.horizontal, 4)
 
                 Spacer()
 
@@ -243,6 +252,45 @@ struct MovementMasteryHomeView: View {
         }
         .accessibilityIdentifier(AccessibilityID.Home.recentSessions)
     }
+
+    private var expectedPowerliftingMovementIDs: [String] {
+        [MovementType.squat.rawValue, MovementType.deadlift.rawValue, MovementType.benchPress.rawValue]
+    }
+
+    private var powerliftingLayoutProbeValue: String {
+        let ready = expectedPowerliftingMovementIDs.allSatisfy {
+            powerliftingRowHeights[$0] != nil && powerliftingChipWidths[$0] != nil
+        }
+
+        let rows = expectedPowerliftingMovementIDs.map { id in
+            HomePowerliftingLayoutProbeRowPayload(
+                id: id,
+                rowHeight: roundedToTenth(powerliftingRowHeights[id] ?? 0),
+                chipWidth: roundedToTenth(powerliftingChipWidths[id] ?? 0)
+            )
+        }
+
+        let payload = HomePowerliftingLayoutProbePayload(
+            schemaVersion: 1,
+            ready: ready,
+            rows: rows
+        )
+
+        let encoder = JSONEncoder()
+        guard
+            let data = try? encoder.encode(payload),
+            let json = String(data: data, encoding: .utf8)
+        else {
+            return "{\"schemaVersion\":1,\"ready\":false,\"rows\":[]}"
+        }
+
+        return json
+    }
+
+    private func roundedToTenth(_ value: CGFloat) -> Double {
+        guard value.isFinite else { return 0 }
+        return (Double(value) * 10).rounded() / 10
+    }
 }
 
 struct MovementCategoryCard: View {
@@ -252,10 +300,12 @@ struct MovementCategoryCard: View {
     let color: Color
     let movements: [MovementOption]
     let onMovementSelected: (MovementType) -> Void
+    var onRowHeightsChanged: (([String: CGFloat]) -> Void)? = nil
+    var onChipWidthsChanged: (([String: CGFloat]) -> Void)? = nil
 
     var body: some View {
         CoachCard {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: CoachTheme.Surfaces.groupSpacing) {
                 HStack {
                     Image(systemName: icon)
                         .font(.title2)
@@ -286,13 +336,19 @@ struct MovementCategoryCard: View {
                 }
             }
         }
+        .onPreferenceChange(MovementOptionRowHeightPreferenceKey.self) { value in
+            onRowHeightsChanged?(value)
+        }
+        .onPreferenceChange(MovementOptionChipWidthPreferenceKey.self) { value in
+            onChipWidthsChanged?(value)
+        }
     }
 }
 
 struct MovementOption {
     let type: MovementType
     let title: String
-    let description: String
+    let subtitle: String?
     let difficulty: DifficultyLevel
 }
 
@@ -314,23 +370,46 @@ struct MovementOptionRow: View {
                     Text(movement.title)
                         .font(CoachTheme.Typography.subtitle)
 
-                    Text(movement.description)
-                        .font(CoachTheme.Typography.meta)
-                        .foregroundColor(.secondary)
+                    if let subtitle = movement.subtitle {
+                        Text(subtitle)
+                            .font(CoachTheme.Typography.meta)
+                            .foregroundColor(.secondary)
+                    }
                 }
 
                 Spacer()
 
-                CoachChip(title: movement.difficulty.rawValue, tint: Color(movement.difficulty.color))
+                CoachChip(
+                    title: movement.difficulty.rawValue,
+                    tint: Color(movement.difficulty.color),
+                    minWidth: CoachTheme.Surfaces.difficultyChipMinWidth
+                )
+                .background(
+                    GeometryReader { proxy in
+                        Color.clear.preference(
+                            key: MovementOptionChipWidthPreferenceKey.self,
+                            value: [movement.type.rawValue: proxy.size.width]
+                        )
+                    }
+                )
 
                 Image(systemName: "chevron.right")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
-            .padding(.vertical, 8)
-            .padding(.horizontal, 12)
+            .frame(minHeight: CoachTheme.Surfaces.rowMinHeight)
+            .padding(.vertical, CoachTheme.Surfaces.rowVerticalPadding)
+            .padding(.horizontal, CoachTheme.Surfaces.rowHorizontalPadding)
             .background(CoachTheme.Palette.secondarySurface(for: colorScheme))
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: CoachTheme.Surfaces.rowCornerRadius, style: .continuous))
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: MovementOptionRowHeightPreferenceKey.self,
+                        value: [movement.type.rawValue: proxy.size.height]
+                    )
+                }
+            )
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("\(AccessibilityID.Home.movementOption).\(movement.type.rawValue)")
@@ -459,10 +538,10 @@ struct RecentSessionCard: View {
                     .foregroundColor(.orange)
             }
         }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 12)
+        .padding(.vertical, CoachTheme.Surfaces.rowVerticalPadding)
+        .padding(.horizontal, CoachTheme.Surfaces.rowHorizontalPadding)
         .background(CoachTheme.Palette.secondarySurface(for: colorScheme))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: CoachTheme.Surfaces.rowCornerRadius, style: .continuous))
     }
 
     private func scoreColor(_ score: Int) -> Color {
@@ -474,6 +553,34 @@ struct RecentSessionCard: View {
             return .red
         }
     }
+}
+
+private struct MovementOptionRowHeightPreferenceKey: PreferenceKey {
+    static var defaultValue: [String: CGFloat] = [:]
+
+    static func reduce(value: inout [String: CGFloat], nextValue: () -> [String: CGFloat]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+    }
+}
+
+private struct MovementOptionChipWidthPreferenceKey: PreferenceKey {
+    static var defaultValue: [String: CGFloat] = [:]
+
+    static func reduce(value: inout [String: CGFloat], nextValue: () -> [String: CGFloat]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+    }
+}
+
+private struct HomePowerliftingLayoutProbePayload: Encodable {
+    let schemaVersion: Int
+    let ready: Bool
+    let rows: [HomePowerliftingLayoutProbeRowPayload]
+}
+
+private struct HomePowerliftingLayoutProbeRowPayload: Encodable {
+    let id: String
+    let rowHeight: Double
+    let chipWidth: Double
 }
 
 #Preview {

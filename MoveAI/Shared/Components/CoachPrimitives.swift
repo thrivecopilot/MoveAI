@@ -43,6 +43,9 @@ struct CoachChip: View {
 
     let title: String
     var tint: Color = CoachTheme.Palette.accent
+    var minWidth: CGFloat? = nil
+    var maxWidth: CGFloat? = nil
+    var height: CGFloat = 30
 
     var body: some View {
         Text(title)
@@ -51,7 +54,8 @@ struct CoachChip: View {
             .minimumScaleFactor(0.82)
             .allowsTightening(true)
             .padding(.horizontal, 12)
-            .frame(height: 30)
+            .frame(minWidth: minWidth, maxWidth: maxWidth)
+            .frame(height: height)
             .foregroundColor(tint)
             .background(CoachTheme.Palette.chipBackground(tint, for: colorScheme))
             .clipShape(Capsule(style: .continuous))

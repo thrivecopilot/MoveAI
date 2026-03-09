@@ -39,13 +39,13 @@ struct MovementSelectionView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 10) {
+            VStack(spacing: CoachTheme.Surfaces.groupSpacing) {
                 Picker("Mode", selection: $captureMode) {
                     Text("Record").tag(CaptureMode.record)
                     Text("Upload").tag(CaptureMode.upload)
                 }
                 .pickerStyle(.segmented)
-                .padding(.horizontal, 16)
+                .padding(.horizontal, CoachTheme.Surfaces.screenHorizontalPadding)
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier(AccessibilityID.MovementSelection.modePicker)
 
@@ -53,7 +53,7 @@ struct MovementSelectionView: View {
                     LazyVGrid(columns: [
                         GridItem(.flexible()),
                         GridItem(.flexible()),
-                    ], spacing: 14) {
+                    ], spacing: CoachTheme.Surfaces.groupSpacing) {
                         ForEach(MovementType.allCases) { movement in
                             MovementSelectionCard(
                                 movement: movement,
@@ -69,8 +69,8 @@ struct MovementSelectionView: View {
                             .accessibilityIdentifier("\(AccessibilityID.MovementSelection.card).\(movement.rawValue)")
                         }
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
+                    .padding(.horizontal, CoachTheme.Surfaces.screenHorizontalPadding)
+                    .padding(.vertical, CoachTheme.Surfaces.rowVerticalPadding)
                     .accessibilityIdentifier(AccessibilityID.MovementSelection.grid)
                 }
             }
@@ -155,7 +155,7 @@ struct MovementSelectionCard: View {
 
     var body: some View {
         Button(action: onTap) {
-            VStack(spacing: 12) {
+            VStack(spacing: CoachTheme.Surfaces.groupSpacing) {
                 Image(systemName: movement.icon)
                     .font(.system(size: 36, weight: .semibold))
                     .foregroundColor(CoachTheme.Palette.accent)

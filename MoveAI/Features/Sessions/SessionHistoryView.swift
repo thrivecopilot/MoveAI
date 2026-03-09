@@ -29,9 +29,9 @@ struct SessionHistoryView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 10) {
+            VStack(spacing: CoachTheme.Surfaces.groupSpacing) {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
+                    HStack(spacing: CoachTheme.Surfaces.groupSpacing) {
                         FilterButton(
                             title: "All",
                             isSelected: selectedMovement == nil,
@@ -46,7 +46,7 @@ struct SessionHistoryView: View {
                             )
                         }
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, CoachTheme.Surfaces.screenHorizontalPadding)
                 }
                 .padding(.top, 8)
 
@@ -75,11 +75,11 @@ struct SessionHistoryView: View {
     }
 
     private var emptyStateView: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: CoachTheme.Surfaces.sectionSpacing) {
             Spacer()
 
             CoachCard {
-                VStack(spacing: 16) {
+                VStack(spacing: CoachTheme.Surfaces.sectionSpacing) {
                     Image(systemName: "video.fill")
                         .font(.system(size: 56))
                         .foregroundColor(.secondary)
@@ -95,7 +95,7 @@ struct SessionHistoryView: View {
                 }
                 .frame(maxWidth: .infinity)
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, CoachTheme.Surfaces.screenHorizontalPadding)
 
             Spacer()
         }
@@ -105,7 +105,7 @@ struct SessionHistoryView: View {
 
     private var sessionsList: some View {
         ScrollView {
-            LazyVStack(spacing: 10) {
+            LazyVStack(spacing: CoachTheme.Surfaces.groupSpacing) {
                 Text("")
                     .frame(height: 0)
                     .accessibilityHidden(false)
@@ -118,17 +118,17 @@ struct SessionHistoryView: View {
                     .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            .padding(.horizontal, CoachTheme.Surfaces.screenHorizontalPadding)
+            .padding(.vertical, CoachTheme.Surfaces.rowVerticalPadding)
         }
     }
 
     private func errorStateView(_ message: String) -> some View {
-        VStack(spacing: 16) {
+        VStack(spacing: CoachTheme.Surfaces.sectionSpacing) {
             Spacer()
 
             CoachCard {
-                VStack(spacing: 12) {
+                VStack(spacing: CoachTheme.Surfaces.groupSpacing) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 50))
                         .foregroundColor(.orange)
@@ -149,7 +149,7 @@ struct SessionHistoryView: View {
                     .accessibilityIdentifier(AccessibilityID.SessionHistory.tryAgainButton)
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, CoachTheme.Surfaces.screenHorizontalPadding)
 
             Spacer()
         }
@@ -182,7 +182,7 @@ struct SessionCard: View {
     let notesLineLimit: Int?
 
     var body: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: CoachTheme.Surfaces.sectionSpacing) {
             Image(systemName: session.movementType.icon)
                 .font(.title2)
                 .foregroundColor(CoachTheme.Palette.accent)
@@ -217,10 +217,10 @@ struct SessionCard: View {
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                .padding(.horizontal, CoachTheme.Surfaces.rowHorizontalPadding)
+                .padding(.vertical, CoachTheme.Surfaces.rowVerticalPadding)
                 .background(CoachTheme.Palette.secondarySurface(for: colorScheme))
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: CoachTheme.Surfaces.rowCornerRadius, style: .continuous))
             } else {
                 VStack(spacing: 2) {
                     Image(systemName: "clock")
@@ -231,23 +231,23 @@ struct SessionCard: View {
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                .padding(.horizontal, CoachTheme.Surfaces.rowHorizontalPadding)
+                .padding(.vertical, CoachTheme.Surfaces.rowVerticalPadding)
                 .background(CoachTheme.Palette.secondarySurface(for: colorScheme))
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: CoachTheme.Surfaces.rowCornerRadius, style: .continuous))
             }
 
             Image(systemName: "chevron.right")
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
-        .padding(14)
+        .padding(CoachTheme.Surfaces.cardPadding)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: CoachTheme.Surfaces.rowCornerRadius, style: .continuous)
                 .fill(CoachTheme.Palette.surfaceFill(for: colorScheme))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: CoachTheme.Surfaces.rowCornerRadius, style: .continuous)
                 .stroke(CoachTheme.Palette.stroke(for: colorScheme), lineWidth: 1)
         )
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.18 : 0.06), radius: 8, x: 0, y: 4)

@@ -479,6 +479,77 @@ final class StructuralUITests: XCTestCase {
         )
     }
 
+    func testHomePowerliftingRows_uniformHeightsAndChipWidths() throws {
+        app = launchScenario("Home_loaded")
+
+        let probeElement = element(AID.Home.root)
+        guard let probe = waitForHomePowerliftingLayoutProbe(
+            probeElement,
+            timeout: 8,
+            file: #filePath,
+            line: #line
+        ) else {
+            return
+        }
+
+        let expectedIds = ["squat", "deadlift", "bench_press"]
+        XCTAssertEqual(probe.rows.count, 3, "Expected exactly 3 powerlifting rows in probe payload")
+
+        let rowsById = Dictionary(uniqueKeysWithValues: probe.rows.map { ($0.id, $0) })
+
+        for id in expectedIds {
+            XCTAssertNotNil(rowsById[id], "Expected probe row for \(id)")
+        }
+
+        let heights = expectedIds.compactMap { rowsById[$0]?.rowHeight }
+        let chipWidths = expectedIds.compactMap { rowsById[$0]?.chipWidth }
+
+        XCTAssertEqual(heights.count, 3, "Expected all three rows to report height")
+        XCTAssertEqual(chipWidths.count, 3, "Expected all three rows to report chip width")
+
+        guard
+            let maxHeight = heights.max(),
+            let minHeight = heights.min(),
+            let maxChipWidth = chipWidths.max(),
+            let minChipWidth = chipWidths.min()
+        else {
+            XCTFail("Unable to compute row height or chip width deltas")
+            return
+        }
+
+        let rowHeightDelta = maxHeight - minHeight
+        let chipWidthDelta = maxChipWidth - minChipWidth
+
+        XCTAssertLessThanOrEqual(
+            rowHeightDelta,
+            1.0,
+            "Expected uniform powerlifting row heights; delta was \(rowHeightDelta)"
+        )
+
+        XCTAssertLessThanOrEqual(
+            chipWidthDelta,
+            1.0,
+            "Expected uniform difficulty chip widths; delta was \(chipWidthDelta)"
+        )
+    }
+
+    func testHomePowerliftingRows_noLowValueSubtext() throws {
+        app = launchScenario("Home_loaded")
+
+        XCTAssertFalse(
+            app.staticTexts["Lower body compound movement"].exists,
+            "Lower-body helper copy should not be shown in powerlifting rows"
+        )
+        XCTAssertFalse(
+            app.staticTexts["Full body compound movement"].exists,
+            "Full-body helper copy should not be shown in powerlifting rows"
+        )
+        XCTAssertFalse(
+            app.staticTexts["Upper body compound movement"].exists,
+            "Upper-body helper copy should not be shown in powerlifting rows"
+        )
+    }
+
     func testHomeLoaded_a11yAudit() throws {
         app = launchScenario("Home_loaded")
         runA11yAudit()

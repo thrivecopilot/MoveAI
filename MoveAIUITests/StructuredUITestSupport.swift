@@ -34,6 +34,18 @@ struct VideoReviewLayoutProbe: Decodable {
     let playbackMinY: Double
 }
 
+struct HomePowerliftingRowProbe: Decodable {
+    let id: String
+    let rowHeight: Double
+    let chipWidth: Double
+}
+
+struct HomePowerliftingLayoutProbe: Decodable {
+    let schemaVersion: Int
+    let ready: Bool
+    let rows: [HomePowerliftingRowProbe]
+}
+
 extension XCTestCase {
     func launchScenario(
         _ scenario: StructuredUIScenario,
@@ -161,6 +173,57 @@ extension XCTestCase {
         } catch {
             XCTFail(
                 "Failed to decode video review layout probe: \(error.localizedDescription). Raw: \(rawValue)",
+                file: file,
+                line: line
+            )
+            return nil
+        }
+    }
+    @discardableResult
+    func waitForHomePowerliftingLayoutProbe(
+        _ element: XCUIElement,
+        timeout: TimeInterval = 8,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) -> HomePowerliftingLayoutProbe? {
+        guard expectExists(
+            element,
+            timeout: timeout,
+            message: "Home powerlifting layout probe should exist",
+            file: file,
+            line: line
+        ) else {
+            return nil
+        }
+
+        let readyPredicate = NSPredicate(format: "value CONTAINS %@", "\"ready\":true")
+        let readyExpectation = XCTNSPredicateExpectation(predicate: readyPredicate, object: element)
+        let readyResult = XCTWaiter.wait(for: [readyExpectation], timeout: timeout)
+        XCTAssertEqual(
+            readyResult,
+            .completed,
+            "Home powerlifting layout probe did not become ready. Current value: \(String(describing: element.value))",
+            file: file,
+            line: line
+        )
+
+        guard readyResult == .completed else {
+            attachFallbackScreenshot(named: "failure__home_powerlifting_layout_probe_not_ready")
+            return nil
+        }
+
+        let rawValue = String(describing: element.value ?? "")
+        guard let data = rawValue.data(using: .utf8) else {
+            XCTFail("Home powerlifting layout probe value is not valid UTF-8: \(rawValue)", file: file, line: line)
+            return nil
+        }
+
+        do {
+            let decoder = JSONDecoder()
+            return try decoder.decode(HomePowerliftingLayoutProbe.self, from: data)
+        } catch {
+            XCTFail(
+                "Failed to decode home powerlifting layout probe: \(error.localizedDescription). Raw: \(rawValue)",
                 file: file,
                 line: line
             )
