@@ -233,22 +233,40 @@ struct AnalysisResultsView: View {
     }
     
     private func compactRepSummary(_ feedback: [FormFeedback]) -> some View {
-        let repStats = calculateRepStatistics(feedback, reps: analysisResult?.reps, depthMetrics: analysisResult?.depthMetrics)
-        guard repStats.totalReps > 0 else { return AnyView(EmptyView()) }
+        let summary = analysisResult?.analysisSummary ?? AnalysisSummaryBuilder.build(
+            movementType: recording.movementType,
+            feedback: feedback,
+            reps: analysisResult?.reps,
+            depthMetrics: analysisResult?.depthMetrics
+        )
+
+        guard let summary, summary.totalUnits > 0 || summary.warningEvents > 0 else {
+            return AnyView(EmptyView())
+        }
+
         return AnyView(
             VStack(alignment: .leading, spacing: 8) {
-                Text("REP SUMMARY")
+                Text(summary.unitKind.summaryTitle.uppercased())
                     .font(.caption)
                     .fontWeight(.medium)
                     .foregroundColor(.secondary)
-                Text("\(repStats.totalReps) total  ·  \(repStats.goodReps) good  ·  \(repStats.warningReps) need attention")
+                Text(compactSummaryText(summary))
                     .font(.subheadline)
                     .foregroundColor(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         )
     }
-    
+
+    private func compactSummaryText(_ summary: AnalysisSummary) -> String {
+        var text = "\(summary.totalUnits) total  ·  \(summary.goodUnits) good  ·  \(summary.unitsNeedingAttention) need attention"
+        if summary.warningEvents > 0 {
+            let label = summary.warningEvents == 1 ? "warning" : "warnings"
+            text += "  ·  \(summary.warningEvents) \(label)"
+        }
+        return text
+    }
+
     private func compactFeedbackSection(_ feedback: [FormFeedback]) -> some View {
         let issues = feedback.filter { $0.severity == .warning || $0.severity == .critical }
         let wins = feedback.filter { $0.severity == .excellent || $0.severity == .good }
@@ -547,6 +565,8 @@ struct AnalysisResultsView: View {
                             let updatedSession = Session(
                                 id: existingSession.id,
                                 movementType: existingSession.movementType,
+                                technique: existingSession.technique,
+                                fightStance: existingSession.fightStance,
                                 videoURL: existingSession.videoURL,
                                 timestamp: existingSession.timestamp,
                                 analysisResult: result,

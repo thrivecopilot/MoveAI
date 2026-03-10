@@ -394,6 +394,8 @@ struct VideoReviewLayoutView: View {
         let updated = Session(
             id: current.id,
             movementType: current.movementType,
+            technique: current.technique,
+            fightStance: current.fightStance,
             videoURL: current.videoURL,
             timestamp: current.timestamp,
             analysisResult: current.analysisResult,
@@ -502,21 +504,25 @@ struct VideoReviewLayoutView: View {
         }
         do {
             let recording = MovementRecording(
-                movementType: session.movementType,
-                videoURL: session.videoURL,
+                movementType: current.movementType,
+                technique: current.technique,
+                fightStance: current.fightStance,
+                videoURL: current.videoURL,
                 duration: 0,
                 poseData: poseData
             )
             let result = try await analysisService.analyzeMovement(recording)
             let updated = Session(
-                id: session.id,
-                movementType: session.movementType,
-                videoURL: session.videoURL,
-                timestamp: session.timestamp,
+                id: current.id,
+                movementType: current.movementType,
+                technique: current.technique,
+                fightStance: current.fightStance,
+                videoURL: current.videoURL,
+                timestamp: current.timestamp,
                 analysisResult: result,
-                poseData: session.poseData,
-                notes: session.notes,
-                isRecordedLive: session.isRecordedLive
+                poseData: current.poseData,
+                notes: current.notes,
+                isRecordedLive: current.isRecordedLive
             )
             await MainActor.run {
                 sessionManager.updateSession(updated)

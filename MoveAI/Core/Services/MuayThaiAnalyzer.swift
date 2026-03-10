@@ -52,6 +52,14 @@ enum MuayThaiAnalyzer {
         }
 
         let score = MuayThaiScoring.score(feedback: feedback, attemptsCount: attempts.count)
+        let analysisSummary = AnalysisSummaryBuilder.build(
+            movementType: .muayThai,
+            feedback: feedback,
+            reps: nil,
+            depthMetrics: nil,
+            attemptsCount: attempts.count,
+            attemptsNeedingAttention: outcome.attemptsWithIssues
+        )
 
 #if DEBUG
         if ProcessInfo.processInfo.environment["MOVEAI_POSE_DEBUG"] == "1" {
@@ -61,7 +69,11 @@ enum MuayThaiAnalyzer {
         }
 #endif
 
-        return AnalysisResult(score: score, feedback: feedback.sorted { $0.timestamp < $1.timestamp })
+        return AnalysisResult(
+            score: score,
+            feedback: feedback.sorted { $0.timestamp < $1.timestamp },
+            analysisSummary: analysisSummary
+        )
     }
 
     private static func humanReadableIssueName(_ kind: MovementIssueKind) -> String {

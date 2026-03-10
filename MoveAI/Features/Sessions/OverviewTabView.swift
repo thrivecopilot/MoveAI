@@ -13,32 +13,27 @@ struct OverviewTabView: View {
     let analysisResult: AnalysisResult
     var isCompact: Bool = false
 
-    private var repStats: (total: Int, good: Int, warning: Int) {
-        guard let reps = analysisResult.reps, !reps.isEmpty else {
-            return (0, 0, 0)
+    private var summary: AnalysisSummary? {
+        guard let summary = AnalysisSummaryBuilder.buildLegacy(from: analysisResult) else {
+            return nil
         }
-        let depthByRep: [Int: [DepthAnalysis]] = Dictionary(
-            grouping: (analysisResult.depthMetrics ?? []).compactMap { m in
-                m.repNumber.map { (rep: $0, metric: m) }
-            },
-            by: { $0.rep }
-        ).mapValues { $0.map(\.metric) }
-        var good = 0
-        var warning = 0
-        for rep in reps {
-            let reachedDepth: Bool
-            if let metrics = depthByRep[rep.repNumber], let deepest = metrics.max(by: { $0.depthPercentage < $1.depthPercentage }) {
-                reachedDepth = deepest.isAtDepth
-            } else {
-                reachedDepth = true
-            }
-            if rep.isFullRep && reachedDepth {
-                good += 1
-            } else {
-                warning += 1
-            }
+
+        if summary.totalUnits <= 0 && summary.warningEvents <= 0 {
+            return nil
         }
-        return (reps.count, good, warning)
+
+        return summary
+    }
+
+    private func summaryValueText(_ summary: AnalysisSummary) -> String {
+        var text = "\(summary.totalUnits) total  ·  \(summary.goodUnits) good  ·  \(summary.unitsNeedingAttention) need attention"
+
+        if summary.warningEvents > 0 {
+            let label = summary.warningEvents == 1 ? "warning" : "warnings"
+            text += "  ·  \(summary.warningEvents) \(label)"
+        }
+
+        return text
     }
 
     var body: some View {
@@ -74,7 +69,7 @@ struct OverviewTabView: View {
     }
 
     private var scoreAndSummaryRow: some View {
-        let stats = repStats
+        let overviewSummary = summary
         return AnyView(
             HStack(alignment: .center, spacing: 14) {
                 VStack(alignment: .leading, spacing: 6) {
@@ -96,14 +91,14 @@ struct OverviewTabView: View {
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
-                if stats.total > 0 {
+                if let overviewSummary {
                     VStack(alignment: .leading, spacing: 6) {
-                        sectionLabel("Rep Summary")
+                        sectionLabel(overviewSummary.unitKind.summaryTitle)
                             .accessibilityIdentifier("WorkoutSummary.RepSummaryTitle")
-                        Text("\(stats.total) total  ·  \(stats.good) good  ·  \(stats.warning) need attention")
+                        Text(summaryValueText(overviewSummary))
                             .font(.subheadline)
                             .foregroundColor(.secondary)
-                            .lineLimit(isCompact ? 1 : 2)
+                            .lineLimit(isCompact ? 2 : 3)
                             .accessibilityIdentifier("WorkoutSummary.RepSummaryValue")
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)

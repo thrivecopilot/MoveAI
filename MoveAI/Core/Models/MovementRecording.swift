@@ -45,13 +45,21 @@ struct AnalysisResult: Codable {
     let timestamp: Date
     let reps: [SquatRep]? // Optional for backward compatibility
     let depthMetrics: [DepthAnalysis]? // Optional depth metrics for shallow rep detection
+    let analysisSummary: AnalysisSummary? // Optional movement-agnostic summary for overview UI
 
-    init(score: Double, feedback: [FormFeedback], reps: [SquatRep]? = nil, depthMetrics: [DepthAnalysis]? = nil) {
+    init(
+        score: Double,
+        feedback: [FormFeedback],
+        reps: [SquatRep]? = nil,
+        depthMetrics: [DepthAnalysis]? = nil,
+        analysisSummary: AnalysisSummary? = nil
+    ) {
         self.score = score
         self.feedback = feedback
         self.timestamp = Date()
         self.reps = reps
         self.depthMetrics = depthMetrics
+        self.analysisSummary = analysisSummary
     }
 }
 

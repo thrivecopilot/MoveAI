@@ -4,6 +4,7 @@ import Foundation
 struct MuayThaiDetectionOutcome {
     let feedback: [FormFeedback]
     let blockedEntries: [MuayThaiIssueCatalogEntry]
+    let attemptsWithIssues: Int
 }
 
 enum MuayThaiIssueDetectors {
@@ -18,17 +19,20 @@ enum MuayThaiIssueDetectors {
         let activeEntries = entries.filter { $0.detectionSupport != .blocked }
 
         guard !poses.isEmpty, !attempts.isEmpty else {
-            return MuayThaiDetectionOutcome(feedback: [], blockedEntries: blockedEntries)
+            return MuayThaiDetectionOutcome(feedback: [], blockedEntries: blockedEntries, attemptsWithIssues: 0)
         }
 
         var feedback: [FormFeedback] = []
+        var attemptsWithIssues = 0
 
         for attempt in attempts {
             guard let context = AttemptContext(poses: poses, attempt: attempt, stance: stance) else { continue }
 
+            var issueDetectedForAttempt = false
             for entry in activeEntries {
                 guard let detection = detect(entry: entry, context: context) else { continue }
 
+                issueDetectedForAttempt = true
                 let metrics = detection.metrics.isEmpty ? nil : detection.metrics
                 let affectedJoints = detection.affectedJoints.isEmpty ? nil : detection.affectedJoints
 
@@ -45,11 +49,16 @@ enum MuayThaiIssueDetectors {
                     )
                 )
             }
+
+            if issueDetectedForAttempt {
+                attemptsWithIssues += 1
+            }
         }
 
         return MuayThaiDetectionOutcome(
             feedback: feedback.sorted { $0.timestamp < $1.timestamp },
-            blockedEntries: blockedEntries
+            blockedEntries: blockedEntries,
+            attemptsWithIssues: attemptsWithIssues
         )
     }
 
