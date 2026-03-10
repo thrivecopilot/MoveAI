@@ -99,7 +99,6 @@ final class MuayThaiAnalyzerTests: XCTestCase {
     }
 
     func testPoseBasedAnalysisServiceMuayThaiRequiresTechnique() async {
-        setenv("MOVEAI_ENABLE_MUAY_THAI_ANALYZER", "1", 1)
         let service = PoseBasedAnalysisService()
         let recording = MovementRecording(
             movementType: .muayThai,
@@ -112,8 +111,33 @@ final class MuayThaiAnalyzerTests: XCTestCase {
             _ = try await service.analyzeMovement(recording)
             XCTFail("Expected missing-technique error")
         } catch let error as AnalysisError {
-            if case .analysisFailed(let reason) = error {
-                XCTAssertTrue(reason.localizedCaseInsensitiveContains("select a muay thai technique"))
+            if case .muayThaiTechniqueRequired = error {
+                // expected
+            } else {
+                XCTFail("Unexpected AnalysisError case: \(error)")
+            }
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
+        }
+    }
+
+    func testPoseBasedAnalysisServiceMuayThaiRespectsExplicitDisableFlag() async {
+        setenv("MOVEAI_ENABLE_MUAY_THAI_ANALYZER", "0", 1)
+        let service = PoseBasedAnalysisService()
+        let recording = MovementRecording(
+            movementType: .muayThai,
+            technique: .jab,
+            videoURL: URL(fileURLWithPath: "/tmp/test.mov"),
+            duration: 2.0,
+            poseData: stableMovementPoses(frameCount: 12)
+        )
+
+        do {
+            _ = try await service.analyzeMovement(recording)
+            XCTFail("Expected Muay Thai disabled error")
+        } catch let error as AnalysisError {
+            if case .muayThaiAnalysisDisabled = error {
+                // expected
             } else {
                 XCTFail("Unexpected AnalysisError case: \(error)")
             }

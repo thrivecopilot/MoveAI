@@ -56,13 +56,12 @@ class PoseBasedAnalysisService: AnalysisServiceProtocol {
     // MARK: - Muay Thai Analysis
 
     private func analyzeMuayThai(recording: MovementRecording, poseData: [PoseDetectionResult]) throws -> AnalysisResult {
-        let isEnabled = ProcessInfo.processInfo.environment["MOVEAI_ENABLE_MUAY_THAI_ANALYZER"] == "1"
-        guard isEnabled else {
-            throw AnalysisError.notImplemented
+        if ProcessInfo.processInfo.environment["MOVEAI_ENABLE_MUAY_THAI_ANALYZER"] == "0" {
+            throw AnalysisError.muayThaiAnalysisDisabled
         }
 
         guard let technique = recording.technique else {
-            throw AnalysisError.analysisFailed(reason: "Select a Muay Thai technique before starting analysis.")
+            throw AnalysisError.muayThaiTechniqueRequired
         }
 
         return MuayThaiAnalyzer.analyze(

@@ -158,6 +158,8 @@ extension DetailedError {
 
 enum AnalysisError: DetailedError {
     case notImplemented
+    case muayThaiAnalysisDisabled
+    case muayThaiTechniqueRequired
     case noPoseData
     case insufficientFrames(actual: Int, required: Int)
     case missingKeypoints(missing: [String])
@@ -175,6 +177,10 @@ enum AnalysisError: DetailedError {
         switch self {
         case .notImplemented:
             return "Analysis not yet implemented for this movement type"
+        case .muayThaiAnalysisDisabled:
+            return "Muay Thai analysis is currently unavailable in this build"
+        case .muayThaiTechniqueRequired:
+            return "Select a Muay Thai movement (jab, cross, etc.) before analysis"
         case .noPoseData:
             return "No pose detection data available"
         case .insufficientFrames(let actual, let required):
@@ -232,6 +238,10 @@ enum AnalysisError: DetailedError {
             return VideoCaptureTips.tipsForNoMovement
         case .cameraAngleIssue:
             return VideoCaptureTips.tipsForCameraAngle
+        case .muayThaiAnalysisDisabled:
+            return ["Muay Thai analysis is temporarily disabled in this build.", "Try again in a build with Muay Thai analysis enabled."]
+        case .muayThaiTechniqueRequired:
+            return ["Select a specific Muay Thai movement before running analysis.", "Then record or upload your set again for technique-specific feedback."]
         case .videoProcessingFailed, .unsupportedVideoFormat, .videoCorrupted, .processingTimeout:
             return VideoCaptureTips.tipsForVideoProcessing
         default:
@@ -249,6 +259,10 @@ enum AnalysisError: DetailedError {
             return "Improve lighting and ensure clear background contrast"
         case .cameraAngleIssue:
             return "Position camera at a 45-90 degree angle to your side"
+        case .muayThaiAnalysisDisabled:
+            return "Use a build with Muay Thai analysis enabled"
+        case .muayThaiTechniqueRequired:
+            return "Choose jab, cross, hook, kick, knee, elbow, or movement before analysis"
         case .unsupportedVideoFormat:
             return "Convert your video to MP4 or MOV format and try again"
         case .videoCorrupted:
