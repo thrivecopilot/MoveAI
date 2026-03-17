@@ -72,15 +72,42 @@ class PoseBasedAnalysisService: AnalysisServiceProtocol {
             throw AnalysisError.muayThaiAnalysisDisabled
         }
 
-        guard let technique = recording.technique else {
-            throw AnalysisError.muayThaiTechniqueRequired
+        MuayThaiDebug.log("PoseBasedAnalysisService.analyzeMuayThai: poses=\(poseData.count) selectedTechnique=\(recording.technique?.rawValue ?? "nil") selectedStance=\(recording.fightStance?.rawValue ?? "nil") comboEnabled=\(ProcessInfo.processInfo.environment["MOVEAI_ENABLE_MUAY_THAI_COMBO_ANALYZER"] != "0")")
+
+        if let technique = recording.technique {
+            MuayThaiDebug.log("PoseBasedAnalysisService: using explicit technique=\(technique.rawValue)")
+            return MuayThaiAnalyzer.analyze(
+                poses: poseData,
+                technique: technique,
+                fightStance: recording.fightStance
+            )
         }
 
-        return MuayThaiAnalyzer.analyze(
-            poses: poseData,
-            technique: technique,
-            fightStance: recording.fightStance
-        )
+        let comboAnalyzerEnabled = ProcessInfo.processInfo.environment["MOVEAI_ENABLE_MUAY_THAI_COMBO_ANALYZER"] != "0"
+        if comboAnalyzerEnabled,
+           let comboDetection = MuayThaiComboDetector.detect(poses: poseData, preferredStance: recording.fightStance),
+           !comboDetection.attempts.isEmpty {
+            let summary = comboDetection.attempts.map { attempt in "\(attempt.technique.rawValue):\(MuayThaiDebug.format(attempt.confidence))" }.joined(separator: ",")
+            MuayThaiDebug.log("PoseBasedAnalysisService: combo auto-detect attempts=\(comboDetection.attempts.count) [\(summary)]")
+            return MuayThaiAnalyzer.analyzeCombo(
+                poses: poseData,
+                comboDetection: comboDetection
+            )
+        }
+
+        if let detection = MuayThaiTechniqueDetector.detect(poses: poseData, preferredStance: recording.fightStance) {
+            MuayThaiDebug.log("PoseBasedAnalysisService: single-technique auto-detect=\(detection.technique.rawValue) confidence=\(MuayThaiDebug.format(detection.confidence)) attempts=\(detection.attemptsCount) inferredStance=\(detection.stanceResolution.stance.rawValue) stanceConfidence=\(MuayThaiDebug.format(detection.stanceResolution.confidence))")
+            return MuayThaiAnalyzer.analyze(
+                poses: poseData,
+                technique: detection.technique,
+                fightStance: recording.fightStance,
+                detectedTechnique: detection.technique,
+                detectionConfidence: detection.confidence
+            )
+        }
+
+        MuayThaiDebug.log("PoseBasedAnalysisService: auto-detect failed (no confident technique)")
+        throw AnalysisError.muayThaiTechniqueAutoDetectionFailed(confidence: nil)
     }
 
     // MARK: - Error Conversion

@@ -160,6 +160,7 @@ enum AnalysisError: DetailedError {
     case notImplemented
     case muayThaiAnalysisDisabled
     case muayThaiTechniqueRequired
+    case muayThaiTechniqueAutoDetectionFailed(confidence: Double?)
     case noPoseData
     case insufficientFrames(actual: Int, required: Int)
     case missingKeypoints(missing: [String])
@@ -181,6 +182,12 @@ enum AnalysisError: DetailedError {
             return "Muay Thai analysis is currently unavailable in this build"
         case .muayThaiTechniqueRequired:
             return "Select a Muay Thai movement (jab, cross, etc.) before analysis"
+        case .muayThaiTechniqueAutoDetectionFailed(let confidence):
+            if let confidence {
+                let pct = Int((confidence * 100.0).rounded())
+                return "Couldn't confidently detect the Muay Thai movement from this clip (confidence: \(pct)%)"
+            }
+            return "Couldn't confidently detect the Muay Thai movement from this clip"
         case .noPoseData:
             return "No pose detection data available"
         case .insufficientFrames(let actual, let required):
@@ -242,6 +249,8 @@ enum AnalysisError: DetailedError {
             return ["Muay Thai analysis is temporarily disabled in this build.", "Try again in a build with Muay Thai analysis enabled."]
         case .muayThaiTechniqueRequired:
             return ["Select a specific Muay Thai movement before running analysis.", "Then record or upload your set again for technique-specific feedback."]
+        case .muayThaiTechniqueAutoDetectionFailed:
+            return ["Auto-detection could not confidently identify the movement in this clip.", "Choose the movement manually, or upload a clip with clearer full-body visibility and a distinct strike pattern."]
         case .videoProcessingFailed, .unsupportedVideoFormat, .videoCorrupted, .processingTimeout:
             return VideoCaptureTips.tipsForVideoProcessing
         default:
@@ -263,6 +272,8 @@ enum AnalysisError: DetailedError {
             return "Use a build with Muay Thai analysis enabled"
         case .muayThaiTechniqueRequired:
             return "Choose jab, cross, hook, kick, knee, elbow, or movement before analysis"
+        case .muayThaiTechniqueAutoDetectionFailed:
+            return "Select the movement manually or upload a clearer clip with one primary strike pattern"
         case .unsupportedVideoFormat:
             return "Convert your video to MP4 or MOV format and try again"
         case .videoCorrupted:

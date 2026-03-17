@@ -15,6 +15,7 @@ enum MuayThaiEventDetector {
         stance: FightStance
     ) -> [TechniqueAttempt] {
         guard poses.count >= 3 else {
+            MuayThaiDebug.log("MuayThaiEventDetector: technique=\(technique.rawValue) stance=\(stance.rawValue) frames=\(poses.count) -> default (too few frames)")
             return defaultAttempt(for: poses)
         }
 
@@ -33,6 +34,7 @@ enum MuayThaiEventDetector {
         }
 
         guard maxSpeed > 0 else {
+            MuayThaiDebug.log("MuayThaiEventDetector: technique=\(technique.rawValue) stance=\(stance.rawValue) maxSpeed=0 -> default")
             return defaultAttempt(for: poses)
         }
 
@@ -60,6 +62,8 @@ enum MuayThaiEventDetector {
             }
         }
 
+        MuayThaiDebug.log("MuayThaiEventDetector: technique=\(technique.rawValue) stance=\(stance.rawValue) maxSpeed=\(MuayThaiDebug.format(maxSpeed, decimals: 4)) threshold=\(MuayThaiDebug.format(threshold, decimals: 4)) peaks=\(peakFrames)")
+
         let attempts = peakFrames.map { peakFrame -> TechniqueAttempt in
             let start = max(0, peakFrame - 6)
             let end = min(poses.count - 1, peakFrame + 6)
@@ -68,8 +72,11 @@ enum MuayThaiEventDetector {
         }
 
         if attempts.isEmpty {
+            MuayThaiDebug.log("MuayThaiEventDetector: technique=\(technique.rawValue) no peaks -> default")
             return defaultAttempt(for: poses)
         }
+
+        MuayThaiDebug.log("MuayThaiEventDetector: technique=\(technique.rawValue) attempts=\(attempts.map { attempt in "[\(attempt.startFrame)-\(attempt.peakFrame)-\(attempt.endFrame)]" }.joined(separator: ","))")
 
         return attempts
     }
@@ -88,9 +95,9 @@ enum MuayThaiEventDetector {
     ) -> CGPoint? {
         switch technique {
         case .jab:
-            return point(for: leadJoint(left: .leftWrist, right: .rightWrist, stance: stance), in: pose)
+            return punchTrackedPoint(in: pose)
         case .cross:
-            return point(for: rearJoint(left: .leftWrist, right: .rightWrist, stance: stance), in: pose)
+            return punchTrackedPoint(in: pose)
         case .leadHook:
             return point(for: leadJoint(left: .leftElbow, right: .rightElbow, stance: stance), in: pose)
         case .roundhouseKick:
@@ -107,6 +114,21 @@ enum MuayThaiEventDetector {
                 return point(for: .root, in: pose)
             }
             return PoseAnalysisHelpers.midpoint(left, right)
+        }
+    }
+    private static func punchTrackedPoint(in pose: PoseDetectionResult) -> CGPoint? {
+        let left = point(for: .leftWrist, in: pose)
+        let right = point(for: .rightWrist, in: pose)
+
+        switch (left, right) {
+        case let (l?, r?):
+            return PoseAnalysisHelpers.midpoint(l, r)
+        case let (l?, nil):
+            return l
+        case let (nil, r?):
+            return r
+        case (nil, nil):
+            return nil
         }
     }
 

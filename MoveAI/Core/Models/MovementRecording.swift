@@ -46,13 +46,17 @@ struct AnalysisResult: Codable {
     let reps: [SquatRep]? // Optional for backward compatibility
     let depthMetrics: [DepthAnalysis]? // Optional depth metrics for shallow rep detection
     let analysisSummary: AnalysisSummary? // Optional movement-agnostic summary for overview UI
+    let detectedTechnique: MuayThaiTechnique? // Optional auto-detected Muay Thai technique (Phase 2)
+    let detectionConfidence: Double? // Optional confidence for auto-detected technique (0-1)
 
     init(
         score: Double,
         feedback: [FormFeedback],
         reps: [SquatRep]? = nil,
         depthMetrics: [DepthAnalysis]? = nil,
-        analysisSummary: AnalysisSummary? = nil
+        analysisSummary: AnalysisSummary? = nil,
+        detectedTechnique: MuayThaiTechnique? = nil,
+        detectionConfidence: Double? = nil
     ) {
         self.score = score
         self.feedback = feedback
@@ -60,6 +64,8 @@ struct AnalysisResult: Codable {
         self.reps = reps
         self.depthMetrics = depthMetrics
         self.analysisSummary = analysisSummary
+        self.detectedTechnique = detectedTechnique
+        self.detectionConfidence = detectionConfidence
     }
 }
 

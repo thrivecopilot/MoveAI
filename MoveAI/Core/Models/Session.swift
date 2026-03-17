@@ -44,8 +44,14 @@ struct Session: Identifiable, Codable {
     }
     
     var displayName: String {
-        if movementType == .muayThai, let technique {
-            return "\(movementType.displayName) - \(technique.displayName)"
+        if movementType == .muayThai {
+            if let technique {
+                return "\(movementType.displayName) - \(technique.displayName)"
+            }
+
+            if let detected = analysisResult?.detectedTechnique {
+                return "\(movementType.displayName) - \(detected.displayName)"
+            }
         }
         return movementType.displayName
     }

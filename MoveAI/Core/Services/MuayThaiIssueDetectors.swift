@@ -12,21 +12,54 @@ enum MuayThaiIssueDetectors {
         poses: [PoseDetectionResult],
         attempts: [TechniqueAttempt],
         technique: MuayThaiTechnique,
-        stance: FightStance
+        stance: FightStance,
+        stanceSource: FightStanceResolution.Source = .autoInferred
     ) -> MuayThaiDetectionOutcome {
-        let entries = MuayThaiIssueCatalog.entries(for: technique)
-        let blockedEntries = entries.filter { $0.detectionSupport == .blocked }
-        let activeEntries = entries.filter { $0.detectionSupport != .blocked }
-
-        guard !poses.isEmpty, !attempts.isEmpty else {
-            return MuayThaiDetectionOutcome(feedback: [], blockedEntries: blockedEntries, attemptsWithIssues: 0)
+        let classifiedAttempts = attempts.map {
+            MuayThaiClassifiedAttempt(attempt: $0, technique: technique, confidence: 1.0)
         }
+
+        return evaluate(
+            poses: poses,
+            classifiedAttempts: classifiedAttempts,
+            stance: stance,
+            stanceSource: stanceSource
+        )
+    }
+
+    static func evaluate(
+        poses: [PoseDetectionResult],
+        classifiedAttempts: [MuayThaiClassifiedAttempt],
+        stance: FightStance,
+        stanceSource: FightStanceResolution.Source = .autoInferred
+    ) -> MuayThaiDetectionOutcome {
+        guard !poses.isEmpty, !classifiedAttempts.isEmpty else {
+            return MuayThaiDetectionOutcome(feedback: [], blockedEntries: [], attemptsWithIssues: 0)
+        }
+
+        let techniques = Set(classifiedAttempts.map(\.technique))
+        MuayThaiDebug.log("IssueDetectors: attempts=\(classifiedAttempts.count) techniques=\(techniques.map(\.rawValue).sorted()) stance=\(stance.rawValue)")
+        let blockedEntries = uniqueBlockedEntries(for: techniques)
+        let mixedTechniques = techniques.count > 1
 
         var feedback: [FormFeedback] = []
         var attemptsWithIssues = 0
 
-        for attempt in attempts {
-            guard let context = AttemptContext(poses: poses, attempt: attempt, stance: stance) else { continue }
+        for (attemptIndex, classifiedAttempt) in classifiedAttempts.enumerated() {
+            let entries = MuayThaiIssueCatalog.entries(for: classifiedAttempt.technique)
+            let activeEntries = entries.filter { $0.detectionSupport != .blocked }
+
+            guard let context = AttemptContext(
+                poses: poses,
+                attempt: classifiedAttempt.attempt,
+                stance: stance,
+                stanceSource: stanceSource
+            ) else {
+                MuayThaiDebug.log("IssueDetectors: skipped attempt \(attemptIndex + 1) \(classifiedAttempt.technique.rawValue) (invalid frame window)")
+                continue
+            }
+
+            MuayThaiDebug.log("IssueDetectors: attempt \(attemptIndex + 1) technique=\(classifiedAttempt.technique.rawValue) frames=[\(classifiedAttempt.attempt.startFrame)-\(classifiedAttempt.attempt.peakFrame)-\(classifiedAttempt.attempt.endFrame)] peakTime=\(MuayThaiDebug.format(context.peakTime, decimals: 3)) fwd=\(MuayThaiDebug.format(context.forwardDirection, decimals: 2))")
 
             var issueDetectedForAttempt = false
             for entry in activeEntries {
@@ -35,11 +68,19 @@ enum MuayThaiIssueDetectors {
                 issueDetectedForAttempt = true
                 let metrics = detection.metrics.isEmpty ? nil : detection.metrics
                 let affectedJoints = detection.affectedJoints.isEmpty ? nil : detection.affectedJoints
+                let message = contextualMessage(
+                    base: detection.message,
+                    attemptIndex: attemptIndex,
+                    technique: classifiedAttempt.technique,
+                    mixedTechniques: mixedTechniques
+                )
+
+                MuayThaiDebug.log("IssueDetectors: triggered issue=\(entry.issueKind.rawValue) severity=\(detection.severity.rawValue) attempt=\(attemptIndex + 1)")
 
                 feedback.append(
                     FormFeedback(
                         category: detection.category,
-                        message: detection.message,
+                        message: message,
                         severity: detection.severity,
                         timestamp: context.peakTime,
                         repNumber: nil,
@@ -60,6 +101,29 @@ enum MuayThaiIssueDetectors {
             blockedEntries: blockedEntries,
             attemptsWithIssues: attemptsWithIssues
         )
+    }
+
+    private static func uniqueBlockedEntries(for techniques: Set<MuayThaiTechnique>) -> [MuayThaiIssueCatalogEntry] {
+        guard !techniques.isEmpty else { return [] }
+
+        var deduped: [MovementIssueKind: MuayThaiIssueCatalogEntry] = [:]
+        for technique in techniques {
+            for entry in MuayThaiIssueCatalog.entries(for: technique) where entry.detectionSupport == .blocked {
+                deduped[entry.issueKind] = entry
+            }
+        }
+
+        return deduped.values.sorted { $0.issueKind.rawValue < $1.issueKind.rawValue }
+    }
+
+    private static func contextualMessage(
+        base: String,
+        attemptIndex: Int,
+        technique: MuayThaiTechnique,
+        mixedTechniques: Bool
+    ) -> String {
+        guard mixedTechniques else { return base }
+        return "Strike \(attemptIndex + 1) (\(technique.displayName)): \(base)"
     }
 
     private struct Detection {
@@ -124,6 +188,7 @@ enum MuayThaiIssueDetectors {
         let poses: [PoseDetectionResult]
         let attempt: TechniqueAttempt
         let stance: FightStance
+        let stanceSource: FightStanceResolution.Source
         let joints: JointMap
         let startPose: PoseDetectionResult
         let peakPose: PoseDetectionResult
@@ -134,7 +199,12 @@ enum MuayThaiIssueDetectors {
             max(0, peakPose.timestamp.timeIntervalSince1970)
         }
 
-        init?(poses: [PoseDetectionResult], attempt: TechniqueAttempt, stance: FightStance) {
+        init?(
+            poses: [PoseDetectionResult],
+            attempt: TechniqueAttempt,
+            stance: FightStance,
+            stanceSource: FightStanceResolution.Source
+        ) {
             guard let startPose = poses[optional: attempt.startFrame],
                   let peakPose = poses[optional: attempt.peakFrame],
                   let endPose = poses[optional: attempt.endFrame] else {
@@ -144,6 +214,7 @@ enum MuayThaiIssueDetectors {
             self.poses = poses
             self.attempt = attempt
             self.stance = stance
+            self.stanceSource = stanceSource
             self.joints = JointMap.forStance(stance)
             self.startPose = startPose
             self.peakPose = peakPose
@@ -212,42 +283,179 @@ enum MuayThaiIssueDetectors {
     }
 
     private static func detectRearHandDropping(entry: MuayThaiIssueCatalogEntry, context: AttemptContext) -> Detection? {
-        guard let rearWrist = point(context.joints.rearWrist, in: context.peakPose),
-              let rearElbow = point(context.joints.rearElbow, in: context.peakPose),
-              let rearHip = point(context.joints.rearHip, in: context.peakPose),
-              let nose = point(.nose, in: context.peakPose) else {
+        let roles = MuayThaiAttemptRoleResolver.resolvePunchRoles(
+            technique: .jab,
+            startPose: context.startPose,
+            peakPose: context.peakPose,
+            stance: context.stance
+        )
+
+        MuayThaiDebug.log("RearHandDrop: role source=\(String(describing: roles.source)) striking=\(roles.strikingWrist.rawValue) guard=\(roles.guardWrist.rawValue) confidence=\(MuayThaiDebug.format(roles.confidence))")
+
+        if roles.source != .motionInferred {
+            MuayThaiDebug.log("RearHandDrop: skipped (role source \(String(describing: roles.source)) is not motionInferred)")
             return nil
         }
 
-        let guardDistance = PoseAnalysisHelpers.distance(from: rearWrist, to: nose)
-        let shoulderWidth = bilateralDistance(.leftShoulder, .rightShoulder, in: context.peakPose) ?? 0.2
-        let guardRatio = guardDistance / max(shoulderWidth, 0.001)
-        let elbowToRib = PoseAnalysisHelpers.distance(from: rearElbow, to: rearHip)
-
-        guard rearWrist.y < nose.y - 0.03 || guardRatio > 0.9 || elbowToRib > 0.2 else {
+        // Low-confidence role inference is a common source of false positives where
+        // the jabbing hand gets mistaken for the rear guard hand.
+        if roles.source == .motionInferred && roles.confidence < 0.35 {
+            MuayThaiDebug.log("RearHandDrop: skipped (low role confidence=\(MuayThaiDebug.format(roles.confidence)))")
             return nil
         }
+
+        let baselineSignal = rearHandDropSignal(
+            in: context.startPose,
+            guardWrist: roles.guardWrist,
+            guardElbow: roles.guardElbow
+        )
+        let baselineExtension = strikingExtensionRatio(
+            in: context.startPose,
+            strikingWrist: roles.strikingWrist,
+            strikingShoulder: roles.strikingShoulder
+        ) ?? 0
+
+        var extensionFrames = 0
+        var droppedFrames = 0
+        var maxGuardRatio = 0.0
+        var maxExtensionRatio = 0.0
+
+        for frame in context.attempt.startFrame...context.attempt.endFrame {
+            guard let pose = context.poses[optional: frame],
+                  let signal = rearHandDropSignal(
+                    in: pose,
+                    guardWrist: roles.guardWrist,
+                    guardElbow: roles.guardElbow
+                  ),
+                  let extensionRatio = strikingExtensionRatio(
+                    in: pose,
+                    strikingWrist: roles.strikingWrist,
+                    strikingShoulder: roles.strikingShoulder
+                  ) else {
+                continue
+            }
+
+            let extensionDelta = extensionRatio - baselineExtension
+            let isExtensionFrame = extensionDelta > 0.10 || extensionRatio > 1.15
+            guard isExtensionFrame else { continue }
+
+            extensionFrames += 1
+            maxGuardRatio = max(maxGuardRatio, signal.guardRatio)
+            maxExtensionRatio = max(maxExtensionRatio, extensionRatio)
+
+            let baselineRatio = baselineSignal?.guardRatio ?? signal.guardRatio
+            let guardDelta = signal.guardRatio - baselineRatio
+            let handFarFromGuard = signal.guardRatio > 0.65 || guardDelta > 0.12
+            let guardDropped = handFarFromGuard && (signal.wristDroppedBelowChin || signal.elbowFlared)
+
+            if guardDropped {
+                droppedFrames += 1
+            }
+        }
+
+        guard extensionFrames >= 2 else {
+            MuayThaiDebug.log("RearHandDrop: skipped (insufficient extension frames=\(extensionFrames))")
+            return nil
+        }
+
+        guard maxExtensionRatio >= 1.20 else {
+            MuayThaiDebug.log("RearHandDrop: skipped (insufficient jab extension maxExtensionRatio=\(MuayThaiDebug.format(maxExtensionRatio)))")
+            return nil
+        }
+
+        let droppedRatio = Double(droppedFrames) / Double(extensionFrames)
+        MuayThaiDebug.log("RearHandDrop: extensionFrames=\(extensionFrames) droppedFrames=\(droppedFrames) droppedRatio=\(MuayThaiDebug.format(droppedRatio)) maxGuardRatio=\(MuayThaiDebug.format(maxGuardRatio)) maxExtensionRatio=\(MuayThaiDebug.format(maxExtensionRatio))")
+
+        guard droppedFrames >= 2 || droppedRatio >= 0.4 else {
+            MuayThaiDebug.log("RearHandDrop: not triggered")
+            return nil
+        }
+
+        MuayThaiDebug.log("RearHandDrop: triggered")
 
         return Detection(
             severity: entry.severity,
             category: .safety,
             message: entry.cueDetailed,
-            affectedJoints: [context.joints.rearWrist, context.joints.rearElbow, context.joints.rearShoulder, .nose],
+            affectedJoints: [roles.guardWrist, roles.guardElbow, roles.guardShoulder, .nose],
             metrics: [
-                FeedbackMetric(kind: .muayThaiRearHandGuardDistanceRatio, value: guardRatio, unit: .ratio)
+                FeedbackMetric(kind: .muayThaiRearHandGuardDistanceRatio, value: maxGuardRatio, unit: .ratio)
             ]
         )
     }
 
-    private static func detectJabLeaningForward(entry: MuayThaiIssueCatalogEntry, context: AttemptContext) -> Detection? {
-        guard let torsoAngle = torsoForwardAngle(in: context.peakPose),
-              let nose = point(.nose, in: context.peakPose),
-              let leadKnee = point(context.joints.leadKnee, in: context.peakPose) else {
+    private static func rearHandDropSignal(
+        in pose: PoseDetectionResult,
+        guardWrist: BodyJoint,
+        guardElbow: BodyJoint
+    ) -> (guardRatio: Double, wristDroppedBelowChin: Bool, elbowFlared: Bool)? {
+        guard let wrist = point(guardWrist, in: pose),
+              let elbow = point(guardElbow, in: pose),
+              let hip = point(sameSideHip(for: guardWrist), in: pose),
+              let nose = point(.nose, in: pose) else {
             return nil
         }
 
-        let nosePastLeadKnee = forwardDelta(currentX: nose.x, referenceX: leadKnee.x, direction: context.forwardDirection) > 0.02
-        guard torsoAngle > 20 && nosePastLeadKnee else { return nil }
+        let guardDistance = PoseAnalysisHelpers.distance(from: wrist, to: nose)
+        let shoulderWidth = bilateralDistance(.leftShoulder, .rightShoulder, in: pose) ?? 0.2
+        let guardRatio = guardDistance / max(shoulderWidth, 0.001)
+        let elbowToRib = PoseAnalysisHelpers.distance(from: elbow, to: hip)
+
+        return (
+            guardRatio: guardRatio,
+            wristDroppedBelowChin: wrist.y < nose.y - 0.03,
+            elbowFlared: elbowToRib > 0.2
+        )
+    }
+
+    private static func strikingExtensionRatio(
+        in pose: PoseDetectionResult,
+        strikingWrist: BodyJoint,
+        strikingShoulder: BodyJoint
+    ) -> Double? {
+        guard let wrist = point(strikingWrist, in: pose),
+              let shoulder = point(strikingShoulder, in: pose) else {
+            return nil
+        }
+
+        let shoulderWidth = bilateralDistance(.leftShoulder, .rightShoulder, in: pose) ?? 0.2
+        let armReach = PoseAnalysisHelpers.distance(from: shoulder, to: wrist)
+        return armReach / max(shoulderWidth, 0.001)
+    }
+
+    private static func detectJabLeaningForward(entry: MuayThaiIssueCatalogEntry, context: AttemptContext) -> Detection? {
+        let roles = MuayThaiAttemptRoleResolver.resolvePunchRoles(
+            technique: .jab,
+            startPose: context.startPose,
+            peakPose: context.peakPose,
+            stance: context.stance
+        )
+        let strikingKnee = roles.source == .fallback
+            ? context.joints.leadKnee
+            : sameSideKnee(for: roles.strikingWrist)
+
+        MuayThaiDebug.log("JabLean: role source=\(String(describing: roles.source)) strikingWrist=\(roles.strikingWrist.rawValue) strikingKnee=\(strikingKnee.rawValue) fwd=\(MuayThaiDebug.format(context.forwardDirection, decimals: 2))")
+
+        guard let torsoAngle = torsoForwardAngle(in: context.peakPose) else {
+            MuayThaiDebug.log("JabLean: skipped (missing torso angle)")
+            return nil
+        }
+
+        guard let nose = point(.nose, in: context.peakPose),
+              let leadKnee = point(strikingKnee, in: context.peakPose) else {
+            MuayThaiDebug.log("JabLean: skipped (missing nose or \(strikingKnee.rawValue))")
+            return nil
+        }
+
+        let noseDelta = forwardDelta(currentX: nose.x, referenceX: leadKnee.x, direction: context.forwardDirection)
+        let nosePastLeadKnee = noseDelta > 0.02
+        MuayThaiDebug.log("JabLean: torsoAngle=\(MuayThaiDebug.format(torsoAngle)) noseDelta=\(MuayThaiDebug.format(noseDelta)) thresholdAngle=20 thresholdDelta=0.02")
+        guard torsoAngle > 20 && nosePastLeadKnee else {
+            MuayThaiDebug.log("JabLean: not triggered")
+            return nil
+        }
+
+        MuayThaiDebug.log("JabLean: triggered")
 
         return Detection(
             severity: entry.severity,
@@ -259,7 +467,7 @@ enum MuayThaiIssueDetectors {
                 context.joints.leadHip,
                 context.joints.rearHip,
                 .nose,
-                context.joints.leadKnee
+                strikingKnee
             ],
             metrics: [
                 FeedbackMetric(kind: .muayThaiTorsoForwardLeanDegrees, value: torsoAngle, unit: .degrees)
@@ -268,7 +476,15 @@ enum MuayThaiIssueDetectors {
     }
 
     private static func detectNoShoulderProtection(entry: MuayThaiIssueCatalogEntry, context: AttemptContext) -> Detection? {
-        guard let leadShoulder = point(context.joints.leadShoulder, in: context.peakPose),
+        let roles = MuayThaiAttemptRoleResolver.resolvePunchRoles(
+            technique: .jab,
+            startPose: context.startPose,
+            peakPose: context.peakPose,
+            stance: context.stance
+        )
+        let strikingShoulder = roles.source == .fallback ? context.joints.leadShoulder : roles.strikingShoulder
+
+        guard let leadShoulder = point(strikingShoulder, in: context.peakPose),
               let nose = point(.nose, in: context.peakPose) else {
             return nil
         }
@@ -283,7 +499,7 @@ enum MuayThaiIssueDetectors {
             severity: entry.severity,
             category: .safety,
             message: entry.cueDetailed,
-            affectedJoints: [context.joints.leadShoulder, .nose],
+            affectedJoints: [strikingShoulder, .nose],
             metrics: [
                 FeedbackMetric(kind: .muayThaiShoulderGuardGapRatio, value: gapRatio, unit: .ratio)
             ]
@@ -647,6 +863,28 @@ enum MuayThaiIssueDetectors {
                 FeedbackMetric(kind: .muayThaiAnkleCrossRatio, value: crossRatio, unit: .ratio)
             ]
         )
+    }
+
+    private static func sameSideHip(for wrist: BodyJoint) -> BodyJoint {
+        switch wrist {
+        case .leftWrist:
+            return .leftHip
+        case .rightWrist:
+            return .rightHip
+        default:
+            return .leftHip
+        }
+    }
+
+    private static func sameSideKnee(for wrist: BodyJoint) -> BodyJoint {
+        switch wrist {
+        case .leftWrist:
+            return .leftKnee
+        case .rightWrist:
+            return .rightKnee
+        default:
+            return .leftKnee
+        }
     }
 
     private static func point(_ joint: BodyJoint, in pose: PoseDetectionResult) -> CGPoint? {
