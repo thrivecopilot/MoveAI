@@ -13,15 +13,16 @@ struct VideoTimelineView: View {
         case bar
         case ticks
     }
-    
+
     let duration: TimeInterval
     @Binding var currentTime: TimeInterval
     let goodMoments: [TimeInterval]
     let issueMarkers: [IssueMarker]
     var highlightedFeedbackIds: Set<UUID> = []
     var onSeek: (TimeInterval) -> Void
+    var onSeekFinished: ((TimeInterval) -> Void)? = nil
     var style: TimelineStyle = .bar
-    
+
     var trackColor: Color = Color(.systemGray5)
     var fillColor: Color = Color.accentColor.opacity(0.4)
     var thumbColor: Color = .white
@@ -31,19 +32,18 @@ struct VideoTimelineView: View {
     var issueMarkerColor: Color = .orange
     var showTimeLabels: Bool = true
     var onMarkerTap: ((IssueMarker) -> Void)?
-    
+
     struct IssueMarker: Identifiable {
         let id: UUID
         let timestamp: TimeInterval
         let label: String?
         let severity: FeedbackSeverity
     }
-    
+
     @State private var isDragging = false
-    
+
     private var trackHeight: CGFloat { style == .ticks ? 20 : 28 }
-    private let markerTapSnapThreshold: TimeInterval = 0.3
-    
+
     var body: some View {
         VStack(spacing: 4) {
             ZStack(alignment: .leading) {
@@ -52,7 +52,7 @@ struct VideoTimelineView: View {
                 thumb
             }
             .frame(height: trackHeight)
-            
+
             if showTimeLabels {
                 HStack {
                     Text(timeString(currentTime))
@@ -67,7 +67,7 @@ struct VideoTimelineView: View {
         }
         .padding(.horizontal, 4)
     }
-    
+
     private var track: some View {
         Group {
             if style == .ticks {
@@ -81,7 +81,7 @@ struct VideoTimelineView: View {
                                 .frame(width: duration > 0 ? geo.size.width * CGFloat(currentTime / duration) : 0, height: 2)
                                 .animation(.none, value: currentTime)
                         }
-                        .clipShape(Capsule()),
+                            .clipShape(Capsule()),
                         alignment: .leading
                     )
             } else {
@@ -94,18 +94,18 @@ struct VideoTimelineView: View {
                                 .frame(width: duration > 0 ? geo.size.width * CGFloat(currentTime / duration) : 0)
                                 .animation(.none, value: currentTime)
                         }
-                        .clipShape(RoundedRectangle(cornerRadius: 4)),
+                            .clipShape(RoundedRectangle(cornerRadius: 4)),
                         alignment: .leading
                     )
             }
         }
     }
-    
+
     private var markersOverlay: some View {
         GeometryReader { geo in
             let w = geo.size.width
             let safeDuration = max(duration, 0.01)
-            
+
             ForEach(goodMoments, id: \.self) { t in
                 let x = w * CGFloat(t / safeDuration)
                 if style == .ticks {
@@ -114,7 +114,7 @@ struct VideoTimelineView: View {
                         .frame(width: 2, height: 10)
                         .position(x: x, y: trackHeight / 2)
                         .allowsHitTesting(true)
-                        .onTapGesture { onSeek(t) }
+                        .onTapGesture { commitSeek(t) }
                 } else {
                     Circle()
                         .fill(goodMarkerColor)
@@ -122,10 +122,10 @@ struct VideoTimelineView: View {
                         .overlay(Circle().stroke(Color.white, lineWidth: 1))
                         .position(x: x, y: trackHeight / 2)
                         .allowsHitTesting(true)
-                        .onTapGesture { onSeek(t) }
+                        .onTapGesture { commitSeek(t) }
                 }
             }
-            
+
             ForEach(issueMarkers) { m in
                 let x = w * CGFloat(m.timestamp / safeDuration)
                 let highlighted = highlightedFeedbackIds.isEmpty || highlightedFeedbackIds.contains(m.id)
@@ -136,7 +136,13 @@ struct VideoTimelineView: View {
                         .frame(width: 2, height: 10)
                         .position(x: x, y: trackHeight / 2)
                         .allowsHitTesting(true)
-                        .onTapGesture { onMarkerTap?(m) ?? onSeek(m.timestamp) }
+                        .onTapGesture {
+                            if let onMarkerTap {
+                                onMarkerTap(m)
+                            } else {
+                                commitSeek(m.timestamp)
+                            }
+                        }
                 } else {
                     Image(systemName: "triangle.fill")
                         .font(.system(size: 8))
@@ -144,12 +150,18 @@ struct VideoTimelineView: View {
                         .rotationEffect(.degrees(-180))
                         .position(x: x, y: trackHeight / 2)
                         .allowsHitTesting(true)
-                        .onTapGesture { onMarkerTap?(m) ?? onSeek(m.timestamp) }
+                        .onTapGesture {
+                            if let onMarkerTap {
+                                onMarkerTap(m)
+                            } else {
+                                commitSeek(m.timestamp)
+                            }
+                        }
                 }
             }
         }
     }
-    
+
     private var thumb: some View {
         GeometryReader { geo in
             let w = geo.size.width
@@ -164,20 +176,40 @@ struct VideoTimelineView: View {
                 .gesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { value in
-                            let newFraction = value.location.x / w
+                            isDragging = true
+                            let newFraction = value.location.x / max(w, 1)
                             let t = TimeInterval(newFraction) * duration
-                            onSeek(max(0, min(t, duration)))
+                            onSeek(clampedSeekTime(t))
+                        }
+                        .onEnded { value in
+                            isDragging = false
+                            let newFraction = value.location.x / max(w, 1)
+                            let t = TimeInterval(newFraction) * duration
+                            commitSeek(t)
                         }
                 )
         }
     }
-    
+
+    private func clampedSeekTime(_ time: TimeInterval) -> TimeInterval {
+        max(0, min(time, duration))
+    }
+
+    private func commitSeek(_ time: TimeInterval) {
+        let clamped = clampedSeekTime(time)
+        if let onSeekFinished {
+            onSeekFinished(clamped)
+        } else {
+            onSeek(clamped)
+        }
+    }
+
     private func timeString(_ t: TimeInterval) -> String {
         let m = Int(t) / 60
         let s = Int(t) % 60
         return String(format: "%d:%02d", m, s)
     }
-    
+
     private func colorForSeverity(_ severity: FeedbackSeverity) -> Color {
         switch severity {
         case .critical: return Color(red: 1.0, green: 0.42, blue: 0.42)
@@ -193,7 +225,7 @@ struct VideoTimelineView: View {
 struct TimelineMarkers {
     var goodMoments: [TimeInterval]
     var issueMarkers: [VideoTimelineView.IssueMarker]
-    
+
     static func from(_ result: AnalysisResult?) -> TimelineMarkers {
         guard let result = result else {
             return TimelineMarkers(goodMoments: [], issueMarkers: [])

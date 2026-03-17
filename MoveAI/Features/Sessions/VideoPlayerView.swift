@@ -428,6 +428,20 @@ enum VideoSurfaceLayoutCalculator {
 // MARK: - Shared Playback Controller
 @MainActor
 final class PlaybackController: ObservableObject {
+    enum SeekPrecision {
+        case interactive
+        case exact
+
+        var tolerance: CMTime {
+            switch self {
+            case .interactive:
+                return CMTime(seconds: 1.0 / 20.0, preferredTimescale: 600)
+            case .exact:
+                return .zero
+            }
+        }
+    }
+
     @Published var player: AVPlayer?
     @Published var isPlaying = false
     @Published var currentTime: Double = 0
@@ -440,6 +454,7 @@ final class PlaybackController: ObservableObject {
     private let videoURL: URL
     private let statusObserver = PlayerStatusObserver()
     private var didSetup = false
+    private var latestSeekRequestID: Int = 0
     
     init(videoURL: URL) {
         self.videoURL = videoURL
@@ -516,11 +531,32 @@ final class PlaybackController: ObservableObject {
         isPlaying.toggle()
     }
     
-    func performSeek(to time: Double) {
+    func performSeek(to time: Double, precision: SeekPrecision = .exact) {
         guard let player else { return }
-        let cmTime = CMTime(seconds: time, preferredTimescale: 600)
-        player.seek(to: cmTime)
-        currentTime = time
+
+        let clampedTime: Double = {
+            let upperBound = duration.isFinite && duration > 0 ? duration : max(time, 0)
+            return max(0, min(time, upperBound))
+        }()
+
+        latestSeekRequestID += 1
+        let requestID = latestSeekRequestID
+        let targetTime = CMTime(seconds: clampedTime, preferredTimescale: 600)
+        let tolerance = precision.tolerance
+
+        player.seek(to: targetTime, toleranceBefore: tolerance, toleranceAfter: tolerance) { [weak self] finished in
+            Task { @MainActor in
+                guard let self else { return }
+                guard requestID == self.latestSeekRequestID else { return }
+
+                let resolvedTime = CMTimeGetSeconds(player.currentTime())
+                if finished, resolvedTime.isFinite, !resolvedTime.isNaN {
+                    self.currentTime = resolvedTime
+                } else {
+                    self.currentTime = clampedTime
+                }
+            }
+        }
     }
     
     func updateCurrentTime() {

@@ -221,33 +221,6 @@ private struct KeypointView: View {
             .accessibilityIdentifier("PoseOverlay.Keypoint.\(keypoint.name)")
             .accessibilityLabel(keypoint.name)
             .accessibilityValue(accessibilityValue)
-            .onAppear {
-                // #region agent log
-                if keypoint.name == "nose" {
-                    let flippedY = 1.0 - keypoint.position.y
-                    let logData: [String: Any] = [
-                        "hypothesisId": "H1,H4",
-                        "keypointName": keypoint.name,
-                        "originalX": keypoint.position.x,
-                        "originalY": keypoint.position.y,
-                        "flippedY": flippedY,
-                        "isUploadedVideo": isUploadedVideo,
-                        "finalX": isUploadedVideo ? keypoint.position.x : (flipXAxis ? (1.0 - flippedY) : flippedY),
-                        "finalY": isUploadedVideo ? flippedY : keypoint.position.x,
-                        "screenX": screenPosition.x,
-                        "screenY": screenPosition.y,
-                        "previewSize": "\(actualSize.width)x\(actualSize.height)",
-                        "flipXAxis": flipXAxis
-                    ]
-                    VideoProcessingHelpers.writeDebugLog("Coordinate transformation", data: logData, location: "PoseOverlayView.swift:38")
-                }
-                // #endregion
-                // Only log keypoints relevant for depth analysis
-                let depthKeypoints = ["lefthip", "righthip", "leftknee", "rightknee"]
-                if depthKeypoints.contains(keypoint.name.lowercased()) {
-                    print("🎯 PoseOverlayView: \(keypoint.name) at normalized (\(String(format: "%.3f", keypoint.position.x)), \(String(format: "%.3f", keypoint.position.y))) -> screen (\(String(format: "%.1f", screenPosition.x)), \(String(format: "%.1f", screenPosition.y))) in actualSize \(actualSize) [original frame: \(frameIndex), isUploadedVideo: \(isUploadedVideo)]")
-                }
-            }
     }
 }
 

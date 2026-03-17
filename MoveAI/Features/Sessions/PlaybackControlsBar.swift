@@ -8,13 +8,13 @@ struct PlaybackControlsBar: View {
     var issueMarkers: [VideoTimelineView.IssueMarker] = []
     var highlightedFeedbackIds: Set<UUID> = []
     var onMarkerTap: ((VideoTimelineView.IssueMarker) -> Void)?
-    
+
     private let barBackground = Color(red: 0.07, green: 0.09, blue: 0.13)
     private let accent = Color(red: 0.24, green: 0.86, blue: 1.0)
     private let good = Color(red: 0.16, green: 0.97, blue: 0.65)
     private let issue = Color(red: 1.0, green: 0.42, blue: 0.42)
     private let muted = Color.white.opacity(0.7)
-    
+
     var body: some View {
         VStack(spacing: 6) {
             HStack(spacing: 14) {
@@ -29,7 +29,7 @@ struct PlaybackControlsBar: View {
                 }
                 .disabled(playback.playerStatus != .readyToPlay)
                 .accessibilityIdentifier(AccessibilityID.VideoReview.playPauseButton)
-                
+
                 if playback.duration > 0 {
                     let markers = issueMarkers.isEmpty ? TimelineMarkers.from(analysisResult).issueMarkers : issueMarkers
                     VideoTimelineView(
@@ -38,7 +38,8 @@ struct PlaybackControlsBar: View {
                         goodMoments: [],
                         issueMarkers: markers,
                         highlightedFeedbackIds: highlightedFeedbackIds,
-                        onSeek: { playback.performSeek(to: $0) },
+                        onSeek: { playback.performSeek(to: $0, precision: .interactive) },
+                        onSeekFinished: { playback.performSeek(to: $0, precision: .exact) },
                         style: .ticks,
                         trackColor: muted.opacity(0.35),
                         fillColor: accent.opacity(0.2),
@@ -52,7 +53,7 @@ struct PlaybackControlsBar: View {
                     )
                     .frame(maxWidth: .infinity)
                 }
-                
+
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)

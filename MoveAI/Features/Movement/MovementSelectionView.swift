@@ -21,6 +21,7 @@ struct MovementSelectionView: View {
     @State private var pendingSession: Session?
     @State private var showingSessionDetail = false
     @State private var didAutoPresentCapture = false
+    @State private var pendingCaptureAfterTechniqueSelection = false
 
     private let defaultMovement: MovementType?
     private let autoPresentCapture: Bool
@@ -118,7 +119,8 @@ struct MovementSelectionView: View {
                     selectedMovement = .muayThai
                     selectedTechnique = technique
                     selectedFightStance = stance
-                    presentCaptureFlow()
+                    pendingCaptureAfterTechniqueSelection = true
+                    showingMuayThaiTechniqueSelection = false
                 }
             }
             .sheet(isPresented: $showingCamera) {
@@ -135,6 +137,11 @@ struct MovementSelectionView: View {
                             showingCamera = false
                         }
                     )
+                } else {
+                    movementSelectionMissingView(
+                        title: "Unable to start camera",
+                        closeAction: { showingCamera = false }
+                    )
                 }
             }
             .sheet(isPresented: $showingVideoImport) {
@@ -150,6 +157,11 @@ struct MovementSelectionView: View {
                             showingVideoImport = false
                         }
                     )
+                } else {
+                    movementSelectionMissingView(
+                        title: "Unable to start upload",
+                        closeAction: { showingVideoImport = false }
+                    )
                 }
             }
             .onChange(of: showingCamera) { isShowing in
@@ -162,6 +174,14 @@ struct MovementSelectionView: View {
                     showingSessionDetail = true
                 }
             }
+            .onChange(of: showingMuayThaiTechniqueSelection) { isShowing in
+                guard !isShowing, pendingCaptureAfterTechniqueSelection else { return }
+                pendingCaptureAfterTechniqueSelection = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                    guard selectedMovement != nil else { return }
+                    presentCaptureFlow()
+                }
+            }
             .onAppear {
                 triggerAutoCaptureIfNeeded()
             }
@@ -170,8 +190,38 @@ struct MovementSelectionView: View {
             .accessibilityIdentifier(AccessibilityID.MovementSelection.root)
         }
     }
+    private func movementSelectionMissingView(
+        title: String,
+        closeAction: @escaping () -> Void
+    ) -> some View {
+        NavigationStack {
+            VStack(spacing: 16) {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.system(size: 36))
+                    .foregroundColor(.orange)
+
+                Text(title)
+                    .font(.headline)
+
+                Text("Please reselect a movement and try again.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+
+                Button("Close") {
+                    closeAction()
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            .padding()
+            .navigationTitle(captureMode == .record ? "Record Movement" : "Upload Video")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
 
     private func presentCaptureFlow() {
+        guard selectedMovement != nil else { return }
+
         if captureMode == .record {
             showingCamera = true
         } else {

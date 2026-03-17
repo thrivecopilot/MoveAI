@@ -25,6 +25,7 @@ struct MovementMasteryHomeView: View {
     @State private var showingMuayThaiTechniqueSelection = false
     @State private var selectedMuayThaiTechnique: MuayThaiTechnique?
     @State private var selectedFightStance: FightStance?
+    @State private var didConfirmMuayThaiTechniqueSelection = false
 
     init() {
         _sessionManager = StateObject(wrappedValue: SessionManager())
@@ -91,18 +92,27 @@ struct MovementMasteryHomeView: View {
                         showingVideoImport = false
                     }
                 )
+            } else {
+                movementSelectionMissingView(
+                    title: "Unable to start upload",
+                    closeAction: { showingVideoImport = false }
+                )
             }
         }
         .sheet(isPresented: $showingMuayThaiTechniqueSelection, onDismiss: {
-            if selectedMuayThaiTechnique == nil {
+            if !didConfirmMuayThaiTechniqueSelection {
                 selectedMovement = nil
+                selectedMuayThaiTechnique = nil
                 selectedFightStance = nil
             }
+            didConfirmMuayThaiTechniqueSelection = false
         }) {
             MuayThaiTechniqueSelectionView { technique, stance in
                 selectedMovement = .muayThai
                 selectedMuayThaiTechnique = technique
                 selectedFightStance = stance
+                didConfirmMuayThaiTechniqueSelection = true
+                showingMuayThaiTechniqueSelection = false
                 showingActionSheet = true
             }
         }
@@ -299,6 +309,7 @@ struct MovementMasteryHomeView: View {
     private func beginSessionSelection(for movementType: MovementType) {
         selectedMovement = movementType
         if movementType == .muayThai {
+            didConfirmMuayThaiTechniqueSelection = false
             selectedMuayThaiTechnique = nil
             selectedFightStance = nil
             showingMuayThaiTechniqueSelection = true
@@ -306,6 +317,34 @@ struct MovementMasteryHomeView: View {
         }
 
         showingActionSheet = true
+    }
+    private func movementSelectionMissingView(
+        title: String,
+        closeAction: @escaping () -> Void
+    ) -> some View {
+        NavigationStack {
+            VStack(spacing: 16) {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.system(size: 36))
+                    .foregroundColor(.orange)
+
+                Text(title)
+                    .font(.headline)
+
+                Text("Please reselect a movement and try again.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+
+                Button("Close") {
+                    closeAction()
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            .padding()
+            .navigationTitle("Upload Video")
+            .navigationBarTitleDisplayMode(.inline)
+        }
     }
 
     private var expectedPowerliftingMovementIDs: [String] {
