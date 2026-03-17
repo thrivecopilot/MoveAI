@@ -174,6 +174,23 @@ final class AnalysisSummaryBuilderTests: XCTestCase {
         XCTAssertEqual(summary?.warningEvents, 1)
     }
 
+    func testBuildStrikeSummaryWithNoWarningsStillCountsStrikes() {
+        let summary = AnalysisSummaryBuilder.build(
+            movementType: .muayThai,
+            feedback: [],
+            reps: nil,
+            depthMetrics: nil,
+            attemptsCount: 3,
+            attemptsNeedingAttention: 0
+        )
+
+        XCTAssertEqual(summary?.unitKind, .strike)
+        XCTAssertEqual(summary?.totalUnits, 3)
+        XCTAssertEqual(summary?.goodUnits, 3)
+        XCTAssertEqual(summary?.unitsNeedingAttention, 0)
+        XCTAssertEqual(summary?.warningEvents, 0)
+    }
+
     func testAnalysisResultRoundTripWithoutSummaryDecodesNilSummary() throws {
         let original = AnalysisResult(
             score: 88,
@@ -191,5 +208,23 @@ final class AnalysisSummaryBuilderTests: XCTestCase {
         let decoded = try JSONDecoder().decode(AnalysisResult.self, from: encoded)
 
         XCTAssertNil(decoded.analysisSummary)
+        XCTAssertNil(decoded.detectedTechnique)
+        XCTAssertNil(decoded.detectionConfidence)
+    }
+
+    func testAnalysisResultBackwardDecodeWithoutDetectionFields() throws {
+        let json = """
+        {
+          "score": 92.0,
+          "feedback": [],
+          "timestamp": 0
+        }
+        """
+
+        let decoded = try JSONDecoder().decode(AnalysisResult.self, from: Data(json.utf8))
+
+        XCTAssertEqual(decoded.score, 92.0, accuracy: 0.0001)
+        XCTAssertNil(decoded.detectedTechnique)
+        XCTAssertNil(decoded.detectionConfidence)
     }
 }

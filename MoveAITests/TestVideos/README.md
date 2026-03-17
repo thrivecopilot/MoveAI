@@ -16,6 +16,12 @@ The testing framework automatically creates:
 
 These directories are created automatically when running tests and allow for faster iteration by caching expensive pose extraction.
 
+### Muay Thai Labeled Fixtures
+
+- `muay_thai_labeled_fixtures.json` defines labeled Muay Thai regression fixtures.
+- `scripts/muay-thai-regression.sh extract` builds/refreshes cache once for all listed fixtures.
+- `scripts/muay-thai-regression.sh analyze` runs cache-only regression checks for fast detector iteration.
+
 ## Adding a New Test Case
 
 1. **Add your video file**: Place your test video as `test_case_N.mp4` in this directory

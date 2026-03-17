@@ -1,0 +1,70 @@
+{
+  "fixtures": [
+    {
+      "id": "jab_only",
+      "videoFile": "jab_only.mov",
+      "analysisMode": "auto_detect",
+      "selectedTechnique": null,
+      "selectedFightStance": null,
+      "expectedDetectedTechnique": "jab",
+      "requiredIssueKinds": [],
+      "forbiddenIssueKinds": [
+        "muay_thai.jab.rear_hand_dropping"
+      ]
+    },
+    {
+      "id": "cross_only",
+      "videoFile": "cross_only.mov",
+      "analysisMode": "auto_detect",
+      "selectedTechnique": null,
+      "selectedFightStance": null,
+      "expectedDetectedTechnique": "cross",
+      "requiredIssueKinds": [],
+      "forbiddenIssueKinds": []
+    },
+    {
+      "id": "jab_dropping_rear_hand",
+      "videoFile": "jab_dropping_rear_hand.mov",
+      "analysisMode": "explicit_technique",
+      "selectedTechnique": "jab",
+      "selectedFightStance": "orthodox",
+      "expectedDetectedTechnique": null,
+      "requiredIssueKinds": [
+        "muay_thai.jab.rear_hand_dropping"
+      ],
+      "forbiddenIssueKinds": []
+    },
+    {
+      "id": "jab_dropping_lead_hand",
+      "videoFile": "jab_dropping_lead_hand.mov",
+      "analysisMode": "explicit_technique",
+      "selectedTechnique": "jab",
+      "selectedFightStance": "orthodox",
+      "expectedDetectedTechnique": null,
+      "requiredIssueKinds": [],
+      "forbiddenIssueKinds": [
+        "muay_thai.jab.rear_hand_dropping"
+      ]
+    },
+    {
+      "id": "jab_archer_error",
+      "videoFile": "jab_archer_error.mov",
+      "analysisMode": "explicit_technique",
+      "selectedTechnique": "jab",
+      "selectedFightStance": "orthodox",
+      "expectedDetectedTechnique": null,
+      "requiredIssueKinds": [],
+      "forbiddenIssueKinds": []
+    },
+    {
+      "id": "right_round_kick",
+      "videoFile": "right_round_kick.mov",
+      "analysisMode": "auto_detect",
+      "selectedTechnique": null,
+      "selectedFightStance": null,
+      "expectedDetectedTechnique": "roundhouse_kick",
+      "requiredIssueKinds": [],
+      "forbiddenIssueKinds": []
+    }
+  ]
+}

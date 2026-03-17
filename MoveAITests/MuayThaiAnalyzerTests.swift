@@ -70,6 +70,135 @@ final class MuayThaiAnalyzerTests: XCTestCase {
         ])
     }
 
+    func testMuayThaiTechniqueDetectorDetectsJabFromLeadWristPattern() {
+        let poses = jabLikePoses(frameCount: 20)
+        let detection = MuayThaiTechniqueDetector.detect(poses: poses, preferredStance: .orthodox)
+
+        XCTAssertEqual(detection?.technique, .jab)
+        XCTAssertNotNil(detection)
+    }
+
+    func testMuayThaiTechniqueDetectorDetectsRightHandJabWhenStanceUnknown() {
+        let poses = rightHandJabPoses(frameCount: 24, leftGuardDropped: false)
+        let detection = MuayThaiTechniqueDetector.detect(poses: poses, preferredStance: nil)
+        XCTAssertNotNil(detection)
+        XCTAssertEqual(detection?.technique, .jab)
+    }
+
+    func testMuayThaiTechniqueDetectorPrefersJabForRepeatedRightHandJabsWhenStanceUnknown() {
+        let poses = repeatedRightHandJabPoses(
+            frameCount: 72,
+            strikeCenters: [8, 18, 28, 38, 48, 58],
+            leftGuardDropped: false,
+            hipRotationScale: 0.01
+        )
+        let detection = MuayThaiTechniqueDetector.detect(poses: poses, preferredStance: nil)
+
+        XCTAssertNotNil(detection)
+        XCTAssertEqual(detection?.technique, .jab)
+    }
+
+    func testJabRearHandDropDoesNotTriggerWhenWrongStanceButGuardIsStable() {
+        let poses = repeatedRightHandJabPoses(
+            frameCount: 72,
+            strikeCenters: [8, 18, 28, 38, 48, 58],
+            leftGuardDropped: false,
+            hipRotationScale: 0.01
+        )
+        let attempts = MuayThaiEventDetector.detectAttempts(poses: poses, technique: .jab, stance: .orthodox)
+
+        let outcome = MuayThaiIssueDetectors.evaluate(
+            poses: poses,
+            attempts: attempts,
+            technique: .jab,
+            stance: .orthodox
+        )
+
+        XCTAssertFalse(outcome.feedback.contains { $0.issueKind == .muayThaiJabRearHandDropping })
+    }
+
+    func testJabRearHandDropStillTriggersWhenGuardActuallyDrops() {
+        let poses = repeatedRightHandJabPoses(
+            frameCount: 72,
+            strikeCenters: [8, 18, 28, 38, 48, 58],
+            leftGuardDropped: true,
+            hipRotationScale: 0.01
+        )
+        let attempts = MuayThaiEventDetector.detectAttempts(poses: poses, technique: .jab, stance: .orthodox)
+
+        let outcome = MuayThaiIssueDetectors.evaluate(
+            poses: poses,
+            attempts: attempts,
+            technique: .jab,
+            stance: .orthodox
+        )
+
+        XCTAssertTrue(outcome.feedback.contains { $0.issueKind == .muayThaiJabRearHandDropping })
+    }
+
+    func testMuayThaiTechniqueDetectorDetectsMovementFromFootworkPattern() {
+        let poses = crossingMovementPoses(frameCount: 20)
+        let detection = MuayThaiTechniqueDetector.detect(poses: poses, preferredStance: .orthodox)
+
+        XCTAssertEqual(detection?.technique, .movement)
+        XCTAssertNotNil(detection)
+    }
+
+    func testMuayThaiComboDetectorDetectsMultipleTechniquesInSingleClip() {
+        let poses = jabCrossComboPoses(frameCount: 36)
+        let detection = MuayThaiComboDetector.detect(poses: poses, preferredStance: .orthodox)
+
+        XCTAssertNotNil(detection)
+        let techniques = Set(detection?.attempts.map(\.technique) ?? [])
+        XCTAssertTrue(techniques.contains(.jab))
+        XCTAssertTrue(techniques.contains(.cross))
+        XCTAssertGreaterThanOrEqual(detection?.attempts.count ?? 0, 2)
+    }
+
+    func testMuayThaiComboDetectorDoesNotForceAutoInferredStanceForClassification() {
+        let poses = repeatedRightHandJabPoses(
+            frameCount: 72,
+            strikeCenters: [8, 18, 28, 38, 48, 58],
+            leftGuardDropped: false,
+            hipRotationScale: 0.01
+        )
+
+        let detection = MuayThaiComboDetector.detect(poses: poses, preferredStance: nil)
+        XCTAssertNotNil(detection)
+
+        let techniques = detection?.attempts.map(\.technique) ?? []
+        XCTAssertFalse(techniques.isEmpty)
+
+        let grouped = Dictionary(grouping: techniques, by: { $0 }).mapValues(\.count)
+        XCTAssertGreaterThan(grouped[.jab] ?? 0, grouped[.cross] ?? 0, "Expected jab to dominate repeated jab-only clip")
+    }
+
+    func testMuayThaiIssueDetectorsAggregateBlockedCoverageForMixedAttempts() {
+        let poses = stableMovementPoses(frameCount: 20)
+        let attempts = [
+            MuayThaiClassifiedAttempt(
+                attempt: TechniqueAttempt(startFrame: 0, endFrame: 10, peakFrame: 5, peakTimestamp: poses[5].timestamp.timeIntervalSince1970),
+                technique: .cross,
+                confidence: 0.7
+            ),
+            MuayThaiClassifiedAttempt(
+                attempt: TechniqueAttempt(startFrame: 9, endFrame: 19, peakFrame: 14, peakTimestamp: poses[14].timestamp.timeIntervalSince1970),
+                technique: .movement,
+                confidence: 0.7
+            ),
+        ]
+
+        let outcome = MuayThaiIssueDetectors.evaluate(
+            poses: poses,
+            classifiedAttempts: attempts,
+            stance: .orthodox
+        )
+
+        let blockedKinds = Set(outcome.blockedEntries.map(\.issueKind))
+        XCTAssertTrue(blockedKinds.contains(.muayThaiCrossRearHeelNotPivoting))
+        XCTAssertTrue(blockedKinds.contains(.muayThaiMovementFlatFooted))
+    }
+
     func testMovementCrossingFeetDetectorTriggersWhenAnklesCross() {
         let poses = crossingMovementPoses(frameCount: 20)
         let attempts = MuayThaiEventDetector.detectAttempts(poses: poses, technique: .movement, stance: .orthodox)
@@ -98,7 +227,77 @@ final class MuayThaiAnalyzerTests: XCTestCase {
         XCTAssertFalse(outcome.feedback.contains { $0.issueKind == .muayThaiMovementCrossingFeet })
     }
 
-    func testPoseBasedAnalysisServiceMuayThaiRequiresTechnique() async {
+    func testRearHandDroppingIgnoresStrikingHandWhenStanceMapIsWrong() {
+        let poses = rightHandJabPoses(frameCount: 21, leftGuardDropped: false)
+        let peakFrame = poses.count / 2
+        let attempts = [
+            TechniqueAttempt(
+                startFrame: 0,
+                endFrame: poses.count - 1,
+                peakFrame: peakFrame,
+                peakTimestamp: poses[peakFrame].timestamp.timeIntervalSince1970
+            )
+        ]
+
+        let outcome = MuayThaiIssueDetectors.evaluate(
+            poses: poses,
+            attempts: attempts,
+            technique: .jab,
+            stance: .orthodox
+        )
+
+        XCTAssertFalse(outcome.feedback.contains { $0.issueKind == .muayThaiJabRearHandDropping })
+    }
+
+    func testRearHandDroppingTargetsGuardHandForRightHandJab() {
+        let poses = rightHandJabPoses(frameCount: 21, leftGuardDropped: true)
+        let peakFrame = poses.count / 2
+        let attempts = [
+            TechniqueAttempt(
+                startFrame: 0,
+                endFrame: poses.count - 1,
+                peakFrame: peakFrame,
+                peakTimestamp: poses[peakFrame].timestamp.timeIntervalSince1970
+            )
+        ]
+
+        let outcome = MuayThaiIssueDetectors.evaluate(
+            poses: poses,
+            attempts: attempts,
+            technique: .jab,
+            stance: .orthodox
+        )
+
+        guard let rearHandDrop = outcome.feedback.first(where: { $0.issueKind == .muayThaiJabRearHandDropping }) else {
+            XCTFail("Expected rear-hand dropping feedback")
+            return
+        }
+
+        let joints = rearHandDrop.affectedBodyJoints ?? []
+        XCTAssertTrue(joints.contains(.leftWrist))
+        XCTAssertFalse(joints.contains(.rightWrist))
+    }
+
+    func testPoseBasedAnalysisServiceMuayThaiAutoDetectsTechniqueWhenMissing() async throws {
+        setenv("MOVEAI_ENABLE_MUAY_THAI_ANALYZER", "1", 1)
+
+        let service = PoseBasedAnalysisService()
+        let recording = MovementRecording(
+            movementType: .muayThai,
+            videoURL: URL(fileURLWithPath: "/tmp/test.mov"),
+            duration: 2.0,
+            poseData: jabLikePoses(frameCount: 24)
+        )
+
+        let result = try await service.analyzeMovement(recording)
+
+        XCTAssertEqual(result.detectedTechnique, .jab)
+        XCTAssertEqual(result.analysisSummary?.unitKind, .strike)
+    }
+
+    func testPoseBasedAnalysisServiceMuayThaiAutoDetectFailsForLowMotionClip() async {
+        setenv("MOVEAI_ENABLE_MUAY_THAI_ANALYZER", "1", 1)
+
         let service = PoseBasedAnalysisService()
         let recording = MovementRecording(
             movementType: .muayThai,
@@ -109,9 +308,9 @@ final class MuayThaiAnalyzerTests: XCTestCase {
 
         do {
             _ = try await service.analyzeMovement(recording)
-            XCTFail("Expected missing-technique error")
+            XCTFail("Expected auto-detection failure")
         } catch let error as AnalysisError {
-            if case .muayThaiTechniqueRequired = error {
+            if case .muayThaiTechniqueAutoDetectionFailed = error {
                 // expected
             } else {
                 XCTFail("Unexpected AnalysisError case: \(error)")
@@ -175,7 +374,11 @@ final class MuayThaiAnalyzerTests: XCTestCase {
                 leftKneeX: 0.44,
                 rightKneeX: 0.56,
                 leftWristX: 0.42,
-                rightWristX: 0.58
+                rightWristX: 0.58,
+                leftElbowX: 0.44,
+                rightElbowX: 0.56,
+                leftShoulderX: 0.45,
+                rightShoulderX: 0.55
             )
         }
     }
@@ -195,9 +398,144 @@ final class MuayThaiAnalyzerTests: XCTestCase {
                 leftKneeX: leftKnee,
                 rightKneeX: rightKnee,
                 leftWristX: 0.42,
-                rightWristX: 0.58
+                rightWristX: 0.58,
+                leftElbowX: 0.44,
+                rightElbowX: 0.56,
+                leftShoulderX: 0.45,
+                rightShoulderX: 0.55
             )
         }
+    }
+
+    private func rightHandJabPoses(frameCount: Int, leftGuardDropped: Bool) -> [PoseDetectionResult] {
+        let center = max(1, frameCount / 2)
+        let halfWidth = max(3, frameCount / 4)
+
+        return (0..<frameCount).map { frame in
+            let pulse = triangularPulse(frame: frame, center: center, halfWidth: halfWidth)
+
+            let strikingWristX = 0.58 + (0.30 * pulse)
+            let strikingElbowX = 0.56 + (0.10 * pulse)
+            let strikingShoulderX = 0.55 + (0.03 * pulse)
+
+            let guardWristX = leftGuardDropped ? 0.42 : 0.50
+            let guardWristY = leftGuardDropped ? 0.58 : 0.84
+
+            return makePose(
+                frame: frame,
+                leftAnkleX: 0.42,
+                rightAnkleX: 0.58,
+                leftKneeX: 0.44,
+                rightKneeX: 0.56,
+                leftWristX: guardWristX,
+                rightWristX: strikingWristX,
+                leftElbowX: 0.44,
+                rightElbowX: strikingElbowX,
+                leftShoulderX: 0.45,
+                rightShoulderX: strikingShoulderX,
+                leftWristY: guardWristY,
+                rightWristY: 0.58
+            )
+        }
+    }
+
+    private func repeatedRightHandJabPoses(
+        frameCount: Int,
+        strikeCenters: [Int],
+        leftGuardDropped: Bool,
+        hipRotationScale: Double
+    ) -> [PoseDetectionResult] {
+        let halfWidth = 3
+
+        return (0..<frameCount).map { frame in
+            let pulse = strikeCenters.reduce(0.0) { partial, center in
+                max(partial, triangularPulse(frame: frame, center: center, halfWidth: halfWidth))
+            }
+
+            let strikingWristX = 0.58 + (0.28 * pulse)
+            let strikingElbowX = 0.56 + (0.10 * pulse)
+            let leftShoulderX = 0.45 + (hipRotationScale * 0.35 * pulse)
+            let rightShoulderX = 0.55 + (hipRotationScale * pulse)
+
+            let guardWristX = leftGuardDropped ? 0.40 : 0.50
+            let guardWristY = leftGuardDropped ? 0.58 : 0.84
+
+            return makePose(
+                frame: frame,
+                leftAnkleX: 0.42,
+                rightAnkleX: 0.58,
+                leftKneeX: 0.44,
+                rightKneeX: 0.56,
+                leftWristX: guardWristX,
+                rightWristX: strikingWristX,
+                leftElbowX: 0.44,
+                rightElbowX: strikingElbowX,
+                leftShoulderX: leftShoulderX,
+                rightShoulderX: rightShoulderX,
+                leftWristY: guardWristY,
+                rightWristY: 0.58
+            )
+        }
+    }
+
+    private func jabLikePoses(frameCount: Int) -> [PoseDetectionResult] {
+        (0..<frameCount).map { frame in
+            let progress = Double(frame) / Double(max(frameCount - 1, 1))
+            let pulse = progress <= 0.5 ? (progress * 2.0) : ((1.0 - progress) * 2.0)
+
+            let leadWristX = 0.42 + (0.30 * pulse)
+            let rearWristX = 0.58 + (0.03 * pulse)
+            let leadElbowX = 0.44 + (0.10 * pulse)
+            let leadShoulderX = 0.45 + (0.03 * pulse)
+
+            return makePose(
+                frame: frame,
+                leftAnkleX: 0.42,
+                rightAnkleX: 0.58,
+                leftKneeX: 0.44,
+                rightKneeX: 0.56,
+                leftWristX: leadWristX,
+                rightWristX: rearWristX,
+                leftElbowX: leadElbowX,
+                rightElbowX: 0.56,
+                leftShoulderX: leadShoulderX,
+                rightShoulderX: 0.55
+            )
+        }
+    }
+
+    private func jabCrossComboPoses(frameCount: Int) -> [PoseDetectionResult] {
+        (0..<frameCount).map { frame in
+            let jabPulse = triangularPulse(frame: frame, center: 9, halfWidth: 5)
+            let crossPulse = triangularPulse(frame: frame, center: 25, halfWidth: 5)
+
+            let leadWristX = 0.42 + (0.28 * jabPulse) + (0.03 * crossPulse)
+            let rearWristX = 0.58 + (0.03 * jabPulse) + (0.30 * crossPulse)
+            let leftElbowX = 0.44 + (0.09 * jabPulse)
+            let rightElbowX = 0.56 + (0.09 * crossPulse)
+            let leftShoulderX = 0.45 + (0.02 * jabPulse) + (0.03 * crossPulse)
+            let rightShoulderX = 0.55 + (0.01 * jabPulse) + (0.02 * crossPulse)
+
+            return makePose(
+                frame: frame,
+                leftAnkleX: 0.42,
+                rightAnkleX: 0.58,
+                leftKneeX: 0.44,
+                rightKneeX: 0.56,
+                leftWristX: leadWristX,
+                rightWristX: rearWristX,
+                leftElbowX: leftElbowX,
+                rightElbowX: rightElbowX,
+                leftShoulderX: leftShoulderX,
+                rightShoulderX: rightShoulderX
+            )
+        }
+    }
+
+    private func triangularPulse(frame: Int, center: Int, halfWidth: Int) -> Double {
+        let distance = abs(frame - center)
+        guard distance <= halfWidth else { return 0 }
+        return 1.0 - (Double(distance) / Double(max(halfWidth, 1)))
     }
 
     private func makePose(
@@ -207,19 +545,25 @@ final class MuayThaiAnalyzerTests: XCTestCase {
         leftKneeX: Double,
         rightKneeX: Double,
         leftWristX: Double,
-        rightWristX: Double
+        rightWristX: Double,
+        leftElbowX: Double,
+        rightElbowX: Double,
+        leftShoulderX: Double,
+        rightShoulderX: Double,
+        leftWristY: Double = 0.58,
+        rightWristY: Double = 0.58
     ) -> PoseDetectionResult {
         let timestamp = Date(timeIntervalSince1970: Double(frame) / 30.0)
 
         let keypoints: [PoseKeypoint] = [
             kp("nose", x: 0.50, y: 0.85, frame: frame),
             kp("neck", x: 0.50, y: 0.76, frame: frame),
-            kp("leftShoulder", x: 0.45, y: 0.74, frame: frame),
-            kp("rightShoulder", x: 0.55, y: 0.74, frame: frame),
-            kp("leftElbow", x: 0.44, y: 0.66, frame: frame),
-            kp("rightElbow", x: 0.56, y: 0.66, frame: frame),
-            kp("leftWrist", x: leftWristX, y: 0.58, frame: frame),
-            kp("rightWrist", x: rightWristX, y: 0.58, frame: frame),
+            kp("leftShoulder", x: leftShoulderX, y: 0.74, frame: frame),
+            kp("rightShoulder", x: rightShoulderX, y: 0.74, frame: frame),
+            kp("leftElbow", x: leftElbowX, y: 0.66, frame: frame),
+            kp("rightElbow", x: rightElbowX, y: 0.66, frame: frame),
+            kp("leftWrist", x: leftWristX, y: leftWristY, frame: frame),
+            kp("rightWrist", x: rightWristX, y: rightWristY, frame: frame),
             kp("leftHip", x: 0.46, y: 0.52, frame: frame),
             kp("rightHip", x: 0.54, y: 0.52, frame: frame),
             kp("root", x: 0.50, y: 0.50, frame: frame),
