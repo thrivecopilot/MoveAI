@@ -105,13 +105,17 @@ enum MuayThaiLabeledFixtureRunner {
     static func loadOrExtractPoseData(for fixture: Fixture, forceReextract: Bool = false) async throws -> [PoseDetectionResult] {
         let testVideosDir = testVideosDirectory()
         let videoURL = try videoURL(for: fixture)
-        let cacheURL = PoseCacheManager.cachePath(for: fixture.id, testVideosDirectory: testVideosDir)
+        let resolvedCacheURL = PoseCacheManager.resolvedCachePath(
+            for: fixture.id,
+            testVideosDirectory: testVideosDir
+        )
         let videoSHA256 = try PoseCacheManager.fileSHA256(at: videoURL)
 
         if !forceReextract,
            let cached = try PoseCacheManager.loadPoseData(for: fixture.id, testVideosDirectory: testVideosDir),
            !cached.isEmpty,
-           cacheIsFresh(cacheURL: cacheURL, videoURL: videoURL) {
+           let resolvedCacheURL,
+           cacheIsFresh(cacheURL: resolvedCacheURL, videoURL: videoURL) {
             let coverage = poseCoverageMetrics(from: cached)
             guard meetsCoverageGate(coverage) else {
                 print("⚠️ Cache quality too low for \(fixture.id). Re-extracting. nonEmpty=\(coverage.nonEmptyFrames)/\(coverage.totalFrames) ratio=\(String(format: "%.3f", coverage.nonEmptyFrameRatio))")
@@ -126,7 +130,7 @@ enum MuayThaiLabeledFixtureRunner {
             if try cacheProvenanceMatches(
                 fixture: fixture,
                 videoSHA256: videoSHA256,
-                cacheURL: cacheURL,
+                cacheURL: resolvedCacheURL,
                 testVideosDir: testVideosDir
             ) {
                 return cached
@@ -136,7 +140,7 @@ enum MuayThaiLabeledFixtureRunner {
                 try backfillCacheProvenance(
                     fixture: fixture,
                     videoSHA256: videoSHA256,
-                    cacheURL: cacheURL,
+                    cacheURL: resolvedCacheURL,
                     testVideosDir: testVideosDir
                 )
                 return cached

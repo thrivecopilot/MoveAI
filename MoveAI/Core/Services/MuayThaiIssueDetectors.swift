@@ -52,10 +52,19 @@ enum MuayThaiIssueDetectors {
             guard let context = AttemptContext(
                 poses: poses,
                 attempt: classifiedAttempt.attempt,
+                attemptTechnique: classifiedAttempt.technique,
+                attemptConfidence: classifiedAttempt.confidence,
+                mixedTechniques: mixedTechniques,
                 stance: stance,
                 stanceSource: stanceSource
             ) else {
                 MuayThaiDebug.log("IssueDetectors: skipped attempt \(attemptIndex + 1) \(classifiedAttempt.technique.rawValue) (invalid frame window)")
+                continue
+            }
+
+            let attemptFrameCount = max(0, classifiedAttempt.attempt.endFrame - classifiedAttempt.attempt.startFrame + 1)
+            guard attemptFrameCount >= 4 else {
+                MuayThaiDebug.log("IssueDetectors: skipped attempt \(attemptIndex + 1) \(classifiedAttempt.technique.rawValue) (too few frames=\(attemptFrameCount))")
                 continue
             }
 
@@ -96,11 +105,242 @@ enum MuayThaiIssueDetectors {
             }
         }
 
+        let crossFilteredFeedback = applyCrossNoHipRotationPersistenceGate(
+            feedback: feedback,
+            classifiedAttempts: classifiedAttempts
+        )
+        let mixedTechniqueFilteredFeedback = applyMixedTechniqueJabNoiseGate(
+            feedback: crossFilteredFeedback,
+            classifiedAttempts: classifiedAttempts
+        )
+        let jabPrioritizedFeedback = applyJabForwardOverBasePriorityGate(
+            feedback: mixedTechniqueFilteredFeedback,
+            classifiedAttempts: classifiedAttempts
+        )
+        let jabDisambiguatedFeedback = applyJabIssueDisambiguationGate(
+            feedback: jabPrioritizedFeedback,
+            classifiedAttempts: classifiedAttempts
+        )
+        let filteredFeedback = applyRoundhouseNoArmCounterbalancePersistenceGate(
+            feedback: jabDisambiguatedFeedback,
+            classifiedAttempts: classifiedAttempts
+        )
+
         return MuayThaiDetectionOutcome(
-            feedback: feedback.sorted { $0.timestamp < $1.timestamp },
+            feedback: filteredFeedback.sorted { $0.timestamp < $1.timestamp },
             blockedEntries: blockedEntries,
             attemptsWithIssues: attemptsWithIssues
         )
+    }
+
+    private static func applyCrossNoHipRotationPersistenceGate(
+        feedback: [FormFeedback],
+        classifiedAttempts: [MuayThaiClassifiedAttempt]
+    ) -> [FormFeedback] {
+        let crossAttempts = classifiedAttempts.reduce(into: 0) { partial, classifiedAttempt in
+            if classifiedAttempt.technique == .cross {
+                partial += 1
+            }
+        }
+        guard crossAttempts > 0 else { return feedback }
+
+        let noHipRotationCount = feedback.reduce(into: 0) { partial, item in
+            if item.issueKind == .muayThaiCrossNoHipRotation {
+                partial += 1
+            }
+        }
+        guard noHipRotationCount > 0 else { return feedback }
+
+        let persistenceRatio = Double(noHipRotationCount) / Double(crossAttempts)
+        // Keep the issue when it persists across a meaningful share of cross attempts.
+        // This preserves clear "arm-only" crosses while filtering one-off false positives.
+        let keepIssue = noHipRotationCount >= 2 && persistenceRatio >= 0.30
+        guard !keepIssue else { return feedback }
+
+        MuayThaiDebug.log(
+            "CrossNoHipRotation: gated by persistence count=\(noHipRotationCount) crossAttempts=\(crossAttempts) ratio=\(MuayThaiDebug.format(persistenceRatio))"
+        )
+        return feedback.filter { $0.issueKind != .muayThaiCrossNoHipRotation }
+    }
+
+    private static func applyJabForwardOverBasePriorityGate(
+        feedback: [FormFeedback],
+        classifiedAttempts: [MuayThaiClassifiedAttempt]
+    ) -> [FormFeedback] {
+        guard !feedback.isEmpty else { return feedback }
+
+        let techniqueSet = Set(classifiedAttempts.map(\.technique))
+        guard techniqueSet.count == 1, techniqueSet.contains(.jab) else {
+            return feedback
+        }
+
+        let jabAttempts = classifiedAttempts.reduce(into: 0) { partial, attempt in
+            if attempt.technique == .jab {
+                partial += 1
+            }
+        }
+        guard jabAttempts > 0 else { return feedback }
+
+        let forwardOverBaseCount = feedback.reduce(into: 0) { partial, item in
+            if item.issueKind == .muayThaiPostureForwardOverBase {
+                partial += 1
+            }
+        }
+        guard forwardOverBaseCount >= 2 else { return feedback }
+
+        let rearHandDropCount = feedback.reduce(into: 0) { partial, item in
+            if item.issueKind == .muayThaiJabRearHandDropping {
+                partial += 1
+            }
+        }
+        let poorRetractionCount = feedback.reduce(into: 0) { partial, item in
+            if item.issueKind == .muayThaiJabPoorRetraction {
+                partial += 1
+            }
+        }
+
+        let forwardRatio = Double(forwardOverBaseCount) / Double(jabAttempts)
+        let shouldSuppressSecondaryWarnings = forwardRatio >= 0.20 &&
+            rearHandDropCount > 0 &&
+            rearHandDropCount <= forwardOverBaseCount + 1
+        guard shouldSuppressSecondaryWarnings else { return feedback }
+
+        MuayThaiDebug.log(
+            "JabForwardOverBase: prioritized posture warning count=\(forwardOverBaseCount) ratio=\(MuayThaiDebug.format(forwardRatio)) suppressing rearHand=\(rearHandDropCount) poorRetraction=\(poorRetractionCount)"
+        )
+
+        return feedback.filter {
+            $0.issueKind != .muayThaiJabRearHandDropping &&
+            $0.issueKind != .muayThaiJabPoorRetraction
+        }
+    }
+
+    private static func applyMixedTechniqueJabNoiseGate(
+        feedback: [FormFeedback],
+        classifiedAttempts: [MuayThaiClassifiedAttempt]
+    ) -> [FormFeedback] {
+        guard !feedback.isEmpty else { return feedback }
+
+        let techniqueSet = Set(classifiedAttempts.map(\.technique))
+        guard techniqueSet.count > 1 else { return feedback }
+
+        let jabAttempts = classifiedAttempts.reduce(into: 0) { partial, attempt in
+            if attempt.technique == .jab {
+                partial += 1
+            }
+        }
+        guard jabAttempts > 0 else { return feedback }
+
+        var filtered = feedback
+        let mixedThreshold = 0.20
+
+        let rearHandCount = filtered.reduce(into: 0) { partial, item in
+            if item.issueKind == .muayThaiJabRearHandDropping {
+                partial += 1
+            }
+        }
+        let rearHandRatio = Double(rearHandCount) / Double(jabAttempts)
+        if rearHandCount > 0 && (rearHandCount < 2 || rearHandRatio < mixedThreshold) {
+            MuayThaiDebug.log(
+                "MixedTechniqueJabNoise: suppressing rear-hand-drop count=\(rearHandCount) jabAttempts=\(jabAttempts) ratio=\(MuayThaiDebug.format(rearHandRatio))"
+            )
+            filtered.removeAll { $0.issueKind == .muayThaiJabRearHandDropping }
+        }
+
+        let poorRetractionCount = filtered.reduce(into: 0) { partial, item in
+            if item.issueKind == .muayThaiJabPoorRetraction {
+                partial += 1
+            }
+        }
+        let poorRetractionRatio = Double(poorRetractionCount) / Double(jabAttempts)
+        if poorRetractionCount > 0 && (poorRetractionCount < 2 || poorRetractionRatio < mixedThreshold) {
+            MuayThaiDebug.log(
+                "MixedTechniqueJabNoise: suppressing poor-retraction count=\(poorRetractionCount) jabAttempts=\(jabAttempts) ratio=\(MuayThaiDebug.format(poorRetractionRatio))"
+            )
+            filtered.removeAll { $0.issueKind == .muayThaiJabPoorRetraction }
+        }
+
+        return filtered
+    }
+
+    private static func applyRoundhouseNoArmCounterbalancePersistenceGate(
+        feedback: [FormFeedback],
+        classifiedAttempts: [MuayThaiClassifiedAttempt]
+    ) -> [FormFeedback] {
+        guard !feedback.isEmpty else { return feedback }
+
+        let roundhouseAttempts = classifiedAttempts.reduce(into: 0) { partial, attempt in
+            if attempt.technique == .roundhouseKick {
+                partial += 1
+            }
+        }
+        guard roundhouseAttempts >= 6 else { return feedback }
+
+        let counterbalanceCount = feedback.reduce(into: 0) { partial, item in
+            if item.issueKind == .muayThaiRoundhouseNoArmCounterbalance {
+                partial += 1
+            }
+        }
+        guard counterbalanceCount > 0 else { return feedback }
+
+        let counterbalanceRatio = Double(counterbalanceCount) / Double(roundhouseAttempts)
+        let keepIssue = counterbalanceCount >= 2 && counterbalanceRatio >= 0.10
+        guard !keepIssue else { return feedback }
+
+        MuayThaiDebug.log(
+            "RoundhouseNoArmCounterbalance: gated by persistence count=\(counterbalanceCount) attempts=\(roundhouseAttempts) ratio=\(MuayThaiDebug.format(counterbalanceRatio))"
+        )
+        return feedback.filter { $0.issueKind != .muayThaiRoundhouseNoArmCounterbalance }
+    }
+
+    private static func applyJabIssueDisambiguationGate(
+        feedback: [FormFeedback],
+        classifiedAttempts: [MuayThaiClassifiedAttempt]
+    ) -> [FormFeedback] {
+        guard !feedback.isEmpty else { return feedback }
+
+        let techniqueSet = Set(classifiedAttempts.map(\.technique))
+        guard techniqueSet.count == 1, techniqueSet.contains(.jab) else {
+            return feedback
+        }
+
+        var filtered = feedback
+
+        let rearHandCount = filtered.reduce(into: 0) { partial, item in
+            if item.issueKind == .muayThaiJabRearHandDropping {
+                partial += 1
+            }
+        }
+        let poorRetractionCount = filtered.reduce(into: 0) { partial, item in
+            if item.issueKind == .muayThaiJabPoorRetraction {
+                partial += 1
+            }
+        }
+        let forwardOverBaseCount = filtered.reduce(into: 0) { partial, item in
+            if item.issueKind == .muayThaiPostureForwardOverBase {
+                partial += 1
+            }
+        }
+
+        // If rear-hand-drop is dominant and poor retraction is a one-off,
+        // keep the dominant safety warning and drop the tempo side-warning.
+        if rearHandCount >= 1 && poorRetractionCount == 1 && forwardOverBaseCount == 0 {
+            MuayThaiDebug.log(
+                "JabDisambiguation: suppressing singleton poor-retraction with rear-hand-drop count=\(rearHandCount)"
+            )
+            filtered.removeAll { $0.issueKind == .muayThaiJabPoorRetraction }
+        }
+
+        // If poor retraction is dominant and rear-hand-drop is a one-off,
+        // keep the retraction warning and drop the guard side-warning.
+        if poorRetractionCount >= 2 && rearHandCount == 1 && forwardOverBaseCount == 0 {
+            MuayThaiDebug.log(
+                "JabDisambiguation: suppressing singleton rear-hand-drop with poor-retraction count=\(poorRetractionCount)"
+            )
+            filtered.removeAll { $0.issueKind == .muayThaiJabRearHandDropping }
+        }
+
+        return filtered
     }
 
     private static func uniqueBlockedEntries(for techniques: Set<MuayThaiTechnique>) -> [MuayThaiIssueCatalogEntry] {
@@ -187,6 +427,9 @@ enum MuayThaiIssueDetectors {
     private struct AttemptContext {
         let poses: [PoseDetectionResult]
         let attempt: TechniqueAttempt
+        let attemptTechnique: MuayThaiTechnique
+        let attemptConfidence: Double
+        let mixedTechniques: Bool
         let stance: FightStance
         let stanceSource: FightStanceResolution.Source
         let joints: JointMap
@@ -202,6 +445,9 @@ enum MuayThaiIssueDetectors {
         init?(
             poses: [PoseDetectionResult],
             attempt: TechniqueAttempt,
+            attemptTechnique: MuayThaiTechnique,
+            attemptConfidence: Double,
+            mixedTechniques: Bool,
             stance: FightStance,
             stanceSource: FightStanceResolution.Source
         ) {
@@ -213,6 +459,9 @@ enum MuayThaiIssueDetectors {
 
             self.poses = poses
             self.attempt = attempt
+            self.attemptTechnique = attemptTechnique
+            self.attemptConfidence = attemptConfidence
+            self.mixedTechniques = mixedTechniques
             self.stance = stance
             self.stanceSource = stanceSource
             self.joints = JointMap.forStance(stance)
@@ -247,14 +496,19 @@ enum MuayThaiIssueDetectors {
         switch entry.issueKind {
         case .muayThaiJabRearHandDropping:
             return detectRearHandDropping(entry: entry, context: context)
-        case .muayThaiJabLeaningForward:
-            return detectJabLeaningForward(entry: entry, context: context)
-        case .muayThaiJabNoShoulderProtection:
-            return detectNoShoulderProtection(entry: entry, context: context)
+        case .muayThaiPostureForwardOverBase:
+            switch entry.technique {
+            case .jab:
+                return detectForwardOverBaseForJab(entry: entry, context: context)
+            case .cross:
+                return detectForwardOverBaseForCross(entry: entry, context: context)
+            default:
+                return nil
+            }
+        case .muayThaiJabPoorRetraction:
+            return detectPoorRetraction(entry: entry, context: context)
         case .muayThaiCrossNoHipRotation:
             return detectNoHipRotation(entry: entry, context: context)
-        case .muayThaiCrossOverreaching:
-            return detectOverreaching(entry: entry, context: context)
         case .muayThaiLeadHookArmOnly:
             return detectArmOnlyHook(entry: entry, context: context)
         case .muayThaiLeadHookTooWide:
@@ -292,7 +546,8 @@ enum MuayThaiIssueDetectors {
 
         MuayThaiDebug.log("RearHandDrop: role source=\(String(describing: roles.source)) striking=\(roles.strikingWrist.rawValue) guard=\(roles.guardWrist.rawValue) confidence=\(MuayThaiDebug.format(roles.confidence))")
 
-        if roles.source != .motionInferred {
+        let allowFallbackRoles = context.stanceSource == .userSelected
+        if roles.source != .motionInferred && !allowFallbackRoles {
             MuayThaiDebug.log("RearHandDrop: skipped (role source \(String(describing: roles.source)) is not motionInferred)")
             return nil
         }
@@ -301,6 +556,13 @@ enum MuayThaiIssueDetectors {
         // the jabbing hand gets mistaken for the rear guard hand.
         if roles.source == .motionInferred && roles.confidence < 0.35 {
             MuayThaiDebug.log("RearHandDrop: skipped (low role confidence=\(MuayThaiDebug.format(roles.confidence)))")
+            return nil
+        }
+
+        if context.mixedTechniques && context.attemptConfidence < 0.60 {
+            MuayThaiDebug.log(
+                "RearHandDrop: skipped (mixed-technique low attempt confidence=\(MuayThaiDebug.format(context.attemptConfidence)))"
+            )
             return nil
         }
 
@@ -319,6 +581,10 @@ enum MuayThaiIssueDetectors {
         var droppedFrames = 0
         var maxGuardRatio = 0.0
         var maxExtensionRatio = 0.0
+        var archerFrames = 0
+        var maxArcherRetreatRatio = 0.0
+
+        let baselineGuardWristX = point(roles.guardWrist, in: context.startPose)?.x
 
         for frame in context.attempt.startFrame...context.attempt.endFrame {
             guard let pose = context.poses[optional: frame],
@@ -336,29 +602,67 @@ enum MuayThaiIssueDetectors {
             }
 
             let extensionDelta = extensionRatio - baselineExtension
-            let isExtensionFrame = extensionDelta > 0.10 || extensionRatio > 1.15
-            guard isExtensionFrame else { continue }
-
-            extensionFrames += 1
-            maxGuardRatio = max(maxGuardRatio, signal.guardRatio)
-            maxExtensionRatio = max(maxExtensionRatio, extensionRatio)
-
+            let isExtensionFrame = extensionDelta > 0.10 || extensionRatio > 1.14
             let baselineRatio = baselineSignal?.guardRatio ?? signal.guardRatio
             let guardDelta = signal.guardRatio - baselineRatio
-            let handFarFromGuard = signal.guardRatio > 0.65 || guardDelta > 0.12
-            let guardDropped = handFarFromGuard && (signal.wristDroppedBelowChin || signal.elbowFlared)
+            let handFarFromGuard = signal.guardRatio > 0.98 || guardDelta > 0.34
+            var retreatRatio = 0.0
 
-            if guardDropped {
+            if let baselineGuardWristX,
+               let currentGuardWrist = point(roles.guardWrist, in: pose),
+               let shoulderWidth = bilateralDistance(.leftShoulder, .rightShoulder, in: pose) {
+                let retreatDistance = forwardDelta(
+                    currentX: baselineGuardWristX,
+                    referenceX: currentGuardWrist.x,
+                    direction: context.forwardDirection
+                )
+                retreatRatio = retreatDistance / max(shoulderWidth, 0.001)
+                maxArcherRetreatRatio = max(maxArcherRetreatRatio, retreatRatio)
+            }
+
+            let archerGuardLoss = retreatRatio > 0.26
+            let archerFrameQualified = archerGuardLoss && (signal.guardRatio > 0.88 || guardDelta > 0.22)
+
+            if isExtensionFrame {
+                extensionFrames += 1
+                maxGuardRatio = max(maxGuardRatio, signal.guardRatio)
+                maxExtensionRatio = max(maxExtensionRatio, extensionRatio)
+
+                let guardDropped =
+                    archerFrameQualified ||
+                    (handFarFromGuard && signal.wristDroppedBelowChin) ||
+                    (handFarFromGuard && signal.elbowFlared && signal.guardRatio > 1.02)
+                if guardDropped {
+                    droppedFrames += 1
+                    if retreatRatio > 0.26 {
+                        archerFrames += 1
+                    }
+                }
+                continue
+            }
+
+            if archerFrameQualified {
                 droppedFrames += 1
+                if retreatRatio > 0.26 {
+                    archerFrames += 1
+                }
+                maxGuardRatio = max(maxGuardRatio, signal.guardRatio)
             }
         }
 
-        guard extensionFrames >= 2 else {
+        let archerPatternDetected = archerFrames >= 2 && maxArcherRetreatRatio > 0.24
+        let archerSevereDetected =
+            maxArcherRetreatRatio > 0.34 &&
+            droppedFrames >= 1 &&
+            maxGuardRatio > 0.95
+        let archerLikeDetected = archerPatternDetected || archerSevereDetected
+
+        guard extensionFrames >= 2 || archerLikeDetected else {
             MuayThaiDebug.log("RearHandDrop: skipped (insufficient extension frames=\(extensionFrames))")
             return nil
         }
 
-        guard maxExtensionRatio >= 1.20 else {
+        guard maxExtensionRatio >= 1.20 || archerLikeDetected else {
             MuayThaiDebug.log("RearHandDrop: skipped (insufficient jab extension maxExtensionRatio=\(MuayThaiDebug.format(maxExtensionRatio)))")
             return nil
         }
@@ -366,21 +670,68 @@ enum MuayThaiIssueDetectors {
         let droppedRatio = Double(droppedFrames) / Double(extensionFrames)
         MuayThaiDebug.log("RearHandDrop: extensionFrames=\(extensionFrames) droppedFrames=\(droppedFrames) droppedRatio=\(MuayThaiDebug.format(droppedRatio)) maxGuardRatio=\(MuayThaiDebug.format(maxGuardRatio)) maxExtensionRatio=\(MuayThaiDebug.format(maxExtensionRatio))")
 
-        guard droppedFrames >= 2 || droppedRatio >= 0.4 else {
+        let baselineGuardRatio = baselineSignal?.guardRatio ?? max(0, maxGuardRatio - 0.1)
+        let guardLift = max(0, maxGuardRatio - baselineGuardRatio)
+        let severeGuardDropDetected =
+            droppedFrames >= 1 &&
+            maxGuardRatio > 1.28 &&
+            guardLift > 0.36
+        let rearGuardDropDetected =
+            (
+                (droppedFrames >= 5 || (droppedFrames >= 4 && extensionFrames <= 5)) &&
+                droppedRatio >= 0.78 &&
+                maxGuardRatio > 1.12 &&
+                guardLift > 0.30
+            ) ||
+            (archerPatternDetected &&
+             droppedFrames >= 2 &&
+             maxGuardRatio > 0.90 &&
+             guardLift > 0.10) ||
+            archerSevereDetected ||
+            severeGuardDropDetected
+        let leadReturnExposure = detectLeadHandChinExposure(context: context)
+        let leadReturnOnlyDetected =
+            !rearGuardDropDetected &&
+            leadReturnExposure != nil &&
+            maxExtensionRatio > 1.42 &&
+            droppedRatio > 0.72 &&
+            guardLift > 0.28
+
+        guard rearGuardDropDetected || leadReturnOnlyDetected else {
             MuayThaiDebug.log("RearHandDrop: not triggered")
             return nil
         }
 
+        let message: String
+        if archerLikeDetected {
+            message = "your rear hand pulled back like drawing a bow during the jab. keep it on your cheek and return the jab straight back to guard"
+        } else if leadReturnOnlyDetected {
+            message = "your jab hand returned wide and left your chin exposed. retract it straight back to your guard line"
+        } else {
+            message = entry.cueDetailed
+        }
+
         MuayThaiDebug.log("RearHandDrop: triggered")
+
+        var affectedJoints: [BodyJoint] = [roles.guardWrist, roles.guardElbow, roles.guardShoulder, .nose]
+        var metrics: [FeedbackMetric] = []
+        if rearGuardDropDetected {
+            metrics.append(
+                FeedbackMetric(kind: .muayThaiRearHandGuardDistanceRatio, value: maxGuardRatio, unit: .ratio)
+            )
+        }
+        if let leadReturnExposure {
+            affectedJoints.append(contentsOf: leadReturnExposure.affectedJoints)
+            metrics.append(contentsOf: leadReturnExposure.metrics)
+        }
+        affectedJoints = Array(Set(affectedJoints))
 
         return Detection(
             severity: entry.severity,
             category: .safety,
-            message: entry.cueDetailed,
-            affectedJoints: [roles.guardWrist, roles.guardElbow, roles.guardShoulder, .nose],
-            metrics: [
-                FeedbackMetric(kind: .muayThaiRearHandGuardDistanceRatio, value: maxGuardRatio, unit: .ratio)
-            ]
+            message: message,
+            affectedJoints: affectedJoints,
+            metrics: metrics
         )
     }
 
@@ -423,7 +774,7 @@ enum MuayThaiIssueDetectors {
         return armReach / max(shoulderWidth, 0.001)
     }
 
-    private static func detectJabLeaningForward(entry: MuayThaiIssueCatalogEntry, context: AttemptContext) -> Detection? {
+    private static func detectForwardOverBaseForJab(entry: MuayThaiIssueCatalogEntry, context: AttemptContext) -> Detection? {
         let roles = MuayThaiAttemptRoleResolver.resolvePunchRoles(
             technique: .jab,
             startPose: context.startPose,
@@ -436,21 +787,60 @@ enum MuayThaiIssueDetectors {
 
         MuayThaiDebug.log("JabLean: role source=\(String(describing: roles.source)) strikingWrist=\(roles.strikingWrist.rawValue) strikingKnee=\(strikingKnee.rawValue) fwd=\(MuayThaiDebug.format(context.forwardDirection, decimals: 2))")
 
-        guard let torsoAngle = torsoForwardAngle(in: context.peakPose) else {
-            MuayThaiDebug.log("JabLean: skipped (missing torso angle)")
-            return nil
+        let strikingShoulder = roles.source == .fallback ? context.joints.leadShoulder : roles.strikingShoulder
+        let baselineExtension = strikingExtensionRatio(
+            in: context.startPose,
+            strikingWrist: roles.strikingWrist,
+            strikingShoulder: strikingShoulder
+        ) ?? 0
+        let baselineNoseDelta: Double = {
+            guard let startNose = point(.nose, in: context.startPose),
+                  let startKnee = point(strikingKnee, in: context.startPose) else {
+                return 0
+            }
+            return forwardDelta(currentX: startNose.x, referenceX: startKnee.x, direction: context.forwardDirection)
+        }()
+
+        var triggeredFrames = 0
+        var extensionFrames = 0
+        var maxTorsoAngle = 0.0
+        var maxNoseAdvance = 0.0
+
+        for frame in context.attempt.startFrame...context.attempt.endFrame {
+            guard let pose = context.poses[optional: frame],
+                  let torsoAngle = torsoForwardAngle(in: pose),
+                  let extensionRatio = strikingExtensionRatio(
+                    in: pose,
+                    strikingWrist: roles.strikingWrist,
+                    strikingShoulder: strikingShoulder
+                  ),
+                  let nose = point(.nose, in: pose),
+                  let leadKnee = point(strikingKnee, in: pose) else {
+                continue
+            }
+
+            let extensionDelta = extensionRatio - baselineExtension
+            let isExtensionFrame = extensionDelta > 0.12 || extensionRatio > 1.18
+            guard isExtensionFrame else { continue }
+            extensionFrames += 1
+
+            let noseDelta = forwardDelta(currentX: nose.x, referenceX: leadKnee.x, direction: context.forwardDirection)
+            let noseAdvance = noseDelta - baselineNoseDelta
+            let leaning = torsoAngle > 34 && noseAdvance > 0.038 && noseDelta > 0.05
+            guard leaning else { continue }
+
+            triggeredFrames += 1
+            maxTorsoAngle = max(maxTorsoAngle, torsoAngle)
+            maxNoseAdvance = max(maxNoseAdvance, noseAdvance)
         }
 
-        guard let nose = point(.nose, in: context.peakPose),
-              let leadKnee = point(strikingKnee, in: context.peakPose) else {
-            MuayThaiDebug.log("JabLean: skipped (missing nose or \(strikingKnee.rawValue))")
-            return nil
-        }
-
-        let noseDelta = forwardDelta(currentX: nose.x, referenceX: leadKnee.x, direction: context.forwardDirection)
-        let nosePastLeadKnee = noseDelta > 0.02
-        MuayThaiDebug.log("JabLean: torsoAngle=\(MuayThaiDebug.format(torsoAngle)) noseDelta=\(MuayThaiDebug.format(noseDelta)) thresholdAngle=20 thresholdDelta=0.02")
-        guard torsoAngle > 20 && nosePastLeadKnee else {
+        let triggeredRatio = extensionFrames > 0
+            ? Double(triggeredFrames) / Double(extensionFrames)
+            : 0
+        MuayThaiDebug.log("JabLean: extensionFrames=\(extensionFrames) triggeredFrames=\(triggeredFrames) triggeredRatio=\(MuayThaiDebug.format(triggeredRatio)) maxTorsoAngle=\(MuayThaiDebug.format(maxTorsoAngle)) maxNoseAdvance=\(MuayThaiDebug.format(maxNoseAdvance))")
+        guard triggeredFrames >= 2,
+              triggeredRatio >= 0.55,
+              maxTorsoAngle > 36 || maxNoseAdvance > 0.055 else {
             MuayThaiDebug.log("JabLean: not triggered")
             return nil
         }
@@ -470,12 +860,14 @@ enum MuayThaiIssueDetectors {
                 strikingKnee
             ],
             metrics: [
-                FeedbackMetric(kind: .muayThaiTorsoForwardLeanDegrees, value: torsoAngle, unit: .degrees)
+                FeedbackMetric(kind: .muayThaiTorsoForwardLeanDegrees, value: maxTorsoAngle, unit: .degrees)
             ]
         )
     }
 
-    private static func detectNoShoulderProtection(entry: MuayThaiIssueCatalogEntry, context: AttemptContext) -> Detection? {
+    private static func detectLeadHandChinExposure(
+        context: AttemptContext
+    ) -> (affectedJoints: [BodyJoint], metrics: [FeedbackMetric])? {
         let roles = MuayThaiAttemptRoleResolver.resolvePunchRoles(
             technique: .jab,
             startPose: context.startPose,
@@ -483,46 +875,303 @@ enum MuayThaiIssueDetectors {
             stance: context.stance
         )
         let strikingShoulder = roles.source == .fallback ? context.joints.leadShoulder : roles.strikingShoulder
+        let strikingElbow = roles.source == .fallback ? context.joints.leadElbow : roles.strikingElbow
+        let strikingWrist = roles.source == .fallback ? context.joints.leadWrist : roles.strikingWrist
 
-        guard let leadShoulder = point(strikingShoulder, in: context.peakPose),
-              let nose = point(.nose, in: context.peakPose) else {
+        guard let startWrist = point(strikingWrist, in: context.startPose),
+              let peakWrist = point(strikingWrist, in: context.peakPose),
+              let startNose = point(.nose, in: context.startPose) else {
             return nil
         }
 
-        let guardGap = Double(nose.y - leadShoulder.y)
-        let shoulderWidth = bilateralDistance(.leftShoulder, .rightShoulder, in: context.peakPose) ?? 0.2
-        let gapRatio = guardGap / max(shoulderWidth, 0.001)
+        let baselineExtension = strikingExtensionRatio(
+            in: context.startPose,
+            strikingWrist: strikingWrist,
+            strikingShoulder: strikingShoulder
+        ) ?? 0
+        let peakExtension = strikingExtensionRatio(
+            in: context.peakPose,
+            strikingWrist: strikingWrist,
+            strikingShoulder: strikingShoulder
+        ) ?? baselineExtension
+        let extensionAmplitude = peakExtension - baselineExtension
+        guard extensionAmplitude > 0.24 || peakExtension > 1.30 else {
+            return nil
+        }
 
-        guard guardGap > 0.08 else { return nil }
+        let startShoulderWidth = bilateralDistance(.leftShoulder, .rightShoulder, in: context.startPose) ?? 0.2
+        let baselineGuardRatio = PoseAnalysisHelpers.distance(from: startWrist, to: startNose) / max(startShoulderWidth, 0.001)
+
+        var retractionFrames = 0
+        var chinExposureFrames = 0
+        var offLineFrames = 0
+        var maxGapRatio = 0.0
+        var maxReturnPathDeviationRatio = 0.0
+
+        let retractionStart = max(context.attempt.peakFrame, context.attempt.startFrame)
+        for frame in retractionStart...context.attempt.endFrame {
+            guard let pose = context.poses[optional: frame],
+                  let wrist = point(strikingWrist, in: pose),
+                  let shoulder = point(strikingShoulder, in: pose),
+                  let nose = point(.nose, in: pose),
+                  let shoulderWidth = bilateralDistance(.leftShoulder, .rightShoulder, in: pose),
+                  let extensionRatio = strikingExtensionRatio(
+                    in: pose,
+                    strikingWrist: strikingWrist,
+                    strikingShoulder: strikingShoulder
+                  ) else {
+                continue
+            }
+
+            let extensionProgress = (extensionRatio - baselineExtension) / max(extensionAmplitude, 0.001)
+            let inRetractionWindow = extensionProgress > 0.20 || frame >= context.attempt.endFrame - 1
+            guard inRetractionWindow else { continue }
+
+            retractionFrames += 1
+
+            let guardGap = Double(nose.y - shoulder.y)
+            let gapRatio = guardGap / max(shoulderWidth, 0.001)
+            let guardDistanceRatio = PoseAnalysisHelpers.distance(from: wrist, to: nose) / max(shoulderWidth, 0.001)
+            let returnPathDeviationRatio = pointToLineDistance(point: wrist, lineStart: peakWrist, lineEnd: startWrist) / max(shoulderWidth, 0.001)
+
+            maxGapRatio = max(maxGapRatio, gapRatio)
+            maxReturnPathDeviationRatio = max(maxReturnPathDeviationRatio, returnPathDeviationRatio)
+
+            let chinExposed = guardDistanceRatio > max(0.68, baselineGuardRatio + 0.09) && gapRatio > 0.27
+            if chinExposed {
+                chinExposureFrames += 1
+            }
+
+            if returnPathDeviationRatio > 0.19 {
+                offLineFrames += 1
+            }
+        }
+
+        guard retractionFrames >= 6 else { return nil }
+        let exposureRatio = Double(chinExposureFrames) / Double(retractionFrames)
+        let offLineRatio = Double(offLineFrames) / Double(retractionFrames)
+        guard chinExposureFrames >= 3,
+              offLineFrames >= 4,
+              exposureRatio >= 0.52,
+              offLineRatio >= 0.62,
+              maxGapRatio > 0.36,
+              maxReturnPathDeviationRatio > 0.30 else { return nil }
+
+        return (
+            affectedJoints: [strikingShoulder, strikingElbow, strikingWrist, .nose],
+            metrics: [
+                FeedbackMetric(kind: .muayThaiShoulderGuardGapRatio, value: maxGapRatio, unit: .ratio),
+                FeedbackMetric(kind: .muayThaiJabReturnPathDeviationRatio, value: maxReturnPathDeviationRatio, unit: .ratio)
+            ]
+        )
+    }
+
+    private static func detectPoorRetraction(entry: MuayThaiIssueCatalogEntry, context: AttemptContext) -> Detection? {
+        let roles = MuayThaiAttemptRoleResolver.resolvePunchRoles(
+            technique: .jab,
+            startPose: context.startPose,
+            peakPose: context.peakPose,
+            stance: context.stance
+        )
+        let strikingShoulder = roles.source == .fallback ? context.joints.leadShoulder : roles.strikingShoulder
+        let strikingElbow = roles.source == .fallback ? context.joints.leadElbow : roles.strikingElbow
+        let strikingWrist = roles.source == .fallback ? context.joints.leadWrist : roles.strikingWrist
+
+        let baselineExtension = strikingExtensionRatio(
+            in: context.startPose,
+            strikingWrist: strikingWrist,
+            strikingShoulder: strikingShoulder
+        ) ?? 0
+
+        var peakExtension = baselineExtension
+        var peakFrame = context.attempt.peakFrame
+
+        for frame in context.attempt.startFrame...context.attempt.endFrame {
+            guard let pose = context.poses[optional: frame],
+                  let extensionRatio = strikingExtensionRatio(
+                    in: pose,
+                    strikingWrist: strikingWrist,
+                    strikingShoulder: strikingShoulder
+                  ) else {
+                continue
+            }
+
+            if extensionRatio > peakExtension {
+                peakExtension = extensionRatio
+                peakFrame = frame
+            }
+        }
+
+        let extensionAmplitude = peakExtension - baselineExtension
+        guard extensionAmplitude > 0.22 || peakExtension > 1.28 else {
+            return nil
+        }
+
+        var retractionFrames = 0
+        var lagFrames = 0
+        var endExtension = baselineExtension
+
+        for frame in max(peakFrame, context.attempt.startFrame)...context.attempt.endFrame {
+            guard let pose = context.poses[optional: frame],
+                  let extensionRatio = strikingExtensionRatio(
+                    in: pose,
+                    strikingWrist: strikingWrist,
+                    strikingShoulder: strikingShoulder
+                  ) else {
+                continue
+            }
+
+            retractionFrames += 1
+            endExtension = extensionRatio
+
+            let lagRatio = max(0, (extensionRatio - baselineExtension) / max(extensionAmplitude, 0.001))
+            if lagRatio > 0.60 {
+                lagFrames += 1
+            }
+        }
+
+        guard retractionFrames >= 4 else { return nil }
+
+        let endLagRatio = max(0, (endExtension - baselineExtension) / max(extensionAmplitude, 0.001))
+        let lagPersistenceRatio = Double(lagFrames) / Double(retractionFrames)
+        guard lagFrames >= 3, endLagRatio > 0.58, lagPersistenceRatio > 0.68 else {
+            return nil
+        }
 
         return Detection(
             severity: entry.severity,
-            category: .safety,
+            category: .tempo,
             message: entry.cueDetailed,
-            affectedJoints: [strikingShoulder, .nose],
+            affectedJoints: [strikingShoulder, strikingElbow, strikingWrist],
             metrics: [
-                FeedbackMetric(kind: .muayThaiShoulderGuardGapRatio, value: gapRatio, unit: .ratio)
+                FeedbackMetric(kind: .muayThaiJabRetractionLagRatio, value: endLagRatio, unit: .ratio)
             ]
         )
     }
 
     private static func detectNoHipRotation(entry: MuayThaiIssueCatalogEntry, context: AttemptContext) -> Detection? {
-        guard let hipRotation = lineRotation(
+        let roles = MuayThaiAttemptRoleResolver.resolvePunchRoles(
+            technique: .cross,
+            startPose: context.startPose,
+            peakPose: context.peakPose,
+            stance: context.stance
+        )
+        let strikingShoulder = roles.source == .fallback ? context.joints.rearShoulder : roles.strikingShoulder
+        let strikingWrist = roles.source == .fallback ? context.joints.rearWrist : roles.strikingWrist
+
+        let startExtension = strikingExtensionRatio(
+            in: context.startPose,
+            strikingWrist: strikingWrist,
+            strikingShoulder: strikingShoulder
+        ) ?? 0
+        let startRearHip = point(context.joints.rearHip, in: context.startPose)
+
+        struct RotationSample {
+            let frame: Int
+            let extensionRatio: Double
+            let hipRotation: Double
+            let shoulderRotation: Double
+        }
+
+        var maxExtension = startExtension
+        var maxRearHipDrive = 0.0
+        var rotationSamples: [RotationSample] = []
+        for frame in context.attempt.startFrame...context.attempt.endFrame {
+            guard let pose = context.poses[optional: frame],
+                  let shoulderWidth = bilateralDistance(.leftShoulder, .rightShoulder, in: pose),
+                  shoulderWidth > 0.06,
+                  let extensionRatioAtFrame = strikingExtensionRatio(
+                    in: pose,
+                    strikingWrist: strikingWrist,
+                    strikingShoulder: strikingShoulder
+                  ) else {
+                continue
+            }
+
+            // Side-angle tracking can briefly collapse shoulder width and produce
+            // impossible extension spikes. Ignore those for rotation checks.
+            guard extensionRatioAtFrame <= 2.6 else { continue }
+
+            if extensionRatioAtFrame > maxExtension {
+                maxExtension = extensionRatioAtFrame
+            }
+
+            if let startRearHip,
+               let rearHip = point(context.joints.rearHip, in: pose) {
+                let rearHipDrive = forwardDelta(
+                    currentX: rearHip.x,
+                    referenceX: startRearHip.x,
+                    direction: context.forwardDirection
+                ) / max(shoulderWidth, 0.001)
+                maxRearHipDrive = max(maxRearHipDrive, rearHipDrive)
+            }
+
+            guard let hipRotation = lineRotation(
+                startA: point(.leftHip, in: context.startPose),
+                startB: point(.rightHip, in: context.startPose),
+                endA: point(.leftHip, in: pose),
+                endB: point(.rightHip, in: pose)
+            ),
+            let shoulderRotation = lineRotation(
+                startA: point(.leftShoulder, in: context.startPose),
+                startB: point(.rightShoulder, in: context.startPose),
+                endA: point(.leftShoulder, in: pose),
+                endB: point(.rightShoulder, in: pose)
+            ) else {
+                continue
+            }
+
+            rotationSamples.append(
+                RotationSample(
+                    frame: frame,
+                    extensionRatio: extensionRatioAtFrame,
+                    hipRotation: hipRotation,
+                    shoulderRotation: shoulderRotation
+                )
+            )
+        }
+
+        let extensionDelta = maxExtension - startExtension
+        guard extensionDelta > 0.10 || maxExtension > 1.18 else {
+            return nil
+        }
+
+        guard !rotationSamples.isEmpty else { return nil }
+
+        let nearPeakFloor = max(startExtension + 0.08, maxExtension - 0.18)
+        let nearPeakSamples = rotationSamples.filter { $0.extensionRatio >= nearPeakFloor }
+        let selectedSamples = nearPeakSamples.isEmpty ? rotationSamples : nearPeakSamples
+
+        let hipRotation = percentile(selectedSamples.map(\.hipRotation), percentile: 0.30)
+        let shoulderRotation = percentile(selectedSamples.map(\.shoulderRotation), percentile: 0.30)
+        let representativeFrame = selectedSamples
+            .min { ($0.hipRotation + $0.shoulderRotation) < ($1.hipRotation + $1.shoulderRotation) }?
+            .frame ?? context.attempt.peakFrame
+
+        guard let endHipRotation = lineRotation(
             startA: point(.leftHip, in: context.startPose),
             startB: point(.rightHip, in: context.startPose),
-            endA: point(.leftHip, in: context.peakPose),
-            endB: point(.rightHip, in: context.peakPose)
+            endA: point(.leftHip, in: context.endPose),
+            endB: point(.rightHip, in: context.endPose)
         ),
-        let shoulderRotation = lineRotation(
+        let endShoulderRotation = lineRotation(
             startA: point(.leftShoulder, in: context.startPose),
             startB: point(.rightShoulder, in: context.startPose),
-            endA: point(.leftShoulder, in: context.peakPose),
-            endB: point(.rightShoulder, in: context.peakPose)
+            endA: point(.leftShoulder, in: context.endPose),
+            endB: point(.rightShoulder, in: context.endPose)
         ) else {
             return nil
         }
 
-        guard hipRotation < 15 && shoulderRotation < 18 else { return nil }
+        MuayThaiDebug.log(
+            "CrossNoHipRotation: startExt=\(MuayThaiDebug.format(startExtension)) maxExt=\(MuayThaiDebug.format(maxExtension)) delta=\(MuayThaiDebug.format(extensionDelta)) repFrame=\(representativeFrame) hipRotP35=\(MuayThaiDebug.format(hipRotation)) shoulderRotP35=\(MuayThaiDebug.format(shoulderRotation)) endHip=\(MuayThaiDebug.format(endHipRotation)) endShoulder=\(MuayThaiDebug.format(endShoulderRotation)) rearHipDrive=\(MuayThaiDebug.format(maxRearHipDrive)) samples=\(selectedSamples.count)"
+        )
+
+        guard hipRotation < 5.2,
+              shoulderRotation < 8.2,
+              endHipRotation < 7.2,
+              endShoulderRotation < 10.2,
+              maxRearHipDrive < 0.009 else { return nil }
 
         return Detection(
             severity: entry.severity,
@@ -536,16 +1185,77 @@ enum MuayThaiIssueDetectors {
         )
     }
 
-    private static func detectOverreaching(entry: MuayThaiIssueCatalogEntry, context: AttemptContext) -> Detection? {
-        guard let nose = point(.nose, in: context.peakPose),
-              let leadAnkle = point(context.joints.leadAnkle, in: context.peakPose),
-              let rearAnkle = point(context.joints.rearAnkle, in: context.peakPose) else {
+    private static func detectForwardOverBaseForCross(entry: MuayThaiIssueCatalogEntry, context: AttemptContext) -> Detection? {
+        guard let startNose = point(.nose, in: context.startPose),
+              let startLeadAnkle = point(context.joints.leadAnkle, in: context.startPose),
+              let startRearAnkle = point(context.joints.rearAnkle, in: context.startPose) else {
             return nil
         }
 
-        let stanceWidth = max(abs(Double(leadAnkle.x - rearAnkle.x)), 0.001)
-        let overreachRatio = forwardDelta(currentX: nose.x, referenceX: leadAnkle.x, direction: context.forwardDirection) / stanceWidth
-        guard overreachRatio > 0.15 else { return nil }
+        let roles = MuayThaiAttemptRoleResolver.resolvePunchRoles(
+            technique: .cross,
+            startPose: context.startPose,
+            peakPose: context.peakPose,
+            stance: context.stance
+        )
+        let strikingShoulder = roles.source == .fallback ? context.joints.rearShoulder : roles.strikingShoulder
+        let baselineExtension = strikingExtensionRatio(
+            in: context.startPose,
+            strikingWrist: roles.strikingWrist,
+            strikingShoulder: strikingShoulder
+        ) ?? 0
+
+        let baselineStanceWidth = max(abs(Double(startLeadAnkle.x - startRearAnkle.x)), 0.001)
+        let baselineRatio = forwardDelta(
+            currentX: startNose.x,
+            referenceX: startLeadAnkle.x,
+            direction: context.forwardDirection
+        ) / baselineStanceWidth
+
+        var extensionFrames = 0
+        var triggeredFrames = 0
+        var maxOverreachRatio = 0.0
+        var maxTorsoAngle = 0.0
+
+        for frame in context.attempt.startFrame...context.attempt.endFrame {
+            guard let pose = context.poses[optional: frame],
+                  let extensionRatio = strikingExtensionRatio(
+                    in: pose,
+                    strikingWrist: roles.strikingWrist,
+                    strikingShoulder: strikingShoulder
+                  ),
+                  let torsoAngle = torsoForwardAngle(in: pose),
+                  let nose = point(.nose, in: pose),
+                  let leadAnkle = point(context.joints.leadAnkle, in: pose),
+                  let rearAnkle = point(context.joints.rearAnkle, in: pose) else {
+                continue
+            }
+
+            let extensionDelta = extensionRatio - baselineExtension
+            let isExtensionFrame = extensionDelta > 0.10 || extensionRatio > 1.18
+            guard isExtensionFrame else { continue }
+            extensionFrames += 1
+
+            let stanceWidth = max(abs(Double(leadAnkle.x - rearAnkle.x)), 0.001)
+            let overreachRatio = forwardDelta(
+                currentX: nose.x,
+                referenceX: leadAnkle.x,
+                direction: context.forwardDirection
+            ) / stanceWidth
+
+            let overreachDelta = overreachRatio - baselineRatio
+            let leaning = torsoAngle > 30 && overreachDelta > 0.12 && overreachRatio > 0.06
+            if leaning {
+                triggeredFrames += 1
+                maxOverreachRatio = max(maxOverreachRatio, overreachDelta)
+                maxTorsoAngle = max(maxTorsoAngle, torsoAngle)
+            }
+        }
+
+        let triggeredRatio = extensionFrames > 0
+            ? Double(triggeredFrames) / Double(extensionFrames)
+            : 0
+        guard triggeredFrames >= 2, triggeredRatio >= 0.45, maxOverreachRatio > 0.16 else { return nil }
 
         return Detection(
             severity: entry.severity,
@@ -558,7 +1268,8 @@ enum MuayThaiIssueDetectors {
                 context.joints.rearAnkle
             ],
             metrics: [
-                FeedbackMetric(kind: .muayThaiOverreachRatio, value: overreachRatio, unit: .ratio)
+                FeedbackMetric(kind: .muayThaiOverreachRatio, value: maxOverreachRatio, unit: .ratio),
+                FeedbackMetric(kind: .muayThaiTorsoForwardLeanDegrees, value: maxTorsoAngle, unit: .degrees)
             ]
         )
     }
@@ -620,6 +1331,14 @@ enum MuayThaiIssueDetectors {
     }
 
     private static func detectNoHipTurnover(entry: MuayThaiIssueCatalogEntry, context: AttemptContext) -> Detection? {
+        guard let startKickAnkle = point(context.joints.leadAnkle, in: context.startPose),
+              let peakKickAnkle = point(context.joints.leadAnkle, in: context.peakPose) else {
+            return nil
+        }
+
+        let kickTravel = PoseAnalysisHelpers.distance(from: startKickAnkle, to: peakKickAnkle)
+        guard kickTravel > 0.05 else { return nil }
+
         guard let hipRotation = lineRotation(
             startA: point(.leftHip, in: context.startPose),
             startB: point(.rightHip, in: context.startPose),
@@ -631,11 +1350,26 @@ enum MuayThaiIssueDetectors {
             startB: point(.rightShoulder, in: context.startPose),
             endA: point(.leftShoulder, in: context.peakPose),
             endB: point(.rightShoulder, in: context.peakPose)
+        ),
+        let endHipRotation = lineRotation(
+            startA: point(.leftHip, in: context.startPose),
+            startB: point(.rightHip, in: context.startPose),
+            endA: point(.leftHip, in: context.endPose),
+            endB: point(.rightHip, in: context.endPose)
+        ),
+        let endShoulderRotation = lineRotation(
+            startA: point(.leftShoulder, in: context.startPose),
+            startB: point(.rightShoulder, in: context.startPose),
+            endA: point(.leftShoulder, in: context.endPose),
+            endB: point(.rightShoulder, in: context.endPose)
         ) else {
             return nil
         }
 
-        guard hipRotation < 15 && shoulderRotation < 15 else { return nil }
+        guard hipRotation < 15,
+              shoulderRotation < 15,
+              endHipRotation < 18,
+              endShoulderRotation < 18 else { return nil }
 
         return Detection(
             severity: entry.severity,
@@ -651,17 +1385,33 @@ enum MuayThaiIssueDetectors {
 
     private static func detectNoArmCounterbalance(entry: MuayThaiIssueCatalogEntry, context: AttemptContext) -> Detection? {
         guard let startLeadWrist = point(context.joints.leadWrist, in: context.startPose),
-              let peakLeadWrist = point(context.joints.leadWrist, in: context.peakPose),
               let startRearWrist = point(context.joints.rearWrist, in: context.startPose),
-              let peakRearWrist = point(context.joints.rearWrist, in: context.peakPose) else {
+              let startKickAnkle = point(context.joints.leadAnkle, in: context.startPose),
+              let peakKickAnkle = point(context.joints.leadAnkle, in: context.peakPose) else {
             return nil
         }
 
-        let leadMove = PoseAnalysisHelpers.distance(from: startLeadWrist, to: peakLeadWrist)
-        let rearMove = PoseAnalysisHelpers.distance(from: startRearWrist, to: peakRearWrist)
-        let maxMove = max(leadMove, rearMove)
+        let kickTravel = PoseAnalysisHelpers.distance(from: startKickAnkle, to: peakKickAnkle)
+        guard kickTravel > 0.05 else { return nil }
 
-        guard maxMove < 0.06 else { return nil }
+        var maxLeadMove = 0.0
+        var maxRearMove = 0.0
+
+        for frame in context.attempt.startFrame...context.attempt.endFrame {
+            guard let pose = context.poses[optional: frame],
+                  let leadWrist = point(context.joints.leadWrist, in: pose),
+                  let rearWrist = point(context.joints.rearWrist, in: pose) else {
+                continue
+            }
+
+            maxLeadMove = max(maxLeadMove, PoseAnalysisHelpers.distance(from: startLeadWrist, to: leadWrist))
+            maxRearMove = max(maxRearMove, PoseAnalysisHelpers.distance(from: startRearWrist, to: rearWrist))
+        }
+
+        let maxMove = max(maxLeadMove, maxRearMove)
+
+        let armToKickMotionRatio = maxMove / max(kickTravel, 0.001)
+        guard maxMove < 0.10, armToKickMotionRatio < 0.7 else { return nil }
 
         return Detection(
             severity: entry.severity,
@@ -865,6 +1615,28 @@ enum MuayThaiIssueDetectors {
         )
     }
 
+    private static func pointToLineDistance(point: CGPoint, lineStart: CGPoint, lineEnd: CGPoint) -> Double {
+        let dx = Double(lineEnd.x - lineStart.x)
+        let dy = Double(lineEnd.y - lineStart.y)
+        let denominator = (dx * dx) + (dy * dy)
+
+        guard denominator > 1e-6 else {
+            return PoseAnalysisHelpers.distance(from: point, to: lineStart)
+        }
+
+        let t = (
+            (Double(point.x - lineStart.x) * dx) +
+            (Double(point.y - lineStart.y) * dy)
+        ) / denominator
+        let clampedT = max(0, min(1, t))
+
+        let projection = CGPoint(
+            x: lineStart.x + CGFloat(clampedT) * (lineEnd.x - lineStart.x),
+            y: lineStart.y + CGFloat(clampedT) * (lineEnd.y - lineStart.y)
+        )
+        return PoseAnalysisHelpers.distance(from: point, to: projection)
+    }
+
     private static func sameSideHip(for wrist: BodyJoint) -> BodyJoint {
         switch wrist {
         case .leftWrist:
@@ -923,7 +1695,13 @@ enum MuayThaiIssueDetectors {
         guard let startA, let startB, let endA, let endB else { return nil }
         let startAngle = lineAngle(from: startA, to: startB)
         let endAngle = lineAngle(from: endA, to: endB)
-        return abs(angleDelta(from: startAngle, to: endAngle))
+
+        // Treat body lines as undirected segments. Side-angle tracking can swap
+        // left/right keypoints across frames, which otherwise appears as ~180°
+        // rotation and suppresses valid no-rotation detections.
+        let directedDelta = abs(angleDelta(from: startAngle, to: endAngle))
+        let flippedDelta = abs(angleDelta(from: startAngle, to: endAngle + 180))
+        return min(directedDelta, flippedDelta)
     }
 
     private static func lineAngle(from p1: CGPoint, to p2: CGPoint) -> Double {
@@ -933,6 +1711,14 @@ enum MuayThaiIssueDetectors {
     private static func angleDelta(from start: Double, to end: Double) -> Double {
         let wrapped = (end - start + 540).truncatingRemainder(dividingBy: 360) - 180
         return wrapped
+    }
+
+    private static func percentile(_ values: [Double], percentile: Double) -> Double {
+        guard !values.isEmpty else { return 0 }
+        let sorted = values.sorted()
+        let clamped = max(0, min(1, percentile))
+        let index = Int(round(clamped * Double(sorted.count - 1)))
+        return sorted[index]
     }
 
     private static func forwardDelta(currentX: CGFloat, referenceX: CGFloat, direction: Double) -> Double {
