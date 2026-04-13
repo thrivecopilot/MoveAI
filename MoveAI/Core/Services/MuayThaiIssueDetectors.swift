@@ -536,13 +536,48 @@ enum MuayThaiIssueDetectors {
         }
     }
 
-    private static func detectRearHandDropping(entry: MuayThaiIssueCatalogEntry, context: AttemptContext) -> Detection? {
-        let roles = MuayThaiAttemptRoleResolver.resolvePunchRoles(
+    private static func detectRearHandDropping(
+        entry: MuayThaiIssueCatalogEntry,
+        context: AttemptContext,
+        allowClipFallback: Bool = true
+    ) -> Detection? {
+        var roles = MuayThaiAttemptRoleResolver.resolvePunchRoles(
             technique: .jab,
             startPose: context.startPose,
             peakPose: context.peakPose,
             stance: context.stance
         )
+
+        var selectedInference: (strikingWrist: BodyJoint, confidence: Double)?
+        if let clipInference = inferDominantPunchSideAcrossClip(poses: context.poses) {
+            selectedInference = clipInference
+        }
+        if let attemptInference = inferDominantPunchSideAcrossAttempt(context: context) {
+            if let existingInference = selectedInference {
+                if attemptInference.confidence > existingInference.confidence + 0.05 {
+                    selectedInference = attemptInference
+                }
+            } else {
+                selectedInference = attemptInference
+            }
+        }
+
+        if let selectedInference,
+           selectedInference.strikingWrist != roles.strikingWrist,
+           shouldOverridePunchRoleResolution(
+               existing: roles,
+               attemptInferenceConfidence: selectedInference.confidence,
+               stanceSource: context.stanceSource
+           ) {
+            roles = punchRoleResolution(
+                strikingWrist: selectedInference.strikingWrist,
+                confidence: max(0.40, selectedInference.confidence),
+                source: .motionInferred
+            )
+            MuayThaiDebug.log(
+                "RearHandDrop: overriding roles via attempt-window inference striking=\(roles.strikingWrist.rawValue) guard=\(roles.guardWrist.rawValue) confidence=\(MuayThaiDebug.format(roles.confidence))"
+            )
+        }
 
         MuayThaiDebug.log("RearHandDrop: role source=\(String(describing: roles.source)) striking=\(roles.strikingWrist.rawValue) guard=\(roles.guardWrist.rawValue) confidence=\(MuayThaiDebug.format(roles.confidence))")
 
@@ -697,7 +732,18 @@ enum MuayThaiIssueDetectors {
             droppedRatio > 0.72 &&
             guardLift > 0.28
 
-        guard rearGuardDropDetected || leadReturnOnlyDetected else {
+        if !(rearGuardDropDetected || leadReturnOnlyDetected) {
+            if allowClipFallback,
+               context.stanceSource == .userSelected,
+               (context.attempt.startFrame > 0 || context.attempt.endFrame < context.poses.count - 1),
+               let clipContext = clipWideAttemptContext(from: context) {
+                MuayThaiDebug.log("RearHandDrop: retrying with clip-wide window")
+                return detectRearHandDropping(
+                    entry: entry,
+                    context: clipContext,
+                    allowClipFallback: false
+                )
+            }
             MuayThaiDebug.log("RearHandDrop: not triggered")
             return nil
         }
@@ -732,6 +778,177 @@ enum MuayThaiIssueDetectors {
             message: message,
             affectedJoints: affectedJoints,
             metrics: metrics
+        )
+    }
+
+    private static func shouldOverridePunchRoleResolution(
+        existing: MuayThaiPunchRoleResolution,
+        attemptInferenceConfidence: Double,
+        stanceSource: FightStanceResolution.Source
+    ) -> Bool {
+        if attemptInferenceConfidence < 0.18 {
+            return false
+        }
+        if existing.source != .motionInferred {
+            return true
+        }
+        if attemptInferenceConfidence > existing.confidence + 0.02 {
+            return true
+        }
+        return stanceSource == .userSelected && attemptInferenceConfidence >= 0.22
+    }
+
+    private static func punchRoleResolution(
+        strikingWrist: BodyJoint,
+        confidence: Double,
+        source: MuayThaiPunchRoleSource
+    ) -> MuayThaiPunchRoleResolution {
+        let clampedConfidence = max(0, min(confidence, 1))
+        switch strikingWrist {
+        case .leftWrist:
+            return MuayThaiPunchRoleResolution(
+                strikingWrist: .leftWrist,
+                guardWrist: .rightWrist,
+                strikingElbow: .leftElbow,
+                guardElbow: .rightElbow,
+                strikingShoulder: .leftShoulder,
+                guardShoulder: .rightShoulder,
+                confidence: clampedConfidence,
+                source: source
+            )
+        case .rightWrist:
+            return MuayThaiPunchRoleResolution(
+                strikingWrist: .rightWrist,
+                guardWrist: .leftWrist,
+                strikingElbow: .rightElbow,
+                guardElbow: .leftElbow,
+                strikingShoulder: .rightShoulder,
+                guardShoulder: .leftShoulder,
+                confidence: clampedConfidence,
+                source: source
+            )
+        default:
+            return MuayThaiPunchRoleResolution(
+                strikingWrist: .leftWrist,
+                guardWrist: .rightWrist,
+                strikingElbow: .leftElbow,
+                guardElbow: .rightElbow,
+                strikingShoulder: .leftShoulder,
+                guardShoulder: .rightShoulder,
+                confidence: clampedConfidence,
+                source: source
+            )
+        }
+    }
+
+    private static func inferDominantPunchSideAcrossAttempt(
+        context: AttemptContext
+    ) -> (strikingWrist: BodyJoint, confidence: Double)? {
+        inferDominantPunchSide(
+            poses: context.poses,
+            frameRange: context.attempt.startFrame...context.attempt.endFrame
+        )
+    }
+
+    private static func inferDominantPunchSideAcrossClip(
+        poses: [PoseDetectionResult]
+    ) -> (strikingWrist: BodyJoint, confidence: Double)? {
+        guard !poses.isEmpty else { return nil }
+        return inferDominantPunchSide(poses: poses, frameRange: 0...(poses.count - 1))
+    }
+
+    private static func inferDominantPunchSide(
+        poses: [PoseDetectionResult],
+        frameRange: ClosedRange<Int>
+    ) -> (strikingWrist: BodyJoint, confidence: Double)? {
+        var leftTravel = 0.0
+        var rightTravel = 0.0
+        var leftExtensionGain = 0.0
+        var rightExtensionGain = 0.0
+
+        var previousLeftWrist: CGPoint?
+        var previousRightWrist: CGPoint?
+
+        var leftReachMin = Double.greatestFiniteMagnitude
+        var leftReachMax = 0.0
+        var rightReachMin = Double.greatestFiniteMagnitude
+        var rightReachMax = 0.0
+
+        for frame in frameRange {
+            guard let pose = poses[optional: frame] else { continue }
+
+            if let leftWrist = point(.leftWrist, in: pose) {
+                if let previousLeftWrist {
+                    leftTravel += PoseAnalysisHelpers.distance(from: previousLeftWrist, to: leftWrist)
+                }
+                previousLeftWrist = leftWrist
+            }
+
+            if let rightWrist = point(.rightWrist, in: pose) {
+                if let previousRightWrist {
+                    rightTravel += PoseAnalysisHelpers.distance(from: previousRightWrist, to: rightWrist)
+                }
+                previousRightWrist = rightWrist
+            }
+
+            if let leftReach = strikingExtensionRatio(
+                in: pose,
+                strikingWrist: .leftWrist,
+                strikingShoulder: .leftShoulder
+            ) {
+                leftReachMin = min(leftReachMin, leftReach)
+                leftReachMax = max(leftReachMax, leftReach)
+            }
+
+            if let rightReach = strikingExtensionRatio(
+                in: pose,
+                strikingWrist: .rightWrist,
+                strikingShoulder: .rightShoulder
+            ) {
+                rightReachMin = min(rightReachMin, rightReach)
+                rightReachMax = max(rightReachMax, rightReach)
+            }
+        }
+
+        if leftReachMin < Double.greatestFiniteMagnitude {
+            leftExtensionGain = max(0, leftReachMax - leftReachMin)
+        }
+        if rightReachMin < Double.greatestFiniteMagnitude {
+            rightExtensionGain = max(0, rightReachMax - rightReachMin)
+        }
+
+        let leftScore = leftTravel + (leftExtensionGain * 0.80)
+        let rightScore = rightTravel + (rightExtensionGain * 0.80)
+        let maxScore = max(leftScore, rightScore)
+        let gap = abs(leftScore - rightScore)
+        guard maxScore > 0.10, gap > 0.02 else {
+            return nil
+        }
+
+        let confidence = max(0, min(gap / max(maxScore, 0.001), 1))
+        let strikingWrist: BodyJoint = leftScore >= rightScore ? .leftWrist : .rightWrist
+        return (strikingWrist: strikingWrist, confidence: confidence)
+    }
+
+    private static func clipWideAttemptContext(from context: AttemptContext) -> AttemptContext? {
+        guard !context.poses.isEmpty else { return nil }
+        let peakFrame = max(0, min(context.attempt.peakFrame, context.poses.count - 1))
+        let peakTimestamp = context.poses[optional: peakFrame]?.timestamp.timeIntervalSince1970 ?? context.attempt.peakTimestamp
+        let clipAttempt = TechniqueAttempt(
+            startFrame: 0,
+            endFrame: context.poses.count - 1,
+            peakFrame: peakFrame,
+            peakTimestamp: peakTimestamp
+        )
+
+        return AttemptContext(
+            poses: context.poses,
+            attempt: clipAttempt,
+            attemptTechnique: context.attemptTechnique,
+            attemptConfidence: context.attemptConfidence,
+            mixedTechniques: context.mixedTechniques,
+            stance: context.stance,
+            stanceSource: context.stanceSource
         )
     }
 
