@@ -6,3 +6,17 @@ Screenshots/
 
 # Structural test results (generated, not committed)
 test-results/
+
+# Local build/test artifacts
+.build/
+
+# Local agent/editor metadata
+.claude/
+.cursor/
+.vscode/
+
+# macOS finder metadata
+**/.DS_Store
+
+# Xcode per-user workspace state
+MoveAI.xcodeproj/**/xcuserdata/
