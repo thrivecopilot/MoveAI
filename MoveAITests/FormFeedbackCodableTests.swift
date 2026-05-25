@@ -244,4 +244,66 @@ final class FormFeedbackCodableTests: XCTestCase {
             XCTAssertFalse(entry?.quickFix.isEmpty ?? true)
         }
     }
+
+    func testRunningCueLibraryHasEntriesForAllRunningKinds() {
+        for kind in MovementIssueKind.runningCases {
+            let entry = RunningCueLibrary.entry(for: kind)
+            XCTAssertNotNil(entry, "Missing running catalog entry for \(kind.rawValue)")
+            XCTAssertFalse(entry?.headline.isEmpty ?? true)
+            XCTAssertFalse(entry?.quickFix.isEmpty ?? true)
+            XCTAssertFalse(entry?.oneLineDescription.isEmpty ?? true)
+        }
+    }
+
+    func testMovementIssueResolverMatchesRunningCadenceLegacyMessage() {
+        let feedback = FormFeedback(
+            category: .tempo,
+            message: "Running cadence is low (154 spm) for this effort.",
+            severity: .warning,
+            timestamp: 2.0
+        )
+
+        XCTAssertEqual(MovementIssueResolver.resolve(for: feedback), .runningLowCadence)
+    }
+
+    func testMovementIssueResolverRunningExplicitKindOverridesLegacyText() {
+        let feedback = FormFeedback(
+            category: .tempo,
+            message: "Running cadence is low (154 spm) for this effort.",
+            severity: .warning,
+            timestamp: 2.0,
+            issueKind: .runningOverstriding
+        )
+
+        XCTAssertEqual(MovementIssueResolver.resolve(for: feedback), .runningOverstriding)
+    }
+
+    func testIssueSummaryBuilderUsesRunningCatalogTextAndStructuredMetric() {
+        let feedbackItems = [
+            FormFeedback(
+                category: .tempo,
+                message: "Running cadence is low for this clip.",
+                severity: .warning,
+                timestamp: 1.1,
+                issueKind: .runningLowCadence,
+                metrics: [FeedbackMetric(kind: .runningCadenceSpm, value: 152, unit: .count)]
+            ),
+            FormFeedback(
+                category: .tempo,
+                message: "Running cadence is low for this clip.",
+                severity: .critical,
+                timestamp: 2.2,
+                issueKind: .runningLowCadence,
+                metrics: [FeedbackMetric(kind: .runningCadenceSpm, value: 148, unit: .count)]
+            ),
+        ]
+
+        let summaries = IssueSummaryBuilder.from(feedbackItems)
+
+        XCTAssertEqual(summaries.count, 1)
+        XCTAssertEqual(summaries[0].title, "Cadence is low")
+        XCTAssertEqual(summaries[0].severity, .critical)
+        XCTAssertEqual(summaries[0].cues.first?.shortText, "Increase cadence by 3-5% while keeping stride relaxed.")
+        XCTAssertEqual(summaries[0].worstOccurrence.metrics.first?.kind, .runningCadenceSpm)
+    }
 }

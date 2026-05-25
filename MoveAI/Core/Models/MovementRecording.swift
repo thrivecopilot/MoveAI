@@ -123,7 +123,7 @@ struct MovementIssueKind: RawRepresentable, Codable, Hashable, CaseIterable {
     }
 
     static var allCases: [MovementIssueKind] {
-        squatCases + muayThaiCases
+        squatCases + runningCases + muayThaiCases
     }
 
     var isSquatIssue: Bool {
@@ -132,6 +132,10 @@ struct MovementIssueKind: RawRepresentable, Codable, Hashable, CaseIterable {
 
     var isMuayThaiIssue: Bool {
         rawValue.hasPrefix("muay_thai.")
+    }
+
+    var isRunningIssue: Bool {
+        rawValue.hasPrefix("running.")
     }
 }
 

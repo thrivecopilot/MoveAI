@@ -87,6 +87,8 @@ enum VideoCaptureTips {
             return deadliftTips
         case .benchPress:
             return benchPressTips
+        case .running:
+            return runningTips
         case .muayThai:
             return muayThaiTips
         }
@@ -117,5 +119,12 @@ enum VideoCaptureTips {
         "Record one technique per clip for cleaner analysis",
         "For punches and elbows, front or slight diagonal works best",
         "For kicks and knees, keep both hips and both ankles clearly visible"
+    ]
+
+    private static let runningTips: [String] = [
+        "Capture at least 8-12 seconds of continuous running",
+        "Keep full body visible with both feet in frame during stride cycles",
+        "Use side or slight rear-quarter angle for cleaner gait analysis",
+        "Use stable camera placement and even lighting"
     ]
 }

@@ -11,11 +11,10 @@ final class MuayThaiAnalyzerTests: XCTestCase {
         let actual = Set(MuayThaiIssueCatalog.entries.map(\.issueKind))
         let expected: Set<MovementIssueKind> = [
             .muayThaiJabRearHandDropping,
-            .muayThaiJabLeaningForward,
-            .muayThaiJabNoShoulderProtection,
+            .muayThaiPostureForwardOverBase,
+            .muayThaiJabPoorRetraction,
             .muayThaiCrossNoHipRotation,
             .muayThaiCrossRearHeelNotPivoting,
-            .muayThaiCrossOverreaching,
             .muayThaiLeadHookArmOnly,
             .muayThaiLeadHookTooWide,
             .muayThaiRoundhouseNoSupportFootPivot,
@@ -111,7 +110,8 @@ final class MuayThaiAnalyzerTests: XCTestCase {
             poses: poses,
             attempts: attempts,
             technique: .jab,
-            stance: .orthodox
+            stance: .orthodox,
+            stanceSource: .userSelected
         )
 
         XCTAssertFalse(outcome.feedback.contains { $0.issueKind == .muayThaiJabRearHandDropping })
@@ -124,20 +124,25 @@ final class MuayThaiAnalyzerTests: XCTestCase {
             leftGuardDropped: true,
             hipRotationScale: 0.01
         )
-        let attempts = MuayThaiEventDetector.detectAttempts(poses: poses, technique: .jab, stance: .orthodox)
+        let attempts = MuayThaiEventDetector.detectAttempts(poses: poses, technique: .jab, stance: .southpaw)
 
         let outcome = MuayThaiIssueDetectors.evaluate(
             poses: poses,
             attempts: attempts,
             technique: .jab,
-            stance: .orthodox
+            stance: .southpaw,
+            stanceSource: .userSelected
         )
 
-        XCTAssertTrue(outcome.feedback.contains { $0.issueKind == .muayThaiJabRearHandDropping })
+        let issueKinds = outcome.feedback.map(\.issueKind)
+        XCTAssertTrue(
+            outcome.feedback.contains { $0.issueKind == .muayThaiJabRearHandDropping },
+            "Expected rear-hand dropping feedback, got: \(issueKinds)"
+        )
     }
 
     func testMuayThaiTechniqueDetectorDetectsMovementFromFootworkPattern() {
-        let poses = crossingMovementPoses(frameCount: 20)
+        let poses = footworkMovementPoses(frameCount: 20)
         let detection = MuayThaiTechniqueDetector.detect(poses: poses, preferredStance: .orthodox)
 
         XCTAssertEqual(detection?.technique, .movement)
@@ -243,39 +248,39 @@ final class MuayThaiAnalyzerTests: XCTestCase {
             poses: poses,
             attempts: attempts,
             technique: .jab,
-            stance: .orthodox
+            stance: .orthodox,
+            stanceSource: .userSelected
         )
 
         XCTAssertFalse(outcome.feedback.contains { $0.issueKind == .muayThaiJabRearHandDropping })
     }
 
     func testRearHandDroppingTargetsGuardHandForRightHandJab() {
-        let poses = rightHandJabPoses(frameCount: 21, leftGuardDropped: true)
-        let peakFrame = poses.count / 2
-        let attempts = [
-            TechniqueAttempt(
-                startFrame: 0,
-                endFrame: poses.count - 1,
-                peakFrame: peakFrame,
-                peakTimestamp: poses[peakFrame].timestamp.timeIntervalSince1970
-            )
-        ]
+        let poses = repeatedRightHandJabPoses(
+            frameCount: 72,
+            strikeCenters: [8, 18, 28, 38, 48, 58],
+            leftGuardDropped: true,
+            hipRotationScale: 0.01
+        )
+        let attempts = MuayThaiEventDetector.detectAttempts(poses: poses, technique: .jab, stance: .orthodox)
 
         let outcome = MuayThaiIssueDetectors.evaluate(
             poses: poses,
             attempts: attempts,
             technique: .jab,
-            stance: .orthodox
+            stance: .orthodox,
+            stanceSource: .userSelected
         )
 
         guard let rearHandDrop = outcome.feedback.first(where: { $0.issueKind == .muayThaiJabRearHandDropping }) else {
-            XCTFail("Expected rear-hand dropping feedback")
+            let issueKinds = outcome.feedback.map(\.issueKind)
+            XCTFail("Expected rear-hand dropping feedback, got: \(issueKinds)")
             return
         }
 
         let joints = rearHandDrop.affectedBodyJoints ?? []
-        XCTAssertTrue(joints.contains(.leftWrist))
-        XCTAssertFalse(joints.contains(.rightWrist))
+        XCTAssertTrue(joints.contains(.leftWrist), "Expected leftWrist in affected joints, got: \(joints)")
+        XCTAssertFalse(joints.contains(.rightWrist), "Expected rightWrist to be excluded, got: \(joints)")
     }
 
     func testPoseBasedAnalysisServiceMuayThaiAutoDetectsTechniqueWhenMissing() async throws {
@@ -345,7 +350,7 @@ final class MuayThaiAnalyzerTests: XCTestCase {
         }
     }
 
-    func testPoseBasedAnalysisServiceMuayThaiCoverageWarningAndNoScorePenalty() async throws {
+    func testPoseBasedAnalysisServiceMuayThaiQualityLimitAndCoverageWarningHaveNoScorePenalty() async throws {
         setenv("MOVEAI_ENABLE_MUAY_THAI_ANALYZER", "1", 1)
 
         let service = PoseBasedAnalysisService()
@@ -360,7 +365,9 @@ final class MuayThaiAnalyzerTests: XCTestCase {
 
         let result = try await service.analyzeMovement(recording)
 
+        let quality = result.feedback.filter { $0.issueKind == .muayThaiCaptureQualityLimited }
         let coverage = result.feedback.filter { $0.issueKind == .muayThaiAnalysisCoverageLimited }
+        XCTAssertEqual(quality.count, 1)
         XCTAssertEqual(coverage.count, 1)
         XCTAssertEqual(result.score, 100, accuracy: 0.0001)
     }
@@ -407,6 +414,27 @@ final class MuayThaiAnalyzerTests: XCTestCase {
         }
     }
 
+    private func footworkMovementPoses(frameCount: Int) -> [PoseDetectionResult] {
+        (0..<frameCount).map { frame in
+            let progress = Double(frame) / Double(max(frameCount - 1, 1))
+            let lateralShift = 0.12 * progress
+
+            return makePose(
+                frame: frame,
+                leftAnkleX: 0.42 + lateralShift,
+                rightAnkleX: 0.58 + lateralShift,
+                leftKneeX: 0.44 + lateralShift,
+                rightKneeX: 0.56 + lateralShift,
+                leftWristX: 0.42,
+                rightWristX: 0.58,
+                leftElbowX: 0.44,
+                rightElbowX: 0.56,
+                leftShoulderX: 0.45 + (lateralShift * 0.5),
+                rightShoulderX: 0.55 + (lateralShift * 0.5)
+            )
+        }
+    }
+
     private func rightHandJabPoses(frameCount: Int, leftGuardDropped: Bool) -> [PoseDetectionResult] {
         let center = max(1, frameCount / 2)
         let halfWidth = max(3, frameCount / 4)
@@ -418,8 +446,9 @@ final class MuayThaiAnalyzerTests: XCTestCase {
             let strikingElbowX = 0.56 + (0.10 * pulse)
             let strikingShoulderX = 0.55 + (0.03 * pulse)
 
-            let guardWristX = leftGuardDropped ? 0.42 : 0.50
-            let guardWristY = leftGuardDropped ? 0.58 : 0.84
+            let guardDropPulse = leftGuardDropped ? pulse : 0
+            let guardWristX = 0.50 - (0.05 * guardDropPulse)
+            let guardWristY = 0.84 - (0.16 * guardDropPulse)
 
             return makePose(
                 frame: frame,
@@ -457,8 +486,9 @@ final class MuayThaiAnalyzerTests: XCTestCase {
             let leftShoulderX = 0.45 + (hipRotationScale * 0.35 * pulse)
             let rightShoulderX = 0.55 + (hipRotationScale * pulse)
 
-            let guardWristX = leftGuardDropped ? 0.40 : 0.50
-            let guardWristY = leftGuardDropped ? 0.58 : 0.84
+            let guardDropPulse = leftGuardDropped ? pulse : 0
+            let guardWristX = 0.50 - (0.05 * guardDropPulse)
+            let guardWristY = 0.84 - (0.16 * guardDropPulse)
 
             return makePose(
                 frame: frame,

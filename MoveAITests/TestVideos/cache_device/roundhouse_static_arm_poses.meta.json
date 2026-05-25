@@ -1,0 +1,9 @@
+{
+  "cacheSHA256" : "a39ab4ff0f4af35b2e0aa500bb640c8fd766f8407d7be9c15c07459f87da3c5f",
+  "fixtureId" : "roundhouse_static_arm",
+  "generatedAt" : "2026-04-12T17:33:12Z",
+  "generator" : "video_processor",
+  "schemaVersion" : 1,
+  "videoFile" : "roundhouse_static_arm.mov",
+  "videoSHA256" : "6364e4ab7aa1c21175b54c0741690ad8cd3ecc3dc8dd857bbfaa6ae8f249618c"
+}

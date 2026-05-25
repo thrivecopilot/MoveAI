@@ -33,6 +33,13 @@ enum AccessibilityID {
         static let playPauseButton = "VideoReview.PlayPause"
     }
 
+    // MARK: - Cue Overlay
+    enum CueOverlay {
+        static let root = "CueOverlayView"
+        static let title = "CueOverlay.Title"
+        static let quickFix = "CueOverlay.QuickFix"
+    }
+
     // MARK: - Overview Tab
     enum Overview {
         static let root = "OverviewTab"

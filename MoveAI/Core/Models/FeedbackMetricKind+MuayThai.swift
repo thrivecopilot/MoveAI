@@ -4,6 +4,8 @@ extension FeedbackMetricKind {
     static let muayThaiRearHandGuardDistanceRatio = FeedbackMetricKind(rawValue: "muay_thai.rear_hand_guard_distance_ratio")
     static let muayThaiTorsoForwardLeanDegrees = FeedbackMetricKind(rawValue: "muay_thai.torso_forward_lean_degrees")
     static let muayThaiShoulderGuardGapRatio = FeedbackMetricKind(rawValue: "muay_thai.shoulder_guard_gap_ratio")
+    static let muayThaiJabReturnPathDeviationRatio = FeedbackMetricKind(rawValue: "muay_thai.jab_return_path_deviation_ratio")
+    static let muayThaiJabRetractionLagRatio = FeedbackMetricKind(rawValue: "muay_thai.jab_retraction_lag_ratio")
 
     static let muayThaiHipRotationDegrees = FeedbackMetricKind(rawValue: "muay_thai.hip_rotation_degrees")
     static let muayThaiShoulderRotationDegrees = FeedbackMetricKind(rawValue: "muay_thai.shoulder_rotation_degrees")

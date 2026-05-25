@@ -21,6 +21,21 @@ These directories are created automatically when running tests and allow for fas
 - `muay_thai_labeled_fixtures.json` defines labeled Muay Thai regression fixtures.
 - `scripts/muay-thai-regression.sh extract` builds/refreshes cache once for all listed fixtures.
 - `scripts/muay-thai-regression.sh analyze` runs cache-only regression checks for fast detector iteration.
+- `scripts/muay-thai-regression.sh extract-dual` builds separate cache sets for cross-platform parity checks:
+  - macOS Vision cache: `.cache_macos`
+  - iOS extraction cache: `.cache_ios`
+- `scripts/muay-thai-regression.sh compare [cache_a] [cache_b]` prints side-by-side per-clip detection, strike counts, and issue counts.
+- Cache set selection is controlled by `MOVEAI_POSE_CACHE_SUBDIR` (or `MOVEAI_POSE_CACHE_DIR` for an explicit path).
+
+### Running Labeled Fixtures
+
+- `running_labeled_fixtures.json` defines cache-first running regression fixtures.
+- Running fixture tests treat pose extraction as external input by default; tests skip if cache files are missing.
+- `scripts/running-regression.sh analyze` runs running issue + metric checks using cached poses only.
+- `scripts/running-regression.sh summary` prints per-fixture running issue/metric summaries.
+- `scripts/running-regression.sh extract` is opt-in and only works for fixtures with `videoFile` set.
+- `scripts/running-regression.sh gate` runs running checks plus cross-sport safety tests (running + squat + Muay Thai).
+- Running cache set selection is controlled by `MOVEAI_RUNNING_CACHE_SUBDIR` (or `MOVEAI_POSE_CACHE_SUBDIR`).
 
 ## Adding a New Test Case
 

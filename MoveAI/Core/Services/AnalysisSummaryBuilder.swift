@@ -2,8 +2,10 @@ import Foundation
 
 enum AnalysisSummaryBuilder {
     private static let excludedWarningIssueKinds: Set<MovementIssueKind> = [
+        .muayThaiCaptureQualityLimited,
         .muayThaiAnalysisCoverageLimited,
         .squatCameraAngleLimited,
+        .runningCaptureQualityLimited,
     ]
 
     static func build(
@@ -21,6 +23,8 @@ enum AnalysisSummaryBuilder {
                 attemptsCount: attemptsCount,
                 attemptsNeedingAttention: attemptsNeedingAttention
             )
+        case .running:
+            return buildAttemptSummary(feedback: feedback)
         case .squat, .deadlift, .benchPress:
             return buildRepSummary(
                 feedback: feedback,
@@ -129,6 +133,30 @@ enum AnalysisSummaryBuilder {
         let goodUnits = max(0, totalUnits - unitsNeedingAttention)
         return AnalysisSummary(
             unitKind: .strike,
+            totalUnits: totalUnits,
+            goodUnits: goodUnits,
+            unitsNeedingAttention: unitsNeedingAttention,
+            warningEvents: warningItems.count
+        )
+    }
+
+    private static func buildAttemptSummary(feedback: [FormFeedback]) -> AnalysisSummary? {
+        guard !feedback.isEmpty else {
+            return nil
+        }
+
+        let actionableFeedback = feedback.filter { item in
+            guard let kind = item.issueKind else { return true }
+            return !excludedWarningIssueKinds.contains(kind)
+        }
+
+        let warningItems = warningFeedback(from: actionableFeedback)
+        let totalUnits = max(1, Set(actionableFeedback.map { timestampBucket($0.timestamp) / 500 }).count)
+        let unitsNeedingAttention = min(totalUnits, Set(warningItems.map { timestampBucket($0.timestamp) / 500 }).count)
+        let goodUnits = max(0, totalUnits - unitsNeedingAttention)
+
+        return AnalysisSummary(
+            unitKind: .attempt,
             totalUnits: totalUnits,
             goodUnits: goodUnits,
             unitsNeedingAttention: unitsNeedingAttention,

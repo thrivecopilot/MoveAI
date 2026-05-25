@@ -1,0 +1,9 @@
+{
+  "cacheSHA256" : "70ed4a2c8baec6a6e66d119023689081c1ca1b5982b3e2b76ee646eeecfec435",
+  "fixtureId" : "jab_archer_error",
+  "generatedAt" : "2026-04-12T17:32:32Z",
+  "generator" : "video_processor",
+  "schemaVersion" : 1,
+  "videoFile" : "jab_archer_error.mov",
+  "videoSHA256" : "6616e574d135bc076180c6d6857b64238c21e2bb2f97e0df689baa917a60e943"
+}

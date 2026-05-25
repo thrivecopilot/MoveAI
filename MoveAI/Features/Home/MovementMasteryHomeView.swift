@@ -251,6 +251,24 @@ struct MovementMasteryHomeView: View {
                 }
             )
 
+            MovementCategoryCard(
+                title: "Running",
+                description: "Gait-focused review for cadence, posture, and stride consistency",
+                icon: "figure.run",
+                color: .mint,
+                movements: [
+                    MovementOption(
+                        type: .running,
+                        title: "Running",
+                        subtitle: nil,
+                        difficulty: .beginner
+                    )
+                ],
+                onMovementSelected: { movementType in
+                    beginSessionSelection(for: movementType)
+                }
+            )
+
             VStack(spacing: CoachTheme.Surfaces.groupSpacing) {
                 ComingSoonCategoryCard(
                     title: "Olympic Lifting",

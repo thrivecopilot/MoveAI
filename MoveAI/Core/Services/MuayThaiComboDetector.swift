@@ -55,9 +55,9 @@ struct MuayThaiComboDetection {
 
 enum MuayThaiComboDetector {
     private static let minimumPeakSpeed = 0.006
-    private static let peakRelativeThreshold = 0.4
-    private static let minimumClassifiedConfidence = 0.22
-    private static let minimumPeakGapFrames = 6
+    private static let peakRelativeThreshold = 0.28
+    private static let minimumClassifiedConfidence = 0.16
+    private static let minimumPeakGapFrames = 4
 
     static func detect(
         poses: [PoseDetectionResult],
@@ -219,7 +219,7 @@ enum MuayThaiComboDetector {
             }
 
             let peakGap = candidate.attempt.peakFrame - last.attempt.peakFrame
-            if peakGap <= 4 {
+            if peakGap <= 2 {
                 if candidate.confidence > last.confidence {
                     filtered[filtered.count - 1] = candidate
                 }

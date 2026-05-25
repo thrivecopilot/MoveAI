@@ -6,6 +6,8 @@ enum StructuredUIScenario: String {
     case poseOverlayNoPose = "PoseOverlay_noPose"
     case dataInputPrefilled = "DataInput_prefilled"
     case videoReviewOverviewMedium = "VideoReview_overview_medium"
+    case videoReviewRunningCollapsed = "VideoReview_running_collapsed"
+    case videoReviewRunningMedium = "VideoReview_running_medium"
     case trendsSquatFocus = "Trends_squat_focus"
 }
 

@@ -132,8 +132,9 @@ private func extractPoses(input: URL, fps: Double) throws -> [PoseDetectionResul
     let totalSamples = max(1, Int(duration * fps))
     let generator = AVAssetImageGenerator(asset: asset)
     generator.appliesPreferredTrackTransform = true
-    generator.requestedTimeToleranceBefore = .zero
-    generator.requestedTimeToleranceAfter = .zero
+    let sampleTolerance = CMTime(seconds: 1.0 / fps, preferredTimescale: 600)
+    generator.requestedTimeToleranceBefore = sampleTolerance
+    generator.requestedTimeToleranceAfter = sampleTolerance
 
     let request = VNDetectHumanBodyPoseRequest()
     if let maxRevision = type(of: request).supportedRevisions.max() {

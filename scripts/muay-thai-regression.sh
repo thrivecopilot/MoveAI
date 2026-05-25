@@ -5,13 +5,13 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SCHEME="MoveAI"
 IPHONE17_DESTINATION="${MOVEAI_IPHONE17_DESTINATION:-platform=iOS Simulator,name=iPhone 17 Pro}"
-DESTINATION="${MOVEAI_TEST_DESTINATION:-$IPHONE17_DESTINATION}"
 MAC_DESTINATION="${MOVEAI_MAC_TEST_DESTINATION:-platform=macOS,arch=arm64,name=My Mac}"
+DESTINATION="${MOVEAI_TEST_DESTINATION:-$MAC_DESTINATION}"
 DERIVED_DATA="${MOVEAI_DERIVED_DATA_PATH:-$PROJECT_ROOT/.build/muaythai-derived-data}"
 MANIFEST_PATH="$PROJECT_ROOT/MoveAITests/TestVideos/muay_thai_labeled_fixtures.json"
 VIDEOS_DIR="$PROJECT_ROOT/MoveAITests/TestVideos"
 MACOS_EXTRACTOR="$SCRIPT_DIR/extract_muaythai_pose_cache.swift"
-DEFAULT_CACHE_SUBDIR="${MOVEAI_POSE_CACHE_SUBDIR:-.cache}"
+DEFAULT_CACHE_SUBDIR="${MOVEAI_POSE_CACHE_SUBDIR:-.cache_device}"
 MACOS_CACHE_SUBDIR="${MOVEAI_MUAY_THAI_MACOS_CACHE_SUBDIR:-.cache_macos}"
 IOS_CACHE_SUBDIR="${MOVEAI_MUAY_THAI_IOS_CACHE_SUBDIR:-.cache_ios}"
 DEVICE_CACHE_SUBDIR="${MOVEAI_MUAY_THAI_DEVICE_CACHE_SUBDIR:-.cache_device}"
@@ -32,6 +32,14 @@ refresh_simulator_service() {
   # Touch CoreSimulator to recover from transient "connection invalid" failures.
   DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   xcrun simctl list devices >/dev/null 2>&1 || true
+}
+
+require_simulator_extraction_opt_in() {
+  if [ "${MOVEAI_ALLOW_SIMULATOR_EXTRACTION:-0}" != "1" ]; then
+    echo "[muay-thai-regression] simulator extraction is disabled by default."
+    echo "[muay-thai-regression] use device/macOS extraction, or set MOVEAI_ALLOW_SIMULATOR_EXTRACTION=1 for an explicit override."
+    return 2
+  fi
 }
 
 run_xcodebuild_with_retry() {
@@ -90,8 +98,11 @@ extract_cache_macos() {
 extract_cache_simulator() {
   local destination="${1:-$DESTINATION}"
   local cache_subdir="${2:-$DEFAULT_CACHE_SUBDIR}"
+  require_simulator_extraction_opt_in
   echo "[muay-thai-regression] extracting/refreshing pose caches from simulator (cache=$cache_subdir, debug only)"
   DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+  MOVEAI_ENABLE_LIVE_POSE_EXTRACTION_TESTS=1 \
+  MOVEAI_ALLOW_SIMULATOR_EXTRACTION=1 \
   MOVEAI_ENABLE_MUAY_THAI_ANALYZER=1 \
   MOVEAI_ENABLE_MUAY_THAI_COMBO_ANALYZER=1 \
   MOVEAI_POSE_CACHE_SUBDIR="$cache_subdir" \
@@ -102,7 +113,10 @@ extract_cache_simulator() {
     -parallel-testing-enabled NO \
     -maximum-concurrent-test-simulator-destinations 1 \
     -maximum-concurrent-test-device-destinations 1 \
-    -only-testing:MoveAITests/MuayThaiLabeledVideoRegressionTests/testExtractAllLabeledVideosToCache
+    -only-testing:MoveAITests/MuayThaiLabeledVideoRegressionTests/testExtractAllLabeledVideosToCache \
+    CODE_SIGNING_ALLOWED=NO \
+    CODE_SIGNING_REQUIRED=NO \
+    CODE_SIGN_IDENTITY=
 }
 
 extract_cache_device() {
@@ -134,6 +148,7 @@ extract_cache_device() {
 
   echo "[muay-thai-regression] extracting pose caches on physical iOS device (device=$device_identifier, remote=$remote_cache_abs)"
   DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+  MOVEAI_ENABLE_LIVE_POSE_EXTRACTION_TESTS=1 \
   MOVEAI_ENABLE_MUAY_THAI_ANALYZER=1 \
   MOVEAI_ENABLE_MUAY_THAI_COMBO_ANALYZER=1 \
   MOVEAI_POSE_CACHE_DIR="$remote_cache_abs" \
@@ -411,11 +426,11 @@ case "${1:-}" in
     echo "Usage: $0 {extract [cache_subdir]|extract-macos [cache_subdir]|extract-sim [cache_subdir]|extract-sim-ios17 [cache_subdir]|extract-device <device_id_or_udid> [cache_subdir]|extract-ios [cache_subdir]|extract-ios17 [cache_subdir]|extract-dual [macos_cache_subdir] [ios_cache_subdir]|analyze [cache_subdir]|analyze-ios17 [cache_subdir]|analyze-mac [cache_subdir]|analyze-debug [cache_subdir]|analyze-cache [cache_subdir]|summary [cache_subdir]|summary-ios17 [cache_subdir]|summary-mac [cache_subdir]|summary-cache [cache_subdir]|compare [cache_a] [cache_b]|compare-ios17 [cache_a] [cache_b]|all [cache_subdir]|all-ios17 [cache_subdir]}"
     echo "  extract             Extract/refresh caches via macOS Vision extractor (default cache: $DEFAULT_CACHE_SUBDIR)"
     echo "  extract-macos       Extract/refresh macOS Vision caches (default cache: $MACOS_CACHE_SUBDIR)"
-    echo "  extract-sim         Extract via iOS simulator test path (default cache: $DEFAULT_CACHE_SUBDIR)"
-    echo "  extract-sim-ios17   Extract via iPhone 17 simulator destination (default cache: $DEFAULT_CACHE_SUBDIR)"
+    echo "  extract-sim         Extract via iOS simulator test path (requires MOVEAI_ALLOW_SIMULATOR_EXTRACTION=1)"
+    echo "  extract-sim-ios17   Extract via iPhone 17 simulator destination (requires MOVEAI_ALLOW_SIMULATOR_EXTRACTION=1)"
     echo "  extract-device      Extract on physical iOS device and pull cache back to Mac (default cache: $DEVICE_CACHE_SUBDIR)"
-    echo "  extract-ios         Extract iOS caches via default simulator destination (default cache: $IOS_CACHE_SUBDIR)"
-    echo "  extract-ios17       Extract iOS caches via iPhone 17 simulator destination (default cache: $IOS_CACHE_SUBDIR)"
+    echo "  extract-ios         Alias of extract-sim with iOS cache default (requires MOVEAI_ALLOW_SIMULATOR_EXTRACTION=1)"
+    echo "  extract-ios17       Alias of extract-sim-ios17 with iOS cache default (requires MOVEAI_ALLOW_SIMULATOR_EXTRACTION=1)"
     echo "  extract-dual        Build both macOS and iOS cache sets (defaults: $MACOS_CACHE_SUBDIR, $IOS_CACHE_SUBDIR)"
     echo "  analyze             Run cache-only auto-detect + issue regression checks"
     echo "  analyze-ios17       Run cache-only checks on iPhone 17 simulator destination"
@@ -429,13 +444,16 @@ case "${1:-}" in
     echo "  compare             Print side-by-side diff table of two cache sets"
     echo "  compare-ios17       Compare two cache sets on iPhone 17 simulator destination"
     echo "  all                 Run extract then analyze for one cache set"
-    echo "  all-ios17           Run iPhone 17 simulator extract + analyze for one cache set"
+    echo "  all-ios17           Run iPhone 17 simulator extract + analyze (requires MOVEAI_ALLOW_SIMULATOR_EXTRACTION=1)"
     echo "Environment overrides:"
-    echo "  MOVEAI_POSE_CACHE_SUBDIR=<subdir>        Set cache subdirectory used by tests (default .cache)"
+    echo "  MOVEAI_POSE_CACHE_SUBDIR=<subdir>        Set cache subdirectory used by tests (default $DEFAULT_CACHE_SUBDIR)"
+    echo "  MOVEAI_TEST_DESTINATION=<destination>    Override test destination (default $MAC_DESTINATION)"
     echo "  MOVEAI_POSE_CACHE_DIR=<absolute-or-relative-path>  Override cache directory path"
     echo "  MOVEAI_MUAY_THAI_MACOS_CACHE_SUBDIR=<subdir>       Default for extract-macos/extract-dual"
     echo "  MOVEAI_MUAY_THAI_IOS_CACHE_SUBDIR=<subdir>         Default for extract-ios/extract-dual"
     echo "  MOVEAI_MUAY_THAI_DEVICE_CACHE_SUBDIR=<subdir>      Default local destination for extract-device"
+    echo "  MOVEAI_ENABLE_LIVE_POSE_EXTRACTION_TESTS=1         Enable extraction tests (set automatically by extract-device/extract-sim)"
+    echo "  MOVEAI_ALLOW_SIMULATOR_EXTRACTION=1                Explicitly allow simulator extraction commands"
     echo "  MOVEAI_DEVICE_BUNDLE_ID=<bundle-id>                App bundle id used for devicectl copy (default com.thrivecopilot.MoveAI)"
     echo "  MOVEAI_DEVICE_REMOTE_CACHE_SOURCE=<path>           Device app-container source path (default tmp/muaythai_cache)"
     ;;

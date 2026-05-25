@@ -8,6 +8,8 @@ import Vision
 /// - Note: This type is not thread-safe. Use from a single task/queue.
 final class PoseExtractor {
     private let request: VNDetectHumanBodyPoseRequest
+    private let fallbackRequest: VNDetectHumanBodyPoseRequest
+    private var shouldUseFallbackRequest = false
 
     private let jointNames: [VNHumanBodyPoseObservation.JointName] = [
         .nose, .leftEye, .rightEye, .leftEar, .rightEar,
@@ -17,14 +19,21 @@ final class PoseExtractor {
     ]
 
     init() {
-        let request = VNDetectHumanBodyPoseRequest()
+        let primary = VNDetectHumanBodyPoseRequest()
+        let fallback = VNDetectHumanBodyPoseRequest()
 
-        // Prefer the newest supported revision for best accuracy.
-        if let maxRevision = type(of: request).supportedRevisions.max() {
-            request.revision = maxRevision
+        let supportedRevisions = type(of: primary).supportedRevisions.sorted()
+        if let maxRevision = supportedRevisions.last {
+            // Prefer the latest revision for parity with production analysis quality.
+            primary.revision = maxRevision
+        }
+        if let minRevision = supportedRevisions.first, minRevision != primary.revision {
+            // Keep a lower-revision fallback for runtimes where the latest model fails to load.
+            fallback.revision = minRevision
         }
 
-        self.request = request
+        self.request = primary
+        self.fallbackRequest = fallback
     }
 
     func extract(
@@ -41,10 +50,29 @@ final class PoseExtractor {
             options: [:]
         )
 
-        do {
-            try handler.perform([request])
+        if !runPoseRequest(shouldUseFallbackRequest ? fallbackRequest : request, with: handler, into: &keypoints) {
+            // If the primary revision fails due model-loading/runtime issues, permanently
+            // fall back to the default revision for this extractor instance.
+            if !shouldUseFallbackRequest {
+                shouldUseFallbackRequest = true
+                _ = runPoseRequest(fallbackRequest, with: handler, into: &keypoints)
+            }
+        }
 
-            if let observation = request.results?.first {
+        let ts = Date(timeIntervalSince1970: timestampSeconds)
+        return PoseDetectionResult(keypoints: keypoints, frameIndex: frameIndex, timestamp: ts)
+    }
+
+    @discardableResult
+    private func runPoseRequest(
+        _ poseRequest: VNDetectHumanBodyPoseRequest,
+        with handler: VNImageRequestHandler,
+        into keypoints: inout [PoseKeypoint]
+    ) -> Bool {
+        do {
+            try handler.perform([poseRequest])
+
+            if let observation = poseRequest.results?.first {
                 for jointName in jointNames {
                     guard let point = try? observation.recognizedPoint(jointName) else { continue }
                     guard point.confidence > 0.1 else { continue }
@@ -59,11 +87,10 @@ final class PoseExtractor {
                     )
                 }
             }
-        } catch {
-            // Return empty keypoints on failure; downstream expects a uniform, indexable array.
-        }
 
-        let ts = Date(timeIntervalSince1970: timestampSeconds)
-        return PoseDetectionResult(keypoints: keypoints, frameIndex: frameIndex, timestamp: ts)
+            return true
+        } catch {
+            return false
+        }
     }
 }

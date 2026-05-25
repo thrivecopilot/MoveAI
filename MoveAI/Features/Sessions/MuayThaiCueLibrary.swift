@@ -16,6 +16,22 @@ enum MuayThaiCueLibrary {
     }
 
     static func entry(for kind: MovementIssueKind) -> Entry? {
+        if kind == .muayThaiCaptureQualityLimited {
+            return Entry(
+                kind: kind,
+                name: "capture quality limited",
+                headline: "Detection quality limited",
+                oneLineDescription: "Capture quality reduced Muay Thai detection reliability, so form warnings were suppressed.",
+                poseHints: [],
+                quickFix: "Refilm with full body in frame, stable camera, and stronger lighting.",
+                quickFixRationale: "Reliable pose confidence and visibility are required before form-warning checks run.",
+                backupCues: ["Keep head-to-feet visible", "Use a stable camera angle"],
+                recommendedDrills: [],
+                phaseSummaryText: "Set-level",
+                overlayTargets: []
+            )
+        }
+
         if kind == .muayThaiAnalysisCoverageLimited {
             return Entry(
                 kind: kind,

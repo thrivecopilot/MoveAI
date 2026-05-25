@@ -321,10 +321,18 @@ enum MuayThaiIssueDetectors {
                 partial += 1
             }
         }
+        let jabAttempts = max(
+            1,
+            classifiedAttempts.reduce(into: 0) { partial, attempt in
+                if attempt.technique == .jab {
+                    partial += 1
+                }
+            }
+        )
 
-        // If rear-hand-drop is dominant and poor retraction is a one-off,
-        // keep the dominant safety warning and drop the tempo side-warning.
-        if rearHandCount >= 1 && poorRetractionCount == 1 && forwardOverBaseCount == 0 {
+        // If poor retraction is a singleton and rear-hand-drop is only lightly present,
+        // prefer the safety warning and suppress a likely noisy tempo side-warning.
+        if rearHandCount <= 2 && rearHandCount >= 1 && poorRetractionCount == 1 && forwardOverBaseCount == 0 {
             MuayThaiDebug.log(
                 "JabDisambiguation: suppressing singleton poor-retraction with rear-hand-drop count=\(rearHandCount)"
             )
@@ -338,6 +346,19 @@ enum MuayThaiIssueDetectors {
                 "JabDisambiguation: suppressing singleton rear-hand-drop with poor-retraction count=\(poorRetractionCount)"
             )
             filtered.removeAll { $0.issueKind == .muayThaiJabRearHandDropping }
+        }
+
+        // If poor retraction is the only jab warning but appears with low persistence,
+        // treat it as noise and keep the clip clean.
+        let poorRetractionOnly = rearHandCount == 0 && forwardOverBaseCount == 0 && poorRetractionCount > 0
+        if poorRetractionOnly {
+            let poorRatio = Double(poorRetractionCount) / Double(jabAttempts)
+            if poorRetractionCount < 3 && poorRatio < 0.35 {
+                MuayThaiDebug.log(
+                    "JabDisambiguation: suppressing low-persistence poor-retraction count=\(poorRetractionCount) jabAttempts=\(jabAttempts) ratio=\(MuayThaiDebug.format(poorRatio))"
+                )
+                filtered.removeAll { $0.issueKind == .muayThaiJabPoorRetraction }
+            }
         }
 
         return filtered
@@ -1247,11 +1268,11 @@ enum MuayThaiIssueDetectors {
             }
         }
 
-        guard retractionFrames >= 4 else { return nil }
+        guard retractionFrames >= 3 else { return nil }
 
         let endLagRatio = max(0, (endExtension - baselineExtension) / max(extensionAmplitude, 0.001))
         let lagPersistenceRatio = Double(lagFrames) / Double(retractionFrames)
-        guard lagFrames >= 3, endLagRatio > 0.58, lagPersistenceRatio > 0.68 else {
+        guard lagFrames >= 2, endLagRatio > 0.45, lagPersistenceRatio > 0.55 else {
             return nil
         }
 

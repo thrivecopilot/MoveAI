@@ -1,0 +1,9 @@
+{
+  "cacheSHA256" : "003b6b96be3ba6280eb097b523312e85aa00c2c2e1085a409c06ebda28c158c9",
+  "fixtureId" : "cross_only",
+  "generatedAt" : "2026-04-12T17:32:28Z",
+  "generator" : "video_processor",
+  "schemaVersion" : 1,
+  "videoFile" : "cross_only.mov",
+  "videoSHA256" : "af7e0e30c973995e8f6a8dd6d559a5b86c25fff44a71182c87a27bf75a6f8feb"
+}

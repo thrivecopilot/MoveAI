@@ -1,0 +1,9 @@
+{
+  "cacheSHA256" : "6e22fbced5dc8a9196cdc142cc64fa62973c63c06c849d381091297f8297274f",
+  "fixtureId" : "right_round_kick",
+  "generatedAt" : "2026-04-12T17:33:21Z",
+  "generator" : "video_processor",
+  "schemaVersion" : 1,
+  "videoFile" : "right_round_kick.mov",
+  "videoSHA256" : "0a83db41bc85507002b2d2bc31c95ded399bfb8a5262d17afb326947b8742842"
+}

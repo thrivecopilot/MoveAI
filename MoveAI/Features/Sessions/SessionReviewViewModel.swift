@@ -217,6 +217,7 @@ enum MovementIssueResolver {
 
     private static func resolveLegacy(for feedback: FormFeedback) -> MovementIssueKind? {
         let message = feedback.message.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalized = message.lowercased()
 
         // Exact string matches for known analyzer messages.
         if message == "Knees caving inward - push knees out to align with toes" {
@@ -251,6 +252,26 @@ enum MovementIssueResolver {
         }
         if message.hasPrefix("Balance drift detected") {
             return .squatHeelsLift
+        }
+
+        // Running legacy mappings.
+        if normalized.contains("capture quality limited") && normalized.contains("running") {
+            return .runningCaptureQualityLimited
+        }
+        if normalized.contains("low cadence") || (normalized.contains("cadence") && normalized.contains("spm")) {
+            return .runningLowCadence
+        }
+        if normalized.contains("forward lean") && normalized.contains("run") {
+            return .runningExcessiveForwardLean
+        }
+        if normalized.contains("vertical oscillation") || normalized.contains("too much bounce") {
+            return .runningExcessiveVerticalOscillation
+        }
+        if normalized.contains("stride asymmetry") || normalized.contains("asymmetric stride") {
+            return .runningAsymmetricStride
+        }
+        if normalized.contains("overstrid") {
+            return .runningOverstriding
         }
 
         return nil

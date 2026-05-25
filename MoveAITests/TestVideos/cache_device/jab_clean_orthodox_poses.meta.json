@@ -1,0 +1,9 @@
+{
+  "cacheSHA256" : "1242c9cb5d5e1a34343d1fbfa90a9c6ad45110e6addda0754a32015948198162",
+  "fixtureId" : "jab_clean_orthodox",
+  "generatedAt" : "2026-04-12T17:32:33Z",
+  "generator" : "video_processor",
+  "schemaVersion" : 1,
+  "videoFile" : "jab_clean_orthodox.mov",
+  "videoSHA256" : "6815c0cb74584d9b9e9b2adbc6bea928f845ee148d80fb2b37ed8650422c8ce3"
+}

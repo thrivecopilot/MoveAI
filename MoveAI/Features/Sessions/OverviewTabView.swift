@@ -13,6 +13,17 @@ struct OverviewTabView: View {
     let analysisResult: AnalysisResult
     var isCompact: Bool = false
 
+    private static let nonActionableMuayThaiIssueKinds: Set<MovementIssueKind> = [
+        .muayThaiCaptureQualityLimited,
+        .muayThaiAnalysisCoverageLimited,
+    ]
+
+    private struct DetectionStatusInfo {
+        let label: String
+        let color: Color
+        let note: String
+    }
+
     private var summary: AnalysisSummary? {
         guard let summary = AnalysisSummaryBuilder.buildLegacy(from: analysisResult) else {
             return nil
@@ -36,6 +47,32 @@ struct OverviewTabView: View {
         return text
     }
 
+    private var detectionStatus: DetectionStatusInfo? {
+        guard summary?.unitKind == .strike else { return nil }
+
+        let qualityItems = analysisResult.feedback.filter {
+            guard let kind = $0.issueKind else { return false }
+            return Self.nonActionableMuayThaiIssueKinds.contains(kind)
+        }
+
+        if let quality = qualityItems.first(where: { $0.issueKind == .muayThaiCaptureQualityLimited }) {
+            if quality.severity == .critical {
+                return DetectionStatusInfo(label: "Failed", color: .red, note: quality.message)
+            }
+            return DetectionStatusInfo(label: "Limited", color: .orange, note: quality.message)
+        }
+
+        if let coverage = qualityItems.first(where: { $0.issueKind == .muayThaiAnalysisCoverageLimited }) {
+            return DetectionStatusInfo(label: "Limited", color: .orange, note: coverage.message)
+        }
+
+        return DetectionStatusInfo(
+            label: "Ready",
+            color: .green,
+            note: "Core Muay Thai checks ran with sufficient capture quality."
+        )
+    }
+
     var body: some View {
         Group {
             if isCompact {
@@ -52,6 +89,7 @@ struct OverviewTabView: View {
         ScrollView {
             VStack(spacing: 20) {
                 scoreAndSummaryRow
+                detectionStatusSection
                 topFixesSection
             }
             .padding(.horizontal, 16)
@@ -119,8 +157,48 @@ struct OverviewTabView: View {
         )
     }
 
+    private var detectionStatusSection: some View {
+        guard let status = detectionStatus else {
+            return AnyView(EmptyView())
+        }
+
+        return AnyView(
+            VStack(alignment: .leading, spacing: 10) {
+                sectionLabel("Detection Status")
+                HStack(alignment: .center, spacing: 8) {
+                    Circle()
+                        .fill(status.color)
+                        .frame(width: 8, height: 8)
+                    Text(status.label)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(status.color)
+                    Spacer(minLength: 0)
+                }
+                Text(status.note)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(CoachTheme.Palette.surfaceFill(for: colorScheme))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(CoachTheme.Palette.stroke(for: colorScheme), lineWidth: 1)
+            )
+            .accessibilityIdentifier("WorkoutSummary.DetectionStatusSection")
+        )
+    }
+
     private var topFixesSection: some View {
-        let issues = analysisResult.feedback.filter { $0.severity == .warning || $0.severity == .critical }
+        let issues = analysisResult.feedback.filter {
+            guard ($0.severity == .warning || $0.severity == .critical) else { return false }
+            guard let kind = $0.issueKind else { return true }
+            return !Self.nonActionableMuayThaiIssueKinds.contains(kind)
+        }
         let wins = analysisResult.feedback.filter { $0.severity == .excellent || $0.severity == .good }
         if issues.isEmpty && wins.isEmpty {
             return AnyView(EmptyView())

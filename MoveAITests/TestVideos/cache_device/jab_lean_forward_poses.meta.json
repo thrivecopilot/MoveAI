@@ -1,0 +1,9 @@
+{
+  "cacheSHA256" : "b7c64f771752fe6ae80810639581e89d6043076583a5a2e1a7aeb62c5ea9fdca",
+  "fixtureId" : "jab_lean_forward",
+  "generatedAt" : "2026-04-12T17:32:38Z",
+  "generator" : "video_processor",
+  "schemaVersion" : 1,
+  "videoFile" : "jab_lean_forward.mov",
+  "videoSHA256" : "9b628f073ea84b6308f9e00357cbda509f956ed728805c72ace7648efdb71e3a"
+}

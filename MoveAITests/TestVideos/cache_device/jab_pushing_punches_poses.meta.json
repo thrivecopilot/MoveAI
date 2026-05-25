@@ -1,0 +1,9 @@
+{
+  "cacheSHA256" : "370d7d6229890bcf0880a5082a3d5aa6154e0b093765dd8df617f352bb9b94de",
+  "fixtureId" : "jab_pushing_punches",
+  "generatedAt" : "2026-04-12T17:32:41Z",
+  "generator" : "video_processor",
+  "schemaVersion" : 1,
+  "videoFile" : "jab_pushing_punches.mov",
+  "videoSHA256" : "729ce47e7205bc8c28882c8b31ae8b0faf810f62663b5f90927aafd4598e893c"
+}

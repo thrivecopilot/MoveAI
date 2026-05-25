@@ -88,6 +88,25 @@ class MockAnalysisService: AnalysisServiceProtocol {
                     timestamp: 2.9
                 )
             ]
+        case .running:
+            return [
+                FormFeedback(
+                    category: .tempo,
+                    message: "Cadence is slightly low for the current pace",
+                    severity: .warning,
+                    timestamp: 2.1,
+                    issueKind: .runningLowCadence,
+                    metrics: [FeedbackMetric(kind: .runningCadenceSpm, value: 154, unit: .count)]
+                ),
+                FormFeedback(
+                    category: .posture,
+                    message: "Torso leans forward more than target during mid-stance",
+                    severity: .warning,
+                    timestamp: 3.2,
+                    issueKind: .runningExcessiveForwardLean,
+                    metrics: [FeedbackMetric(kind: .runningTorsoLeanDegrees, value: 22.4, unit: .degrees)]
+                ),
+            ]
         case .muayThai:
             return [
                 FormFeedback(
@@ -285,4 +304,3 @@ enum AnalysisError: DetailedError {
         }
     }
 }
-

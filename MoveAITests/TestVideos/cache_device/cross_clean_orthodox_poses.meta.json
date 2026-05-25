@@ -1,0 +1,9 @@
+{
+  "cacheSHA256" : "7bf14e546715cfc9c256324cce9e799fc7a525a8584cbccc2b92539de6463d42",
+  "fixtureId" : "cross_clean_orthodox",
+  "generatedAt" : "2026-04-12T17:32:48Z",
+  "generator" : "video_processor",
+  "schemaVersion" : 1,
+  "videoFile" : "cross_clean_orthodox.mov",
+  "videoSHA256" : "d9d94a58f689d2ecce3dc6212209b0c1ac0819b58004fe1604b7ddc28884d1a7"
+}

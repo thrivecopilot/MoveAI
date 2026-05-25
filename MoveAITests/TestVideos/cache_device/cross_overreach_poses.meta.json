@@ -1,0 +1,9 @@
+{
+  "cacheSHA256" : "f80c4c8cba758539ca7bfc0a1680e59c8935509f8a5da8098848fa32b71037de",
+  "fixtureId" : "cross_overreach",
+  "generatedAt" : "2026-04-12T17:32:55Z",
+  "generator" : "video_processor",
+  "schemaVersion" : 1,
+  "videoFile" : "cross_overreach.mov",
+  "videoSHA256" : "f8f2a60a0e40742c9e438ae1e058f346c576f9c42b9c7439ab1c2ea3fceb049b"
+}

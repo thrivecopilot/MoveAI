@@ -3,6 +3,9 @@ import XCTest
 
 @MainActor
 final class MuayThaiJabOnlyVideoTests: XCTestCase {
+    private let liveExtractionEnvKey = "MOVEAI_ENABLE_LIVE_POSE_EXTRACTION_TESTS"
+    private let allowSimulatorExtractionEnvKey = "MOVEAI_ALLOW_SIMULATOR_EXTRACTION"
+
     override func tearDown() {
         unsetenv("MOVEAI_ENABLE_MUAY_THAI_ANALYZER")
         unsetenv("MOVEAI_ENABLE_MUAY_THAI_COMBO_ANALYZER")
@@ -11,6 +14,8 @@ final class MuayThaiJabOnlyVideoTests: XCTestCase {
     }
 
     func testJabOnlyCacheExtraction() async throws {
+        try requireLivePoseExtractionEnabled(testName: "testJabOnlyCacheExtraction")
+
         let testVideosDir = testVideosDirectory
         let videoURL = try jabOnlyVideoURL()
         let recording = try await VideoProcessor().processVideo(videoURL, movementType: .muayThai)
@@ -102,19 +107,26 @@ final class MuayThaiJabOnlyVideoTests: XCTestCase {
             return cached
         }
 
-        let videoURL = try jabOnlyVideoURL()
-        let recording = try await VideoProcessor().processVideo(videoURL, movementType: .muayThai)
-        guard let poseData = recording.poseData,
-              !poseData.isEmpty,
-              hasUsableKeypoints(in: poseData) else {
-            throw XCTSkip("Pose extraction unavailable or produced empty keypoints on this simulator/runtime")
-        }
-
-        try PoseCacheManager.savePoseData(poseData, for: "jab_only", testVideosDirectory: testVideosDir)
-        return poseData
+        throw XCTSkip("Cached poses for jab_only are required. Refresh cache externally before running this test.")
     }
 
     private func hasUsableKeypoints(in poses: [PoseDetectionResult]) -> Bool {
         poses.contains { !$0.keypoints.isEmpty }
+    }
+
+    private func requireLivePoseExtractionEnabled(testName: String) throws {
+        guard ProcessInfo.processInfo.environment[liveExtractionEnvKey] == "1" else {
+            throw XCTSkip(
+                "Live extraction test '\(testName)' is disabled. Set \(liveExtractionEnvKey)=1 to enable."
+            )
+        }
+
+        #if targetEnvironment(simulator)
+        guard ProcessInfo.processInfo.environment[allowSimulatorExtractionEnvKey] == "1" else {
+            throw XCTSkip(
+                "Simulator extraction is disabled for '\(testName)'. Use cached poses or run extraction on device/macOS."
+            )
+        }
+        #endif
     }
 }

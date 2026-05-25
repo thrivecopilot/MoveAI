@@ -5,7 +5,8 @@ enum MuayThaiScoring {
         let attempts = max(attemptsCount, 1)
 
         let penalty = feedback.reduce(0.0) { partial, item in
-            guard item.issueKind != .muayThaiAnalysisCoverageLimited else {
+            guard item.issueKind != .muayThaiAnalysisCoverageLimited,
+                  item.issueKind != .muayThaiCaptureQualityLimited else {
                 return partial
             }
 

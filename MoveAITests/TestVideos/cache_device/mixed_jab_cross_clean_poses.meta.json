@@ -1,0 +1,9 @@
+{
+  "cacheSHA256" : "ab2b55e5b6fff45cbbd7aa601212ffc11eb96ce16bd0a5c7923895f90a546aa7",
+  "fixtureId" : "mixed_jab_cross_clean",
+  "generatedAt" : "2026-04-12T17:33:17Z",
+  "generator" : "video_processor",
+  "schemaVersion" : 1,
+  "videoFile" : "mixed_jab_cross_clean.mov",
+  "videoSHA256" : "97c2f32392152c527dc48e15a3ba19ca7e082ec92804ca2200855949d317da10"
+}

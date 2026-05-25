@@ -27,7 +27,7 @@ struct MovementSelectionView: View {
     private let autoPresentCapture: Bool
 
     private var strengthMovements: [MovementType] {
-        MovementType.allCases.filter { $0 != .muayThai }
+        MovementType.allCases.filter { $0 != .muayThai && $0 != .running }
     }
 
     enum CaptureMode {
@@ -72,6 +72,22 @@ struct MovementSelectionView: View {
                         )
                         .padding(.horizontal, CoachTheme.Surfaces.screenHorizontalPadding)
                         .accessibilityIdentifier("\(AccessibilityID.MovementSelection.card).\(MovementType.muayThai.rawValue)")
+
+                        Text("Running")
+                            .font(.headline)
+                            .padding(.horizontal, CoachTheme.Surfaces.screenHorizontalPadding)
+
+                        MovementSelectionCard(
+                            movement: .running,
+                            onTap: {
+                                selectedMovement = .running
+                                selectedTechnique = nil
+                                selectedFightStance = nil
+                                presentCaptureFlow()
+                            }
+                        )
+                        .padding(.horizontal, CoachTheme.Surfaces.screenHorizontalPadding)
+                        .accessibilityIdentifier("\(AccessibilityID.MovementSelection.card).\(MovementType.running.rawValue)")
 
                         Text("Strength Training")
                             .font(.headline)

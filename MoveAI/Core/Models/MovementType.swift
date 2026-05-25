@@ -11,6 +11,7 @@ enum MovementType: String, CaseIterable, Identifiable, Codable {
     case squat = "squat"
     case deadlift = "deadlift"
     case benchPress = "bench_press"
+    case running = "running"
     case muayThai = "muay_thai"
 
     var id: String { rawValue }
@@ -23,6 +24,8 @@ enum MovementType: String, CaseIterable, Identifiable, Codable {
             return "Deadlift"
         case .benchPress:
             return "Bench Press"
+        case .running:
+            return "Running"
         case .muayThai:
             return "Muay Thai"
         }
@@ -36,6 +39,8 @@ enum MovementType: String, CaseIterable, Identifiable, Codable {
             return "figure.strengthtraining.traditional"
         case .benchPress:
             return "figure.strengthtraining.traditional"
+        case .running:
+            return "figure.run"
         case .muayThai:
             return "figure.kickboxing"
         }
@@ -49,6 +54,8 @@ enum MovementType: String, CaseIterable, Identifiable, Codable {
             return "Full body compound movement lifting from ground to standing"
         case .benchPress:
             return "Upper body compound movement pressing weight from chest"
+        case .running:
+            return "Gait and running-mechanics analysis for cadence, posture, and symmetry"
         case .muayThai:
             return "Striking technique analysis for punches, kicks, knees, elbows, and footwork"
         }

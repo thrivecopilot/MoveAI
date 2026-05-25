@@ -1,0 +1,9 @@
+{
+  "cacheSHA256" : "748a45f498d9547fa201be55e6b778473c48a612a7fda9e9391ce07adcadf407",
+  "fixtureId" : "roundhouse_no_hip_turn",
+  "generatedAt" : "2026-04-12T17:33:07Z",
+  "generator" : "video_processor",
+  "schemaVersion" : 1,
+  "videoFile" : "roundhouse_no_hip_turn.mov",
+  "videoSHA256" : "d2d0ea6095bb5aa88528f6a6fc3e39243c6c7208d2222becaabee633bbbbd487"
+}

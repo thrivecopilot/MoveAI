@@ -128,6 +128,14 @@ final class AnalysisSummaryBuilderTests: XCTestCase {
                 repNumber: nil,
                 issueKind: .muayThaiAnalysisCoverageLimited
             ),
+            FormFeedback(
+                category: .safety,
+                message: "Detection quality limited",
+                severity: .warning,
+                timestamp: 0,
+                repNumber: nil,
+                issueKind: .muayThaiCaptureQualityLimited
+            ),
         ]
 
         let summary = AnalysisSummaryBuilder.build(
@@ -189,6 +197,45 @@ final class AnalysisSummaryBuilderTests: XCTestCase {
         XCTAssertEqual(summary?.goodUnits, 3)
         XCTAssertEqual(summary?.unitsNeedingAttention, 0)
         XCTAssertEqual(summary?.warningEvents, 0)
+    }
+
+    func testBuildRunningSummaryProducesAttemptUnitsAndExcludesCaptureQualityWarning() {
+        let feedback = [
+            FormFeedback(
+                category: .tempo,
+                message: "Running cadence is low",
+                severity: .warning,
+                timestamp: 1.0,
+                issueKind: .runningLowCadence
+            ),
+            FormFeedback(
+                category: .posture,
+                message: "Forward lean is elevated",
+                severity: .warning,
+                timestamp: 1.8,
+                issueKind: .runningExcessiveForwardLean
+            ),
+            FormFeedback(
+                category: .safety,
+                message: "Running capture quality limited",
+                severity: .warning,
+                timestamp: 0.0,
+                issueKind: .runningCaptureQualityLimited
+            ),
+        ]
+
+        let summary = AnalysisSummaryBuilder.build(
+            movementType: .running,
+            feedback: feedback,
+            reps: nil,
+            depthMetrics: nil
+        )
+
+        XCTAssertEqual(summary?.unitKind, .attempt)
+        XCTAssertEqual(summary?.totalUnits, 2)
+        XCTAssertEqual(summary?.unitsNeedingAttention, 2)
+        XCTAssertEqual(summary?.goodUnits, 0)
+        XCTAssertEqual(summary?.warningEvents, 2)
     }
 
     func testAnalysisResultRoundTripWithoutSummaryDecodesNilSummary() throws {

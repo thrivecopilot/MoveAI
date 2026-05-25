@@ -3,28 +3,28 @@
     {
       "id": "jab_only",
       "videoFile": "jab_only.mov",
-      "analysisMode": "auto_detect",
-      "selectedTechnique": null,
-      "selectedFightStance": null,
-      "expectedDetectedTechnique": "jab",
+      "analysisMode": "explicit_technique",
+      "selectedTechnique": "jab",
+      "selectedFightStance": "orthodox",
+      "expectedDetectedTechnique": null,
       "requiredIssueKinds": [],
-      "forbiddenIssueKinds": [
-        "muay_thai.jab.rear_hand_dropping"
-      ]
+      "forbiddenIssueKinds": [],
+      "expectedStrikeCount": 7
     },
     {
       "id": "cross_only",
       "videoFile": "cross_only.mov",
-      "analysisMode": "auto_detect",
-      "selectedTechnique": null,
-      "selectedFightStance": null,
-      "expectedDetectedTechnique": "cross",
+      "analysisMode": "explicit_technique",
+      "selectedTechnique": "cross",
+      "selectedFightStance": "orthodox",
+      "expectedDetectedTechnique": null,
       "requiredIssueKinds": [],
-      "forbiddenIssueKinds": []
+      "forbiddenIssueKinds": [],
+      "expectedStrikeCount": 6
     },
     {
       "id": "jab_dropping_rear_hand",
-      "videoFile": "jab_dropping_rear_hand.mov",
+      "videoFile": "jab_rear_hand_drop.mov",
       "analysisMode": "explicit_technique",
       "selectedTechnique": "jab",
       "selectedFightStance": "orthodox",
@@ -32,19 +32,27 @@
       "requiredIssueKinds": [
         "muay_thai.jab.rear_hand_dropping"
       ],
-      "forbiddenIssueKinds": []
+      "forbiddenIssueKinds": [],
+      "expectedStrikeCount": 9,
+      "expectedIssueCounts": {
+        "muay_thai.jab.rear_hand_dropping": 1
+      }
     },
     {
       "id": "jab_dropping_lead_hand",
-      "videoFile": "jab_dropping_lead_hand.mov",
+      "videoFile": "jab_lead_hand_drop.mov",
       "analysisMode": "explicit_technique",
       "selectedTechnique": "jab",
       "selectedFightStance": "orthodox",
       "expectedDetectedTechnique": null,
-      "requiredIssueKinds": [],
-      "forbiddenIssueKinds": [
+      "requiredIssueKinds": [
         "muay_thai.jab.rear_hand_dropping"
-      ]
+      ],
+      "forbiddenIssueKinds": [],
+      "expectedStrikeCount": 5,
+      "expectedIssueCounts": {
+        "muay_thai.jab.rear_hand_dropping": 1
+      }
     },
     {
       "id": "jab_archer_error",
@@ -53,8 +61,186 @@
       "selectedTechnique": "jab",
       "selectedFightStance": "orthodox",
       "expectedDetectedTechnique": null,
+      "requiredIssueKinds": [
+        "muay_thai.jab.rear_hand_dropping"
+      ],
+      "forbiddenIssueKinds": [],
+      "expectedStrikeCount": 4,
+      "expectedIssueCounts": {
+        "muay_thai.jab.rear_hand_dropping": 1
+      }
+    },
+    {
+      "id": "jab_clean_orthodox",
+      "videoFile": "jab_clean_orthodox.mov",
+      "analysisMode": "explicit_technique",
+      "selectedTechnique": "jab",
+      "selectedFightStance": "orthodox",
+      "expectedDetectedTechnique": null,
+      "requiredIssueKinds": [],
+      "forbiddenIssueKinds": [],
+      "expectedStrikeCount": 8
+    },
+    {
+      "id": "jab_rear_hand_drop",
+      "videoFile": "jab_rear_hand_drop.mov",
+      "analysisMode": "explicit_technique",
+      "selectedTechnique": "jab",
+      "selectedFightStance": "orthodox",
+      "expectedDetectedTechnique": null,
+      "requiredIssueKinds": [
+        "muay_thai.jab.rear_hand_dropping"
+      ],
+      "forbiddenIssueKinds": [],
+      "expectedStrikeCount": 9,
+      "expectedIssueCounts": {
+        "muay_thai.jab.rear_hand_dropping": 1
+      }
+    },
+    {
+      "id": "jab_rear_hand_drop_2",
+      "videoFile": "jab_rear_hand_drop_2.mov",
+      "analysisMode": "explicit_technique",
+      "selectedTechnique": "jab",
+      "selectedFightStance": "orthodox",
+      "expectedDetectedTechnique": null,
+      "requiredIssueKinds": [
+        "muay_thai.jab.rear_hand_dropping"
+      ],
+      "forbiddenIssueKinds": [],
+      "expectedStrikeCount": 5
+    },
+    {
+      "id": "jab_lean_forward",
+      "videoFile": "jab_lean_forward.mov",
+      "analysisMode": "explicit_technique",
+      "selectedTechnique": "jab",
+      "selectedFightStance": "orthodox",
+      "expectedDetectedTechnique": null,
+      "requiredIssueKinds": [
+        "muay_thai.posture.forward_over_base"
+      ],
+      "forbiddenIssueKinds": [],
+      "expectedStrikeCount": 8,
+      "expectedIssueCounts": {
+        "muay_thai.posture.forward_over_base": 1
+      }
+    },
+    {
+      "id": "jab_pushing_punches",
+      "videoFile": "jab_pushing_punches.mov",
+      "analysisMode": "explicit_technique",
+      "selectedTechnique": "jab",
+      "selectedFightStance": "orthodox",
+      "expectedDetectedTechnique": null,
+      "requiredIssueKinds": [
+        "muay_thai.jab.poor_retraction"
+      ],
+      "forbiddenIssueKinds": [],
+      "expectedStrikeCount": 9,
+      "expectedIssueCounts": {
+        "muay_thai.jab.poor_retraction": 1
+      }
+    },
+    {
+      "id": "jab_dropping_lead_hand_2",
+      "videoFile": "jab_lead_hand_drop_2.mov",
+      "analysisMode": "explicit_technique",
+      "selectedTechnique": "jab",
+      "selectedFightStance": "orthodox",
+      "expectedDetectedTechnique": null,
+      "requiredIssueKinds": [
+        "muay_thai.jab.poor_retraction"
+      ],
+      "forbiddenIssueKinds": [],
+      "expectedStrikeCount": 10,
+      "expectedIssueCounts": {
+        "muay_thai.jab.poor_retraction": 1
+      }
+    },
+    {
+      "id": "cross_clean_orthodox",
+      "videoFile": "cross_clean_orthodox.mov",
+      "analysisMode": "explicit_technique",
+      "selectedTechnique": "cross",
+      "selectedFightStance": "orthodox",
+      "expectedDetectedTechnique": null,
+      "requiredIssueKinds": [],
+      "forbiddenIssueKinds": [],
+      "expectedStrikeCount": 9
+    },
+    {
+      "id": "cross_arm_only",
+      "videoFile": "cross_arm_only.mov",
+      "analysisMode": "explicit_technique",
+      "selectedTechnique": "cross",
+      "selectedFightStance": "orthodox",
+      "expectedDetectedTechnique": null,
+      "requiredIssueKinds": [
+        "muay_thai.cross.no_hip_rotation"
+      ],
+      "forbiddenIssueKinds": [],
+      "expectedStrikeCount": 8,
+      "expectedIssueCounts": {
+        "muay_thai.cross.no_hip_rotation": 1
+      }
+    },
+    {
+      "id": "cross_overreach",
+      "videoFile": "cross_overreach.mov",
+      "analysisMode": "explicit_technique",
+      "selectedTechnique": "cross",
+      "selectedFightStance": "orthodox",
+      "expectedDetectedTechnique": null,
+      "requiredIssueKinds": [
+        "muay_thai.posture.forward_over_base"
+      ],
+      "forbiddenIssueKinds": [],
+      "expectedStrikeCount": 8,
+      "expectedIssueCounts": {
+        "muay_thai.posture.forward_over_base": 1
+      }
+    },
+    {
+      "id": "roundhouse_clean",
+      "videoFile": "roundhouse_clean.mov",
+      "analysisMode": "explicit_technique",
+      "selectedTechnique": "roundhouse_kick",
+      "selectedFightStance": "orthodox",
+      "expectedDetectedTechnique": null,
       "requiredIssueKinds": [],
       "forbiddenIssueKinds": []
+    },
+    {
+      "id": "roundhouse_no_hip_turn",
+      "videoFile": "roundhouse_no_hip_turn.mov",
+      "analysisMode": "explicit_technique",
+      "selectedTechnique": "roundhouse_kick",
+      "selectedFightStance": "orthodox",
+      "expectedDetectedTechnique": null,
+      "requiredIssueKinds": [],
+      "forbiddenIssueKinds": []
+    },
+    {
+      "id": "roundhouse_static_arm",
+      "videoFile": "roundhouse_static_arm.mov",
+      "analysisMode": "explicit_technique",
+      "selectedTechnique": "roundhouse_kick",
+      "selectedFightStance": "orthodox",
+      "expectedDetectedTechnique": null,
+      "requiredIssueKinds": [],
+      "forbiddenIssueKinds": []
+    },
+    {
+      "id": "mixed_jab_cross_clean",
+      "videoFile": "mixed_jab_cross_clean.mov",
+      "analysisMode": "auto_detect",
+      "selectedTechnique": null,
+      "selectedFightStance": "orthodox",
+      "expectedDetectedTechnique": null,
+      "requiredIssueKinds": [],
+      "forbiddenIssueKinds": [],
+      "expectedStrikeCount": 20
     },
     {
       "id": "right_round_kick",

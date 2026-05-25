@@ -63,4 +63,56 @@ final class StructuredUITests: XCTestCase {
 
         runAccessibilityAuditIfAvailable(app: app, auditTypes: auditTypes)
     }
+
+    func testRunningVideoReviewCollapsed_CueOverlayIsSummaryOnly() throws {
+        let scenario: StructuredUIScenario = .videoReviewRunningCollapsed
+        let app = launchScenario(scenario)
+        defer { app.terminate() }
+
+        expectExists(
+            element(app, id: "ScenarioRoot_\(scenario.rawValue)"),
+            message: "Running collapsed scenario root should exist"
+        )
+        expectExists(
+            element(app, id: AID.CueOverlay.root),
+            message: "Running collapsed scenario should show cue overlay"
+        )
+        expectExists(
+            element(app, id: AID.CueOverlay.title),
+            message: "Cue overlay title should be visible"
+        )
+        expectExists(
+            element(app, id: AID.CueOverlay.quickFix),
+            message: "Cue overlay quick-fix text should be visible"
+        )
+
+        XCTAssertFalse(
+            app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "rationale")).firstMatch.exists,
+            "Collapsed cue overlay should stay summary-only and not render rationale copy"
+        )
+    }
+
+    func testRunningVideoReviewIssuesCard_ShowsMetricMiniCard() throws {
+        let scenario: StructuredUIScenario = .videoReviewRunningMedium
+        let app = launchScenario(scenario)
+        defer { app.terminate() }
+
+        expectExists(
+            element(app, id: "ScenarioRoot_\(scenario.rawValue)"),
+            message: "Running medium scenario root should exist"
+        )
+
+        let issuesTab = element(app, id: AID.Tabs.issues)
+        expectExists(issuesTab, message: "Issues tab should exist in running medium scenario")
+        issuesTab.tap()
+
+        expectExists(
+            element(app, id: AID.Issues.root),
+            message: "Issues tab root should exist after selecting Issues"
+        )
+        expectExists(
+            element(app, id: "IssueMetricCard"),
+            message: "Running issues should render metric mini-card"
+        )
+    }
 }

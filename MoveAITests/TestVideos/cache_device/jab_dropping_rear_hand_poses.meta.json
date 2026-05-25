@@ -1,0 +1,9 @@
+{
+  "cacheSHA256" : "93a6e5a7cc4dbcbb404f5f5448f4b029d06742003997b21c4d56988f4944b5e7",
+  "fixtureId" : "jab_dropping_rear_hand",
+  "generatedAt" : "2026-04-12T17:32:30Z",
+  "generator" : "video_processor",
+  "schemaVersion" : 1,
+  "videoFile" : "jab_rear_hand_drop.mov",
+  "videoSHA256" : "03a0691019f00cbc15a7ae4485fad16e2e37192ad200dcbef8fc870550750b26"
+}

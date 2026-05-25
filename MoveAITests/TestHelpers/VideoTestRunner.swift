@@ -57,8 +57,14 @@ class VideoTestRunner {
         return squatResult
     }
     
-    /// Run test with caching support (uses cache if available, otherwise extracts)
-    static func runTestWithCache(_ testCase: VideoTestCase, testVideosDirectory: URL, useCache: Bool = true) async throws -> TestResult {
+    /// Run test with caching support.
+    /// By default this is cache-only and will not implicitly extract poses.
+    static func runTestWithCache(
+        _ testCase: VideoTestCase,
+        testVideosDirectory: URL,
+        useCache: Bool = true,
+        allowExtractionFallback: Bool = false
+    ) async throws -> TestResult {
         var poseData: [PoseDetectionResult]
         
         // Try to use cache if requested
@@ -66,6 +72,10 @@ class VideoTestRunner {
             print("📂 Using cached poses (\(cached.count) frames)")
             poseData = cached
         } else {
+            guard allowExtractionFallback || !useCache else {
+                throw TestError.noCachedPoseData
+            }
+
             // Extract poses
             print("🎬 Extracting poses from video...")
             let videoProcessor = VideoProcessor()

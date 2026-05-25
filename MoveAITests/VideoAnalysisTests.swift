@@ -11,6 +11,8 @@ import XCTest
 /// Tests for video analysis using test videos and expected results
 @MainActor
 final class VideoAnalysisTests: XCTestCase {
+    private let liveExtractionEnvKey = "MOVEAI_ENABLE_LIVE_POSE_EXTRACTION_TESTS"
+    private let allowSimulatorExtractionEnvKey = "MOVEAI_ALLOW_SIMULATOR_EXTRACTION"
 
     override func setUpWithError() throws {
         try super.setUpWithError()
@@ -71,7 +73,11 @@ final class VideoAnalysisTests: XCTestCase {
     
     /// Run a single test case
     func runTestCase(_ testCase: VideoTestCase) async throws {
-        let result = try await VideoTestRunner.runTest(testCase)
+        let result = try await VideoTestRunner.runTestWithCache(
+            testCase,
+            testVideosDirectory: testVideosDirectory,
+            useCache: true
+        )
         
         if !result.passed {
             var failureMessage = "Test '\(testCase.name)' failed:\n"
@@ -98,6 +104,10 @@ final class VideoAnalysisTests: XCTestCase {
         guard FileManager.default.fileExists(atPath: csvURL.path) else {
             throw XCTSkip("Test CSV not found at \(csvURL.path). Please add test_case_1_expected.csv to TestVideos directory.")
         }
+
+        guard PoseCacheManager.hasCache(for: testCaseName, testVideosDirectory: testVideosDirectory) else {
+            throw XCTSkip("No cached poses found for \(testCaseName). Refresh cache first, then rerun.")
+        }
         
         let testCase = try loadTestCase(name: testCaseName)
         try await runTestCase(testCase)
@@ -107,6 +117,8 @@ final class VideoAnalysisTests: XCTestCase {
     
     /// Test pose extraction only (slow, run once to cache)
     func testPoseExtraction() async throws {
+        try requireLivePoseExtractionEnabled(testName: "testPoseExtraction")
+
         let testCaseName = "test_case_1"
         let csvURL = testVideosDirectory.appendingPathComponent("\(testCaseName)_expected.csv")
         
@@ -142,6 +154,29 @@ final class VideoAnalysisTests: XCTestCase {
         }
 
         print("✅ Extracted \(poseData.count) poses")
+    }
+
+    /// Verifies the upload/extraction pipeline supports running movement sessions.
+    func testRunningPoseExtraction() async throws {
+        try requireLivePoseExtractionEnabled(testName: "testRunningPoseExtraction")
+
+        let testCaseName = "test_case_1"
+        let csvURL = testVideosDirectory.appendingPathComponent("\(testCaseName)_expected.csv")
+
+        guard FileManager.default.fileExists(atPath: csvURL.path) else {
+            throw XCTSkip("Test CSV not found. Please add test_case_1_expected.csv to TestVideos directory.")
+        }
+
+        let testCase = try loadTestCase(name: testCaseName)
+        let recording = try await VideoProcessor().processVideo(testCase.videoURL, movementType: .running)
+
+        guard let poseData = recording.poseData else {
+            XCTFail("Expected poseData to be non-nil for running extraction")
+            return
+        }
+
+        XCTAssertEqual(recording.movementType, .running)
+        XCTAssertFalse(poseData.isEmpty)
     }
     
     /// Test analysis with cached poses (fast, for iteration)
@@ -239,9 +274,17 @@ final class VideoAnalysisTests: XCTestCase {
         guard FileManager.default.fileExists(atPath: csvURL.path) else {
             throw XCTSkip("Test CSV not found. Please add test_case_1_expected.csv to TestVideos directory.")
         }
+
+        guard PoseCacheManager.hasCache(for: testCaseName, testVideosDirectory: testVideosDirectory) else {
+            throw XCTSkip("No cached poses found for \(testCaseName). Refresh cache first, then rerun.")
+        }
         
         let testCase = try loadTestCase(name: testCaseName)
-        let result = try await VideoTestRunner.runTestWithCache(testCase, testVideosDirectory: testVideosDirectory, useCache: true)
+        let result = try await VideoTestRunner.runTestWithCache(
+            testCase,
+            testVideosDirectory: testVideosDirectory,
+            useCache: true
+        )
         
         // Print brief summary
         if let analysisResult = result.analysisResult {
@@ -258,6 +301,22 @@ final class VideoAnalysisTests: XCTestCase {
         } else {
             print("✅ Test '\(testCase.name)' passed!")
         }
+    }
+
+    private func requireLivePoseExtractionEnabled(testName: String) throws {
+        guard ProcessInfo.processInfo.environment[liveExtractionEnvKey] == "1" else {
+            throw XCTSkip(
+                "Live extraction test '\(testName)' is disabled. Set \(liveExtractionEnvKey)=1 to enable."
+            )
+        }
+
+        #if targetEnvironment(simulator)
+        guard ProcessInfo.processInfo.environment[allowSimulatorExtractionEnvKey] == "1" else {
+            throw XCTSkip(
+                "Simulator extraction is disabled for '\(testName)'. Use cached poses or run extraction on device/macOS."
+            )
+        }
+        #endif
     }
     
     // Add more test methods for additional test cases as needed

@@ -9,6 +9,8 @@
 import SwiftUI
 import PhotosUI
 import AVFoundation
+import CoreTransferable
+import UniformTypeIdentifiers
 
 struct VideoImportView: View {
     let movementType: MovementType
@@ -198,17 +200,9 @@ struct VideoImportView: View {
         guard let item = item else { return }
         
         do {
-            // Load video data
-            guard let data = try await item.loadTransferable(type: Data.self) else {
-                throw VideoProcessingError.videoNotReadable
-            }
-            
-            // Save to temporary file
-            let tempURL = FileManager.default.temporaryDirectory
-                .appendingPathComponent(UUID().uuidString)
-                .appendingPathExtension("mov")
-            
-            try data.write(to: tempURL)
+            // Prefer file-based transfer for reliability on longer clips.
+            // Fallback to Data if file transfer is unavailable.
+            let tempURL = try await importedVideoURL(from: item)
             
             // Process video
             let recording = try await videoProcessor.processVideo(
@@ -250,6 +244,49 @@ struct VideoImportView: View {
                 errorMessage = error.localizedDescription
                 showingError = true
             }
+        }
+    }
+
+    private func importedVideoURL(from item: PhotosPickerItem) async throws -> URL {
+        if let transferred = try await item.loadTransferable(type: ImportedVideo.self) {
+            return transferred.url
+        }
+
+        guard let data = try await item.loadTransferable(type: Data.self) else {
+            throw VideoProcessingError.videoNotReadable
+        }
+
+        let fallbackURL = makeTemporaryVideoURL(fileExtension: "mov")
+        try data.write(to: fallbackURL, options: [.atomic])
+        return fallbackURL
+    }
+
+    private func makeTemporaryVideoURL(fileExtension: String) -> URL {
+        let sanitizedExtension = fileExtension.trimmingCharacters(in: .whitespacesAndNewlines)
+        let ext = sanitizedExtension.isEmpty ? "mov" : sanitizedExtension.lowercased()
+        return FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension(ext)
+    }
+}
+
+private struct ImportedVideo: Transferable {
+    let url: URL
+
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(importedContentType: .movie) { incoming in
+            let sourceURL = incoming.file
+            let pathExtension = sourceURL.pathExtension.isEmpty ? "mov" : sourceURL.pathExtension
+            let destinationURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString)
+                .appendingPathExtension(pathExtension.lowercased())
+
+            if FileManager.default.fileExists(atPath: destinationURL.path) {
+                try FileManager.default.removeItem(at: destinationURL)
+            }
+            try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
+
+            return ImportedVideo(url: destinationURL)
         }
     }
 }

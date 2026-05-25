@@ -17,6 +17,9 @@ enum MovementCueCatalog {
         if let squat = SquatCueLibrary.entry(for: kind) {
             return convert(squat)
         }
+        if let running = RunningCueLibrary.entry(for: kind) {
+            return convert(running)
+        }
         if let muayThai = MuayThaiCueLibrary.entry(for: kind) {
             return convert(muayThai)
         }
@@ -42,6 +45,20 @@ enum MovementCueCatalog {
     }
 
     private static func convert(_ entry: MuayThaiCueLibrary.Entry) -> Entry {
+        Entry(
+            kind: entry.kind,
+            name: entry.name,
+            headline: entry.headline,
+            oneLineDescription: entry.oneLineDescription,
+            quickFix: entry.quickFix,
+            quickFixRationale: entry.quickFixRationale,
+            backupCues: entry.backupCues,
+            recommendedDrills: dedupe(entry.recommendedDrills),
+            phaseSummaryText: entry.phaseSummaryText
+        )
+    }
+
+    private static func convert(_ entry: RunningCueLibrary.Entry) -> Entry {
         Entry(
             kind: entry.kind,
             name: entry.name,

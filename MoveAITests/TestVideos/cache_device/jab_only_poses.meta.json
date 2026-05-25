@@ -1,0 +1,9 @@
+{
+  "cacheSHA256" : "c605f323763e50c4a7a1cf427cc3a030a1dd9bcbad0aa92751a49c98f451ea62",
+  "fixtureId" : "jab_only",
+  "generatedAt" : "2026-04-12T17:32:27Z",
+  "generator" : "video_processor",
+  "schemaVersion" : 1,
+  "videoFile" : "jab_only.mov",
+  "videoSHA256" : "26f7fc39b0b2bd06ae1fbc56c662bb4dbd0c32f27c815dfa2f0c4b1c1c1060c4"
+}

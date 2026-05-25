@@ -43,33 +43,34 @@ enum MuayThaiIssueCatalog {
             technique: .jab,
             category: .punch,
             phase: "extension",
-            issueKind: .muayThaiJabLeaningForward,
-            description: "torso leans excessively forward during jab",
+            issueKind: .muayThaiPostureForwardOverBase,
+            description: "head and torso drift too far forward over stance base during the strike",
             hints: [
-                "nose_passes_lead_knee",
-                "torso_angle_forward > 20deg",
-                "center_of_mass_beyond_lead_foot"
+                "head_advances_past_lead_base",
+                "torso_angle_forward > threshold",
+                "center_of_mass_beyond_support_base"
             ],
             severity: "medium",
-            cueShort: "stay tall when you jab",
-            cueDetailed: "avoid leaning forward. extend the jab from your shoulder while staying balanced",
-            drills: ["slow_shadow_jab", "jab_against_wall_drill"],
+            cueShort: "stay stacked over your base",
+            cueDetailed: "keep your head and torso stacked over your stance as you strike. step in before extending if you're out of range",
+            drills: ["slow_shadow_jab", "range_control_shadowboxing"],
             support: .supported
         ),
         make(
             technique: .jab,
             category: .punch,
-            phase: "extension",
-            issueKind: .muayThaiJabNoShoulderProtection,
-            description: "lead shoulder does not rise to protect chin",
+            phase: "retraction",
+            issueKind: .muayThaiJabPoorRetraction,
+            description: "jab does not snap back quickly, leaving the hand extended",
             hints: [
-                "lead_shoulder_elevation_low",
-                "chin_exposed_relative_to_shoulder"
+                "end_extension_remains_high",
+                "retraction_velocity_low",
+                "striking_hand_lingers_after_peak"
             ],
             severity: "medium",
-            cueShort: "hide your chin behind your shoulder",
-            cueDetailed: "raise your lead shoulder as you jab to protect your chin",
-            drills: ["slow_shadow_jab_with_shoulder_focus"],
+            cueShort: "snap your jab back to guard",
+            cueDetailed: "your jab is pushing instead of snapping. pull it back quickly after extension to reset your defense",
+            drills: ["snap_jab_return_drill", "double_jab_touch_and_return"],
             support: .supported
         ),
         make(
@@ -106,17 +107,17 @@ enum MuayThaiIssueCatalog {
             technique: .cross,
             category: .punch,
             phase: "extension",
-            issueKind: .muayThaiCrossOverreaching,
-            description: "punch extends beyond balanced range",
+            issueKind: .muayThaiPostureForwardOverBase,
+            description: "head and torso drift too far forward over stance base during the strike",
             hints: [
-                "shoulder_passes_lead_foot",
-                "head_passes_lead_knee",
-                "rear_foot_lifts_unintentionally"
+                "head_advances_past_lead_base",
+                "torso_angle_forward > threshold",
+                "center_of_mass_beyond_support_base"
             ],
             severity: "medium",
-            cueShort: "step into range",
-            cueDetailed: "avoid reaching with your arm. step closer before throwing the cross",
-            drills: ["range_control_shadowboxing"],
+            cueShort: "stay stacked over your base",
+            cueDetailed: "keep your head and torso stacked over your stance as you strike. step in before extending if you're out of range",
+            drills: ["slow_shadow_jab", "range_control_shadowboxing"],
             support: .partial
         ),
         make(

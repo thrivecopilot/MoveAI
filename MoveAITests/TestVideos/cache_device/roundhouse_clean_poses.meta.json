@@ -1,0 +1,9 @@
+{
+  "cacheSHA256" : "16c878d3cc70eac796dcac41274513186a49530bef417dcca7fe544aab5114d0",
+  "fixtureId" : "roundhouse_clean",
+  "generatedAt" : "2026-04-12T17:33:03Z",
+  "generator" : "video_processor",
+  "schemaVersion" : 1,
+  "videoFile" : "roundhouse_clean.mov",
+  "videoSHA256" : "0b50153f1676e7643e2e2022c6bb8f87fe7acd8f2ad7239fdd2b8db156a7b65e"
+}

@@ -1,0 +1,9 @@
+{
+  "cacheSHA256" : "882ac9706dbe08d928af5a4cc31768c600a59dbf24fb4c05340842c5f2b162b5",
+  "fixtureId" : "jab_dropping_lead_hand",
+  "generatedAt" : "2026-04-12T17:32:31Z",
+  "generator" : "video_processor",
+  "schemaVersion" : 1,
+  "videoFile" : "jab_lead_hand_drop.mov",
+  "videoSHA256" : "979257e136496be7dd7442f891bfdb57cb3f99866ec4ec3f02455f213203e0a9"
+}

@@ -325,6 +325,10 @@ class VideoProcessor: ObservableObject {
                 continuation.resume(returning: poseResult)
             }
 
+            if let maxRevision = type(of: request).supportedRevisions.max() {
+                request.revision = maxRevision
+            }
+
             // Process within autoreleasepool to release memory promptly
             autoreleasepool {
                 let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .up)

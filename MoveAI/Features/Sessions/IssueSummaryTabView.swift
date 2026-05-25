@@ -107,6 +107,11 @@ private struct IssueSummaryCard: View {
 
     private func primaryMetric(from metrics: [FeedbackMetric]) -> FeedbackMetric? {
         let priority: [FeedbackMetricKind] = [
+            .runningCadenceSpm,
+            .runningTorsoLeanDegrees,
+            .runningVerticalOscillationRatio,
+            .runningStrideSymmetryRatio,
+            .runningOverstrideRatio,
             .squatTorsoInstabilityDegrees,
             .squatTorsoBiasDegrees,
             .squatBalanceDriftShinLengths
@@ -155,6 +160,44 @@ private struct IssueSummaryCard: View {
             base = "Torso instability"
         case .squatBalanceDriftShinLengths:
             base = "Balance drift"
+        case .runningCadenceSpm:
+            base = "Cadence"
+        case .runningTorsoLeanDegrees:
+            base = "Torso lean"
+        case .runningVerticalOscillationRatio:
+            base = "Vertical oscillation"
+        case .runningStrideSymmetryRatio:
+            base = "Stride symmetry"
+        case .runningOverstrideRatio:
+            base = "Overstride"
+        case .muayThaiRearHandGuardDistanceRatio:
+            base = "Rear-hand guard distance"
+        case .muayThaiTorsoForwardLeanDegrees:
+            base = "Torso forward lean"
+        case .muayThaiShoulderGuardGapRatio:
+            base = "Shoulder guard gap"
+        case .muayThaiJabReturnPathDeviationRatio:
+            base = "Jab return path deviation"
+        case .muayThaiJabRetractionLagRatio:
+            base = "Jab retraction lag"
+        case .muayThaiHipRotationDegrees:
+            base = "Hip rotation"
+        case .muayThaiShoulderRotationDegrees:
+            base = "Shoulder rotation"
+        case .muayThaiOverreachRatio:
+            base = "Overreach"
+        case .muayThaiLeadArmArcRatio:
+            base = "Lead arm arc"
+        case .muayThaiBodyRotationDegrees:
+            base = "Body rotation"
+        case .muayThaiKneeChamberRatio:
+            base = "Knee chamber"
+        case .muayThaiKneeDriveForwardRatio:
+            base = "Knee drive forward"
+        case .muayThaiHipThrustRatio:
+            base = "Hip thrust"
+        case .muayThaiAnkleCrossRatio:
+            base = "Ankle cross ratio"
         default:
             base = metric.kind.rawValue
         }

@@ -17,6 +17,7 @@ struct CueOverlayView: View {
                     .fontWeight(.semibold)
                     .foregroundColor(.white)
                     .lineLimit(1)
+                    .accessibilityIdentifier(AccessibilityID.CueOverlay.title)
                 Spacer(minLength: 0)
             }
             
@@ -24,12 +25,7 @@ struct CueOverlayView: View {
                 .font(.subheadline)
                 .foregroundColor(.white)
                 .lineLimit(2)
-            
-            if let rationale = overlay.rationale, !rationale.isEmpty {
-                Text(rationale)
-                    .font(.caption)
-                    .foregroundColor(.white.opacity(0.7))
-            }
+                .accessibilityIdentifier(AccessibilityID.CueOverlay.quickFix)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
@@ -39,6 +35,8 @@ struct CueOverlayView: View {
                 .stroke(stroke, lineWidth: 1)
         )
         .cornerRadius(12)
+        .accessibilityIdentifier(AccessibilityID.CueOverlay.root)
+        .accessibilityElement(children: .contain)
     }
     
     private func severityIcon(_ severity: FeedbackSeverity) -> String {

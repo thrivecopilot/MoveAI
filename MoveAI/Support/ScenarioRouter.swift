@@ -24,6 +24,8 @@ enum UIScenario: String, CaseIterable {
     case videoReviewOverviewCollapsed = "VideoReview_overview_collapsed"
     case videoReviewOverviewMedium = "VideoReview_overview_medium"
     case videoReviewOverviewExpanded = "VideoReview_overview_expanded"
+    case videoReviewRunningCollapsed = "VideoReview_running_collapsed"
+    case videoReviewRunningMedium = "VideoReview_running_medium"
     case workoutSummaryDefault = "WorkoutSummary_default"
     case poseOverlayDetected = "PoseOverlay_detected"
     case poseOverlayHighlights = "PoseOverlay_highlights"
@@ -177,6 +179,10 @@ private enum ScenarioViews {
             return videoReviewView(sessionManager: sessionManager, sheetState: .medium)
         case .videoReviewOverviewExpanded:
             return videoReviewView(sessionManager: sessionManager, sheetState: .expanded)
+        case .videoReviewRunningCollapsed:
+            return videoReviewView(sessionManager: sessionManager, sheetState: .collapsed)
+        case .videoReviewRunningMedium:
+            return videoReviewView(sessionManager: sessionManager, sheetState: .medium)
         case .workoutSummaryDefault:
             return AnyView(OverviewTabView(analysisResult: PreviewData.analysisResult()))
         case .poseOverlayDetected:
@@ -273,6 +279,9 @@ private enum ScenarioFixtures {
              .videoReviewOverviewMedium,
              .videoReviewOverviewExpanded:
             return [videoReviewSession()]
+        case .videoReviewRunningCollapsed,
+             .videoReviewRunningMedium:
+            return [runningVideoReviewSession()]
         case .trendsSquatFocus:
             return trendsSquatFocusSessions()
         case .workoutSummaryDefault,
@@ -420,6 +429,50 @@ private enum ScenarioFixtures {
             analysisResult: analysisResult,
             poseData: nil,
             notes: "Keep notes short and actionable. Focus on depth, bracing, and consistent tempo.",
+            isRecordedLive: false
+        )
+    }
+
+    private static func runningVideoReviewSession() -> Session {
+        let feedback = [
+            FormFeedback(
+                category: .tempo,
+                message: "Running cadence is low for this clip; step turnover can be quicker.",
+                severity: .warning,
+                timestamp: 0.0,
+                issueKind: .runningLowCadence,
+                metrics: [FeedbackMetric(kind: .runningCadenceSpm, value: 154, unit: .count)]
+            ),
+            FormFeedback(
+                category: .posture,
+                message: "Forward lean is elevated during running.",
+                severity: .warning,
+                timestamp: 0.9,
+                issueKind: .runningExcessiveForwardLean,
+                metrics: [FeedbackMetric(kind: .runningTorsoLeanDegrees, value: 22.1, unit: .degrees)]
+            )
+        ]
+
+        let summary = AnalysisSummaryBuilder.build(
+            movementType: .running,
+            feedback: feedback,
+            reps: nil,
+            depthMetrics: nil
+        )
+
+        let analysisResult = AnalysisResult(
+            score: 76,
+            feedback: feedback,
+            analysisSummary: summary
+        )
+
+        return Session(
+            movementType: .running,
+            videoURL: PreviewData.placeholderVideoURL,
+            timestamp: fixedDate(daysAgo: 1),
+            analysisResult: analysisResult,
+            poseData: nil,
+            notes: "Running scenario fixture for deterministic overlay and issue-card checks.",
             isRecordedLive: false
         )
     }

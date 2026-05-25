@@ -1,0 +1,38 @@
+{
+  "fixtures": [
+    {
+      "id": "running_low_cadence",
+      "cacheId": "running_low_cadence",
+      "videoFile": null,
+      "requiredIssueKinds": [
+        "running.cadence.low"
+      ],
+      "forbiddenIssueKinds": [
+        "running.capture_quality_limited"
+      ],
+      "expectedIssueCounts": {
+        "running.cadence.low": 1
+      },
+      "requiredMetricKinds": [
+        "running.cadence_spm"
+      ]
+    },
+    {
+      "id": "running_overstride",
+      "cacheId": "running_overstride",
+      "videoFile": null,
+      "requiredIssueKinds": [
+        "running.stride.overstriding"
+      ],
+      "forbiddenIssueKinds": [
+        "running.capture_quality_limited"
+      ],
+      "expectedIssueCounts": {
+        "running.stride.overstriding": 1
+      },
+      "requiredMetricKinds": [
+        "running.overstride_ratio"
+      ]
+    }
+  ]
+}

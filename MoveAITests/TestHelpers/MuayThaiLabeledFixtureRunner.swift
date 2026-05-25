@@ -35,6 +35,7 @@ enum MuayThaiLabeledFixtureRunner {
     enum RunnerError: LocalizedError {
         case fixtureManifestMissing
         case fixtureVideoMissing(String)
+        case cacheUnavailable(String, String)
         case poseExtractionFailed(String)
         case poseExtractionLowCoverage(String, PoseCoverageMetrics)
         case explicitTechniqueMissing(String)
@@ -45,6 +46,8 @@ enum MuayThaiLabeledFixtureRunner {
                 return "Muay Thai fixture manifest not found"
             case .fixtureVideoMissing(let file):
                 return "Fixture video not found: \(file)"
+            case .cacheUnavailable(let id, let reason):
+                return "Pose cache unavailable for fixture \(id): \(reason)"
             case .poseExtractionFailed(let id):
                 return "Pose extraction produced empty poseData for fixture \(id)"
             case .poseExtractionLowCoverage(let id, let metrics):
@@ -57,6 +60,9 @@ enum MuayThaiLabeledFixtureRunner {
 
     private static let minimumNonEmptyFrameRatio = 0.10
     private static let minimumAverageKeypointsPerNonEmptyFrame = 6.0
+    private static let testVideosDirectoryEnvKey = "MOVEAI_TEST_VIDEOS_DIR"
+    private static let liveExtractionEnvKey = "MOVEAI_ENABLE_LIVE_POSE_EXTRACTION_TESTS"
+    private static let allowSimulatorExtractionEnvKey = "MOVEAI_ALLOW_SIMULATOR_EXTRACTION"
 
     static func loadFixtures() throws -> [Fixture] {
         let manifestURL = try fixtureManifestURL()
@@ -74,9 +80,24 @@ enum MuayThaiLabeledFixtureRunner {
     }
 
     static func testVideosDirectory() -> URL {
-        repositoryRootURL
-            .appendingPathComponent("MoveAITests", isDirectory: true)
-            .appendingPathComponent("TestVideos", isDirectory: true)
+        if let overrideDirectory = environmentTestVideosDirectory() {
+            return overrideDirectory
+        }
+
+        let repositoryDirectory = repositoryTestVideosDirectory
+        if isReadableDirectory(repositoryDirectory) && isWritableDirectory(repositoryDirectory) {
+            return repositoryDirectory
+        }
+
+        if let bundledDirectory = bundledTestVideosDirectories().first(where: { isReadableDirectory($0) }) {
+            return bundledDirectory
+        }
+
+        if isReadableDirectory(repositoryDirectory) {
+            return repositoryDirectory
+        }
+
+        return repositoryDirectory
     }
 
     static func cacheURL(for fixture: Fixture) -> URL {
@@ -92,7 +113,10 @@ enum MuayThaiLabeledFixtureRunner {
     }
 
     static func cacheProvenanceExists(for fixture: Fixture) -> Bool {
-        FileManager.default.fileExists(atPath: cacheProvenanceURL(for: fixture).path)
+        PoseCacheManager.resolvedProvenancePath(
+            for: fixture.id,
+            testVideosDirectory: testVideosDirectory()
+        ) != nil
     }
 
     static func loadCacheProvenance(for fixture: Fixture) throws -> PoseCacheManager.CacheProvenance? {
@@ -104,63 +128,122 @@ enum MuayThaiLabeledFixtureRunner {
 
     static func loadOrExtractPoseData(for fixture: Fixture, forceReextract: Bool = false) async throws -> [PoseDetectionResult] {
         let testVideosDir = testVideosDirectory()
-        let videoURL = try videoURL(for: fixture)
-        let resolvedCacheURL = PoseCacheManager.resolvedCachePath(
-            for: fixture.id,
-            testVideosDirectory: testVideosDir
-        )
-        let videoSHA256 = try PoseCacheManager.fileSHA256(at: videoURL)
+        let extractionEnabled = isLiveExtractionEnabledForCurrentRuntime()
 
         if !forceReextract,
            let cached = try PoseCacheManager.loadPoseData(for: fixture.id, testVideosDirectory: testVideosDir),
-           !cached.isEmpty,
-           let resolvedCacheURL,
-           cacheIsFresh(cacheURL: resolvedCacheURL, videoURL: videoURL) {
+           !cached.isEmpty {
             let coverage = poseCoverageMetrics(from: cached)
             guard meetsCoverageGate(coverage) else {
+                guard extractionEnabled else {
+                    throw RunnerError.cacheUnavailable(
+                        fixture.id,
+                        "cache coverage too low (nonEmpty=\(coverage.nonEmptyFrames)/\(coverage.totalFrames), ratio=\(String(format: "%.3f", coverage.nonEmptyFrameRatio))); refresh cache externally"
+                    )
+                }
+
                 print("⚠️ Cache quality too low for \(fixture.id). Re-extracting. nonEmpty=\(coverage.nonEmptyFrames)/\(coverage.totalFrames) ratio=\(String(format: "%.3f", coverage.nonEmptyFrameRatio))")
+                let context = try videoValidationContext(for: fixture)
                 return try await extractAndCachePoseData(
                     fixture: fixture,
-                    videoURL: videoURL,
-                    videoSHA256: videoSHA256,
+                    videoURL: context.videoURL,
+                    videoSHA256: context.videoSHA256,
                     testVideosDir: testVideosDir
                 )
             }
 
-            if try cacheProvenanceMatches(
-                fixture: fixture,
-                videoSHA256: videoSHA256,
-                cacheURL: resolvedCacheURL,
-                testVideosDir: testVideosDir
-            ) {
+            guard let context = optionalVideoValidationContext(for: fixture) else {
+                print("ℹ️ Using cached poses for \(fixture.id) without video provenance validation")
                 return cached
             }
 
-            if shouldBackfillCacheProvenance() {
-                try backfillCacheProvenance(
+            guard let resolvedCacheURL = PoseCacheManager.resolvedCachePath(
+                for: fixture.id,
+                testVideosDirectory: testVideosDir
+            ) else {
+                return cached
+            }
+
+            guard let freshness = cacheIsFresh(cacheURL: resolvedCacheURL, videoURL: context.videoURL) else {
+                print("ℹ️ Cache freshness unavailable for \(fixture.id). Using cached poses without re-extraction.")
+                return cached
+            }
+
+            if freshness {
+                if try cacheProvenanceMatches(
                     fixture: fixture,
-                    videoSHA256: videoSHA256,
+                    videoSHA256: context.videoSHA256,
                     cacheURL: resolvedCacheURL,
                     testVideosDir: testVideosDir
-                )
-                return cached
+                ) {
+                    return cached
+                }
+
+                if shouldBackfillCacheProvenance() {
+                    try backfillCacheProvenance(
+                        fixture: fixture,
+                        videoSHA256: context.videoSHA256,
+                        cacheURL: resolvedCacheURL,
+                        testVideosDir: testVideosDir
+                    )
+                    return cached
+                }
+
+                guard extractionEnabled else {
+                    throw RunnerError.cacheUnavailable(
+                        fixture.id,
+                        "cache provenance mismatch; refresh cache externally"
+                    )
+                }
+
+                print("⚠️ Cache provenance mismatch for \(fixture.id). Re-extracting.")
+            } else {
+                guard extractionEnabled else {
+                    throw RunnerError.cacheUnavailable(
+                        fixture.id,
+                        "cache is stale relative to video file; refresh cache externally"
+                    )
+                }
+
+                print("⚠️ Cache stale for \(fixture.id). Re-extracting.")
             }
 
-            print("⚠️ Cache provenance mismatch for \(fixture.id). Re-extracting.")
             return try await extractAndCachePoseData(
                 fixture: fixture,
-                videoURL: videoURL,
-                videoSHA256: videoSHA256,
+                videoURL: context.videoURL,
+                videoSHA256: context.videoSHA256,
                 testVideosDir: testVideosDir
             )
         }
 
+        guard extractionEnabled else {
+            throw RunnerError.cacheUnavailable(
+                fixture.id,
+                forceReextract
+                    ? "forceReextract requested but live extraction is disabled"
+                    : "cache missing; refresh cache externally before running analysis tests"
+            )
+        }
+
+        let context = try videoValidationContext(for: fixture)
         return try await extractAndCachePoseData(
             fixture: fixture,
-            videoURL: videoURL,
-            videoSHA256: videoSHA256,
+            videoURL: context.videoURL,
+            videoSHA256: context.videoSHA256,
             testVideosDir: testVideosDir
         )
+    }
+
+    static func isLiveExtractionEnabledForCurrentRuntime() -> Bool {
+        guard ProcessInfo.processInfo.environment[liveExtractionEnvKey] == "1" else {
+            return false
+        }
+
+        #if targetEnvironment(simulator)
+        return ProcessInfo.processInfo.environment[allowSimulatorExtractionEnvKey] == "1"
+        #else
+        return true
+        #endif
     }
 
     static func poseCoverageMetrics(from poses: [PoseDetectionResult]) -> PoseCoverageMetrics {
@@ -258,37 +341,58 @@ enum MuayThaiLabeledFixtureRunner {
     }
 
     private static func videoURL(for fixture: Fixture) throws -> URL {
-        let url = testVideosDirectory().appendingPathComponent(fixture.videoFile)
-        guard FileManager.default.fileExists(atPath: url.path) else {
-            let bundle = Bundle(for: BundleToken.self)
-            let fileName = fixture.videoFile as NSString
-            let stem = fileName.deletingPathExtension
-            let ext = fileName.pathExtension
-
-            if let bundledURL = bundle.url(
-                forResource: stem,
-                withExtension: ext.isEmpty ? nil : ext
-            ) ?? bundle.url(forResource: fixture.videoFile, withExtension: nil) {
-                return bundledURL
+        for directory in resourceSearchDirectories() {
+            let candidate = directory.appendingPathComponent(fixture.videoFile)
+            if isReadableFile(candidate) {
+                return candidate
             }
-
-            throw RunnerError.fixtureVideoMissing(fixture.videoFile)
-        }
-        return url
-    }
-
-    private static func fixtureManifestURL() throws -> URL {
-        let direct = testVideosDirectory().appendingPathComponent("muay_thai_labeled_fixtures.json")
-        if FileManager.default.fileExists(atPath: direct.path) {
-            return direct
         }
 
         let bundle = Bundle(for: BundleToken.self)
-        if let bundled = bundle.url(forResource: "muay_thai_labeled_fixtures", withExtension: "json") {
+        let fileName = fixture.videoFile as NSString
+        let stem = fileName.deletingPathExtension
+        let ext = fileName.pathExtension
+        if let bundledURL = bundle.url(
+            forResource: stem,
+            withExtension: ext.isEmpty ? nil : ext
+        ) ?? bundle.url(forResource: fixture.videoFile, withExtension: nil),
+           isReadableFile(bundledURL) {
+            return bundledURL
+        }
+
+        throw RunnerError.fixtureVideoMissing(fixture.videoFile)
+    }
+
+    private static func fixtureManifestURL() throws -> URL {
+        for directory in resourceSearchDirectories() {
+            let candidate = directory.appendingPathComponent("muay_thai_labeled_fixtures.json")
+            if isReadableFile(candidate) {
+                return candidate
+            }
+        }
+
+        let bundle = Bundle(for: BundleToken.self)
+        if let bundled = bundle.url(forResource: "muay_thai_labeled_fixtures", withExtension: "json"),
+           isReadableFile(bundled) {
             return bundled
         }
 
         throw RunnerError.fixtureManifestMissing
+    }
+
+    private static func videoValidationContext(for fixture: Fixture) throws -> VideoValidationContext {
+        let videoURL = try videoURL(for: fixture)
+        let videoSHA256 = try PoseCacheManager.fileSHA256(at: videoURL)
+        return VideoValidationContext(videoURL: videoURL, videoSHA256: videoSHA256)
+    }
+
+    private static func optionalVideoValidationContext(for fixture: Fixture) -> VideoValidationContext? {
+        do {
+            return try videoValidationContext(for: fixture)
+        } catch {
+            print("ℹ️ Skipping cache provenance checks for \(fixture.id): \(error.localizedDescription)")
+            return nil
+        }
     }
 
     private static func shouldBackfillCacheProvenance() -> Bool {
@@ -350,12 +454,12 @@ enum MuayThaiLabeledFixtureRunner {
         print("🧾 Backfilled cache provenance for \(fixture.id)")
     }
 
-    private static func cacheIsFresh(cacheURL: URL, videoURL: URL) -> Bool {
+    private static func cacheIsFresh(cacheURL: URL, videoURL: URL) -> Bool? {
         guard
             let cacheDate = modificationDate(for: cacheURL),
             let videoDate = modificationDate(for: videoURL)
         else {
-            return false
+            return nil
         }
 
         return cacheDate >= videoDate
@@ -368,11 +472,84 @@ enum MuayThaiLabeledFixtureRunner {
         return attrs[.modificationDate] as? Date
     }
 
+    private static func resourceSearchDirectories() -> [URL] {
+        var directories: [URL] = []
+
+        if let overrideDirectory = environmentTestVideosDirectory() {
+            directories.append(overrideDirectory)
+        }
+
+        directories.append(contentsOf: bundledTestVideosDirectories())
+        directories.append(repositoryTestVideosDirectory)
+
+        var seen: Set<String> = []
+        return directories.filter { url in
+            let normalizedPath = url.standardizedFileURL.path
+            guard !seen.contains(normalizedPath) else {
+                return false
+            }
+            seen.insert(normalizedPath)
+            return true
+        }
+    }
+
+    private static func bundledTestVideosDirectories() -> [URL] {
+        let bundle = Bundle(for: BundleToken.self)
+        guard let resourceURL = bundle.resourceURL else {
+            return []
+        }
+
+        return [
+            resourceURL,
+            resourceURL.appendingPathComponent("TestVideos", isDirectory: true)
+        ]
+    }
+
+    private static func environmentTestVideosDirectory() -> URL? {
+        guard let raw = ProcessInfo.processInfo.environment[testVideosDirectoryEnvKey],
+              !raw.isEmpty else {
+            return nil
+        }
+
+        let explicitURL = URL(fileURLWithPath: raw, isDirectory: true)
+        if explicitURL.path.hasPrefix("/") {
+            return explicitURL
+        }
+
+        return repositoryRootURL.appendingPathComponent(raw, isDirectory: true)
+    }
+
+    private static func isReadableFile(_ url: URL) -> Bool {
+        FileManager.default.fileExists(atPath: url.path) &&
+        FileManager.default.isReadableFile(atPath: url.path)
+    }
+
+    private static func isReadableDirectory(_ url: URL) -> Bool {
+        var isDirectory: ObjCBool = false
+        let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
+        return exists && isDirectory.boolValue && FileManager.default.isReadableFile(atPath: url.path)
+    }
+
+    private static func isWritableDirectory(_ url: URL) -> Bool {
+        FileManager.default.isWritableFile(atPath: url.path)
+    }
+
+    private static var repositoryTestVideosDirectory: URL {
+        repositoryRootURL
+            .appendingPathComponent("MoveAITests", isDirectory: true)
+            .appendingPathComponent("TestVideos", isDirectory: true)
+    }
+
     private static var repositoryRootURL: URL {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent() // TestHelpers
             .deletingLastPathComponent() // MoveAITests
             .deletingLastPathComponent() // repo root
+    }
+
+    private struct VideoValidationContext {
+        let videoURL: URL
+        let videoSHA256: String
     }
 
     private final class BundleToken {}
