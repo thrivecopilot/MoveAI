@@ -1872,8 +1872,10 @@ struct SquatAnalyzer {
             let repDepthMetrics = depthByRep[rep.repNumber] ?? []
             let repKneeMetrics = kneeByRep[rep.repNumber] ?? []
             
-            // Get worst metrics for this rep (or best available)
-            let repWorstDepth = repDepthMetrics.min { $0.depthPercentage < $1.depthPercentage }
+            // Score depth from the rep's deepest point. (This used to take the frame with
+            // the lowest depth percentage, i.e. standing, which cost every rep 30 points.)
+            let repDeepest = repDepthMetrics.first(where: { $0.isAtDepth })
+                ?? repDepthMetrics.max { $0.depthPercentage < $1.depthPercentage }
             let repWorstKnee = repKneeMetrics.min { $0.minAngle < $1.minAngle }
             
             // Penalize if rep is not full
@@ -1882,7 +1884,7 @@ struct SquatAnalyzer {
             }
             
             // Depth scoring (30% weight)
-            if let depth = repWorstDepth {
+            if let depth = repDeepest {
                 if depth.isAtDepth {
                     // Full points for proper depth
                 } else if depth.depthPercentage > 80 {
