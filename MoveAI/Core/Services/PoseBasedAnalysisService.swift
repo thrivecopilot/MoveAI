@@ -7,6 +7,7 @@
 
 import Foundation
 import CoreGraphics
+import AVFoundation
 
 /// Analysis service that uses pose detection data to analyze movements
 class PoseBasedAnalysisService: AnalysisServiceProtocol {
@@ -20,7 +21,10 @@ class PoseBasedAnalysisService: AnalysisServiceProtocol {
         // Route to appropriate analyzer based on movement type
         switch recording.movementType {
         case .squat:
-            return try analyzeSquat(recording: recording, poseData: poseData)
+            // The video's shape turns on camera normalization in the squat analyzer.
+            // If it can't be read, the analyzer falls back to picture coordinates.
+            let videoAspect = await VideoProcessingHelpers.displayAspectRatio(of: AVURLAsset(url: recording.videoURL))
+            return try analyzeSquat(recording: recording, poseData: poseData, videoAspect: videoAspect)
         case .deadlift:
             // TODO: Implement deadlift analysis
             throw AnalysisError.notImplemented
@@ -36,9 +40,9 @@ class PoseBasedAnalysisService: AnalysisServiceProtocol {
 
     // MARK: - Squat Analysis
 
-    private func analyzeSquat(recording: MovementRecording, poseData: [PoseDetectionResult]) throws -> AnalysisResult {
+    private func analyzeSquat(recording: MovementRecording, poseData: [PoseDetectionResult], videoAspect: Double? = nil) throws -> AnalysisResult {
         // Use SquatAnalyzer to analyze the full sequence
-        let result = SquatAnalyzer.analyzeFullSequence(poseData)
+        let result = SquatAnalyzer.analyzeFullSequence(poseData, videoAspect: videoAspect)
 
         switch result {
         case .success(let analysisResult):
