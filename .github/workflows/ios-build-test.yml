@@ -1,0 +1,114 @@
+# Builds MoveAI for the iOS Simulator and runs the unit tests on a GitHub-hosted
+# Mac, so changes can be checked without a local Xcode.
+#
+# - No code signing: simulator builds don't need it.
+# - UI tests (MoveAIUITests) are not run here.
+# - "Squat tests" must pass. "Full unit suite" runs everything in MoveAITests
+#   and reports, but doesn't fail the run, because some of those tests need
+#   on-device pose extraction or local caches.
+#
+# Run it from the Actions tab (Run workflow), or push to a claude/* branch.
+name: iOS build and test
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["claude/**"]
+    paths:
+      - "MoveAI/**"
+      - "MoveAITests/**"
+      - "MoveAI.xcodeproj/**"
+      - ".github/workflows/ios-build-test.yml"
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      # Passed through to the test runner as MOVEAI_TEST_VIDEOS_DIR.
+      TEST_RUNNER_MOVEAI_TEST_VIDEOS_DIR: ${{ github.workspace }}/MoveAITests/TestVideos
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pick Xcode
+        run: |
+          # The project was created with Xcode 16.4 and targets iOS 18.5.
+          if [ -d /Applications/Xcode_16.4.app ]; then sudo xcode-select -s /Applications/Xcode_16.4.app; fi
+          xcodebuild -version
+
+      - name: Pick a simulator
+        id: sim
+        run: |
+          # Newest available iPhone simulator on iOS 18.5 or later.
+          UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import json, re, sys
+          best = None
+          for runtime, devices in json.load(sys.stdin)["devices"].items():
+              m = re.search(r"iOS-(\d+)-(\d+)", runtime)
+              if not m: continue
+              version = (int(m.group(1)), int(m.group(2)))
+              if version < (18, 5): continue
+              for d in devices:
+                  if d["name"].startswith("iPhone") and (best is None or version > best[0]):
+                      best = (version, d["udid"], d["name"])
+          if not best: sys.exit("No iPhone simulator on iOS 18.5 or later")
+          print(best[1]); print(f"{best[2]} (iOS {best[0][0]}.{best[0][1]})", file=sys.stderr)
+          ')
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+
+      - name: Build app and tests
+        run: |
+          set -o pipefail
+          xcodebuild build-for-testing \
+            -project MoveAI.xcodeproj -scheme MoveAI \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            | tee build.log | grep -E "error:|warning: .*deprecated|BUILD (SUCCEEDED|FAILED)|\*\* TEST BUILD" || true
+          grep -q "TEST BUILD SUCCEEDED" build.log
+
+      - name: Squat tests
+        run: |
+          set -o pipefail
+          xcodebuild test-without-building \
+            -project MoveAI.xcodeproj -scheme MoveAI \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath build \
+            -resultBundlePath results/squat.xcresult \
+            -only-testing:MoveAITests/SquatCameraNormalizationTests \
+            -only-testing:MoveAITests/SquatMechanicsSolverTests \
+            -only-testing:MoveAITests/AnalysisSummaryBuilderTests \
+            -only-testing:MoveAITests/FormFeedbackCodableTests \
+            -only-testing:MoveAITests/VideoOrientationMappingTests \
+            | tee squat-tests.log | grep -E "Test Case .*(passed|failed)|error:|Executed|\*\* TEST" || true
+          grep -q "TEST EXECUTE SUCCEEDED" squat-tests.log
+
+      - name: Full unit suite (informational)
+        if: always() && steps.sim.outputs.udid != ''
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          xcodebuild test-without-building \
+            -project MoveAI.xcodeproj -scheme MoveAI \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath build \
+            -resultBundlePath results/all.xcresult \
+            -only-testing:MoveAITests \
+            | tee all-tests.log | grep -E "Test Case .*(failed|skipped)|error:|Executed|\*\* TEST" || true
+          grep -q "TEST EXECUTE SUCCEEDED" all-tests.log
+
+      - name: Upload logs and results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-test-results
+          path: |
+            build.log
+            squat-tests.log
+            all-tests.log
+            results/
+          retention-days: 14
