@@ -10,18 +10,12 @@
 #   so two files with the same name anywhere in that folder (even in different
 #   subfolders) fail the build with "Multiple commands produce".
 #
-# Run it from the Actions tab (Run workflow), or push to a claude/* branch.
 name: iOS build and test
 
+# Manual only (Actions tab > iOS build and test > Run workflow). Mac runner
+# minutes count 10x against the account's included Actions minutes.
 on:
   workflow_dispatch:
-  push:
-    branches: ["claude/**"]
-    paths:
-      - "MoveAI/**"
-      - "MoveAITests/**"
-      - "MoveAI.xcodeproj/**"
-      - ".github/workflows/ios-build-test.yml"
 
 concurrency:
   group: ios-${{ github.ref }}
