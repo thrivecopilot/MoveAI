@@ -6,6 +6,9 @@
 # - "Squat tests" must pass. "Full unit suite" runs everything in MoveAITests
 #   and reports, but doesn't fail the run, because some of those tests need
 #   on-device pose extraction or local caches.
+# - Every non-Swift file under MoveAITests is copied flat into the test bundle,
+#   so two files with the same name anywhere in that folder (even in different
+#   subfolders) fail the build with "Multiple commands produce".
 #
 # Run it from the Actions tab (Run workflow), or push to a claude/* branch.
 name: iOS build and test
@@ -61,6 +64,7 @@ jobs:
           echo "udid=$UDID" >> "$GITHUB_OUTPUT"
 
       - name: Build app and tests
+        id: build
         run: |
           set -o pipefail
           xcodebuild build-for-testing \
@@ -88,7 +92,7 @@ jobs:
           grep -q "TEST EXECUTE SUCCEEDED" squat-tests.log
 
       - name: Full unit suite (informational)
-        if: always() && steps.sim.outputs.udid != ''
+        if: always() && steps.build.outcome == 'success'
         continue-on-error: true
         run: |
           set -o pipefail
