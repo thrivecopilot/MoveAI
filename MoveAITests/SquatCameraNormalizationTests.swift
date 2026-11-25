@@ -5,6 +5,7 @@ import CoreGraphics
 /// Runs the squat analyzer with camera normalization on (as the app does) over
 /// pose data from real handheld clips. Before normalization these clips were
 /// scored with the wrong rep count, view or depth; see `PoseNormalizer`.
+@MainActor
 final class SquatCameraNormalizationTests: XCTestCase {
 
     private struct Fixture: Decodable {
