@@ -103,6 +103,40 @@ final class StructuralUITests: XCTestCase {
         )
     }
 
+    /// Assert the video surface spans the full container width (Photos-like full bleed).
+    /// The surface may overflow the container (explicit screen width), but must never
+    /// be narrower than it.
+    private func assertVideoSurfaceFullBleed(
+        tolerance: Double = 0.5,
+        file: StaticString = #file,
+        line: UInt = #line
+    ) {
+        let probeElement = element(AID.VideoReview.root)
+        guard let probe = waitForVideoReviewLayoutProbe(
+            probeElement,
+            timeout: 8,
+            file: file,
+            line: line
+        ) else {
+            return
+        }
+
+        XCTAssertLessThanOrEqual(
+            probe.videoMinX,
+            tolerance,
+            "Video surface must start at (or left of) the container's leading edge; videoMinX=\(probe.videoMinX)",
+            file: file,
+            line: line
+        )
+        XCTAssertGreaterThanOrEqual(
+            probe.videoMaxX,
+            probe.containerWidth - tolerance,
+            "Video surface must reach the container's trailing edge; videoMaxX=\(probe.videoMaxX), containerWidth=\(probe.containerWidth)",
+            file: file,
+            line: line
+        )
+    }
+
     /// Default audit categories to exclude in tests.
     ///
     /// These categories produce findings that are:
@@ -352,6 +386,7 @@ final class StructuralUITests: XCTestCase {
         )
 
         assertSheetFlushWithPlaybackBar()
+        assertVideoSurfaceFullBleed()
 
         // Tapping Issues/Notes in medium should switch tabs (no auto expansion).
         let issuesTabById = element(AID.Tabs.issues)
@@ -403,6 +438,7 @@ final class StructuralUITests: XCTestCase {
         assertNotExists("WorkoutSummary.ScoreTitle", "Score content must be hidden when collapsed")
 
         assertSheetFlushWithPlaybackBar()
+        assertVideoSurfaceFullBleed()
     }
 
     // =========================================================================
@@ -434,6 +470,7 @@ final class StructuralUITests: XCTestCase {
 
         assertExists("WorkoutSummary.TopFixesSection", "Top fixes must be visible in expanded state")
         assertSheetFlushWithPlaybackBar()
+        assertVideoSurfaceFullBleed()
     }
 
     // =========================================================================
