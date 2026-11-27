@@ -63,6 +63,17 @@ struct SessionHistoryView: View {
             .coachNavigationChrome()
             .coachScreenContainer()
             .accessibilityIdentifier(AccessibilityID.SessionHistory.root)
+            .alert(
+                "Storage problem",
+                isPresented: Binding(
+                    get: { sessionManager.lastStorageError != nil },
+                    set: { if !$0 { sessionManager.lastStorageError = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(sessionManager.lastStorageError ?? "")
+            }
         }
     }
 

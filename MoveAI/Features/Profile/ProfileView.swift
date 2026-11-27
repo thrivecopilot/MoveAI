@@ -9,9 +9,13 @@ import SwiftUI
 
 struct ProfileView: View {
     @EnvironmentObject var sessionManager: SessionManager
+    @EnvironmentObject var appleAuthManager: AppleAuthManager
     @AppStorage("userHeight") private var userHeight: Double = 0
     @AppStorage("userWeight") private var userWeight: Double = 0
     @AppStorage("userAge") private var userAge: Int = 0
+    @AppStorage("isSignedIn") private var isSignedIn = false
+    @AppStorage("hasHealthPermissions") private var hasHealthPermissions = false
+    @State private var showingDeleteConfirmation = false
 
     var body: some View {
         NavigationView {
@@ -104,6 +108,8 @@ struct ProfileView: View {
                     }
                     .accessibilityIdentifier(AccessibilityID.Profile.settingsCard)
 
+                    accountCard
+
                     Spacer(minLength: CoachTheme.Surfaces.sectionSpacing)
                 }
                 .padding(.horizontal, CoachTheme.Surfaces.screenHorizontalPadding)
@@ -115,6 +121,68 @@ struct ProfileView: View {
             .coachScreenContainer()
             .accessibilityIdentifier(AccessibilityID.Profile.root)
         }
+    }
+
+    private var accountCard: some View {
+        CoachCard {
+            VStack(alignment: .leading, spacing: CoachTheme.Surfaces.groupSpacing) {
+                CoachSectionHeader(icon: "person.crop.circle.badge.checkmark", title: "Account", tint: .blue)
+
+                VStack(spacing: 0) {
+                    SettingsRow(
+                        icon: "rectangle.portrait.and.arrow.right",
+                        title: "Sign Out",
+                        action: signOut
+                    )
+                    .accessibilityIdentifier(AccessibilityID.Profile.signOutButton)
+
+                    Divider()
+
+                    Button(action: { showingDeleteConfirmation = true }) {
+                        HStack {
+                            Image(systemName: "trash")
+                                .foregroundColor(.red)
+                                .frame(width: 20)
+
+                            Text("Delete Account & Data")
+                                .font(CoachTheme.Typography.body)
+                                .foregroundColor(.red)
+
+                            Spacer()
+                        }
+                        .padding(.vertical, CoachTheme.Surfaces.rowVerticalPadding)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier(AccessibilityID.Profile.deleteAccountButton)
+                }
+            }
+        }
+        .accessibilityIdentifier(AccessibilityID.Profile.accountCard)
+        .confirmationDialog(
+            "Delete account and all data?",
+            isPresented: $showingDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Everything", role: .destructive, action: deleteAccount)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This permanently removes your sign-in, profile, and every recorded session and video from this device. This cannot be undone.")
+        }
+    }
+
+    private func signOut() {
+        appleAuthManager.signOut()
+        isSignedIn = false
+    }
+
+    private func deleteAccount() {
+        sessionManager.deleteAllData()
+        userHeight = 0
+        userWeight = 0
+        userAge = 0
+        hasHealthPermissions = false
+        appleAuthManager.signOut()
+        isSignedIn = false
     }
 
     private var headerCard: some View {
@@ -132,16 +200,12 @@ struct ProfileView: View {
         .accessibilityIdentifier(AccessibilityID.Profile.header)
     }
 
-    private func formatHeight(_ height: Double) -> String {
-        if height == 0 { return "Not set" }
-        let feet = Int(height / 12)
-        let inches = Int(height.truncatingRemainder(dividingBy: 12))
-        return "\(feet)'\(inches)\""
+    private func formatHeight(_ heightInCm: Double) -> String {
+        ProfileUnits.formatHeight(cm: heightInCm)
     }
 
-    private func formatWeight(_ weight: Double) -> String {
-        if weight == 0 { return "Not set" }
-        return "\(Int(weight)) lbs"
+    private func formatWeight(_ weightInKg: Double) -> String {
+        ProfileUnits.formatWeight(kg: weightInKg)
     }
 
     private func sessionsThisWeek() -> Int {
@@ -219,4 +283,5 @@ struct SettingsRow: View {
 #Preview {
     ProfileView()
         .environmentObject(SessionManager())
+        .environmentObject(AppleAuthManager())
 }

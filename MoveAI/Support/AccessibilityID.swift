@@ -84,6 +84,9 @@ enum AccessibilityID {
         static let healthCard = "Profile.HealthCard"
         static let quickStatsCard = "Profile.QuickStatsCard"
         static let settingsCard = "Profile.SettingsCard"
+        static let accountCard = "Profile.AccountCard"
+        static let signOutButton = "Profile.SignOutButton"
+        static let deleteAccountButton = "Profile.DeleteAccountButton"
     }
 
     // MARK: - Movement Selection

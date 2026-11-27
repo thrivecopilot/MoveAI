@@ -125,15 +125,11 @@ struct HomeView: View {
     }
     
     private func formatHeight(_ heightInCm: Double) -> String {
-        let totalInches = heightInCm / 2.54
-        let feet = Int(totalInches / 12)
-        let inches = Int(totalInches.truncatingRemainder(dividingBy: 12))
-        return "\(feet)'\(inches)\" (\(Int(heightInCm)) cm)"
+        ProfileUnits.formatHeight(cm: heightInCm, includeMetric: true)
     }
-    
+
     private func formatWeight(_ weightInKg: Double) -> String {
-        let pounds = weightInKg * 2.20462
-        return "\(Int(pounds)) lbs (\(Int(weightInKg)) kg)"
+        ProfileUnits.formatWeight(kg: weightInKg, includeMetric: true)
     }
 }
 

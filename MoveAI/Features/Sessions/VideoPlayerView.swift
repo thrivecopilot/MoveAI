@@ -79,8 +79,7 @@ struct VideoPlayerView: View {
         .onAppear {
             playback.setup()
         }
-        .onReceive(Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()) { _ in
-            playback.updateCurrentTime()
+        .onChange(of: playback.currentTime) { _ in
             updateFrameIndex()
         }
         .onChange(of: seekToTime) { newValue in
@@ -450,27 +449,55 @@ final class PlaybackController: ObservableObject {
     @Published var nominalFrameRate: Double = 30.0
     /// Display size of the video (naturalSize with preferredTransform applied). Used for aspect-fit layout; nil until loaded.
     @Published var videoDisplaySize: CGSize?
-    
+
     private let videoURL: URL
     private let statusObserver = PlayerStatusObserver()
     private var didSetup = false
     private var latestSeekRequestID: Int = 0
-    
+    private var timeObserverToken: Any?
+    private var endOfPlaybackObserver: NSObjectProtocol?
+    /// Plain (non-@Published) reference so deinit can detach the time observer;
+    /// @Published accessors are main-actor-isolated and unavailable in deinit.
+    private var observedPlayer: AVPlayer?
+
     init(videoURL: URL) {
         self.videoURL = videoURL
     }
-    
+
+    deinit {
+        if let timeObserverToken, let observedPlayer {
+            observedPlayer.removeTimeObserver(timeObserverToken)
+        }
+        if let endOfPlaybackObserver {
+            NotificationCenter.default.removeObserver(endOfPlaybackObserver)
+        }
+    }
+
     func setup() {
         guard !didSetup else { return }
         didSetup = true
-        
+
         let player = AVPlayer(url: videoURL)
         self.player = player
-        
+        self.observedPlayer = player
+
         if let playerItem = player.currentItem {
             statusObserver.observePlayerItem(playerItem)
             statusObserver.onStatusChange = { [weak self] status in
                 self?.playerStatus = status
+            }
+        }
+
+        // Drives playback-position UI. Fires only while the player's time
+        // advances — unlike a free-running Timer, it costs nothing while paused.
+        timeObserverToken = player.addPeriodicTimeObserver(
+            forInterval: CMTime(seconds: 0.1, preferredTimescale: 600),
+            queue: .main
+        ) { [weak self] time in
+            guard let self else { return }
+            let seconds = CMTimeGetSeconds(time)
+            if seconds.isFinite, !seconds.isNaN, self.isPlaying {
+                self.currentTime = seconds
             }
         }
         
@@ -511,7 +538,7 @@ final class PlaybackController: ObservableObject {
             }
         }
         
-        NotificationCenter.default.addObserver(
+        endOfPlaybackObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
             object: player.currentItem,
             queue: .main
@@ -559,14 +586,6 @@ final class PlaybackController: ObservableObject {
         }
     }
     
-    func updateCurrentTime() {
-        guard let player, isPlaying else { return }
-        let time = CMTimeGetSeconds(player.currentTime())
-        if !time.isNaN && !time.isInfinite {
-            currentTime = time
-        }
-    }
-    
     func timeString(_ time: Double) -> String {
         let minutes = Int(time) / 60
         let seconds = Int(time) % 60
@@ -578,190 +597,25 @@ final class PlaybackController: ObservableObject {
 class PlayerStatusObserver: NSObject, ObservableObject {
     @Published var status: AVPlayerItem.Status = .unknown
     var onStatusChange: ((AVPlayerItem.Status) -> Void)?
-    
+
+    // Block-based observation invalidates itself when this object (or the
+    // token) deallocates — old-style addObserver had no matching removeObserver
+    // and could crash when the player item outlived this observer.
+    private var statusObservation: NSKeyValueObservation?
+
     func observePlayerItem(_ playerItem: AVPlayerItem) {
-        playerItem.addObserver(self, forKeyPath: "status", options: [.new], context: nil)
-    }
-    
-    override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
-        if keyPath == "status" {
-            if let playerItem = object as? AVPlayerItem {
-                DispatchQueue.main.async {
-                    self.status = playerItem.status
-                    self.onStatusChange?(playerItem.status)
-                    if playerItem.status == .readyToPlay {
-                        print("🎬 VideoPlayerView: Player is ready to play")
-                    } else if playerItem.status == .failed {
-                        print("❌ VideoPlayerView: Player failed to load: \(playerItem.error?.localizedDescription ?? "Unknown error")")
-                    }
+        statusObservation = playerItem.observe(\.status, options: [.new]) { [weak self] playerItem, _ in
+            DispatchQueue.main.async {
+                self?.status = playerItem.status
+                self?.onStatusChange?(playerItem.status)
+                if playerItem.status == .failed {
+                    print("❌ VideoPlayerView: Player failed to load: \(playerItem.error?.localizedDescription ?? "Unknown error")")
                 }
             }
         }
     }
-    
-    deinit {
-        // Remove observer if needed
-    }
 }
 
-// MARK: - CALayer-based Pose Overlay
-struct PoseOverlayViewCALayer: UIViewRepresentable {
-    let pose: PoseDetectionResult?
-    let videoSize: CGSize
-    let containerSize: CGSize
-    
-    func makeUIView(context: Context) -> UIView {
-        let view = UIView()
-        view.backgroundColor = UIColor.clear
-        return view
-    }
-    
-    func updateUIView(_ uiView: UIView, context: Context) {
-        // Remove existing pose layers
-        uiView.layer.sublayers?.removeAll { $0.name == "poseLayer" }
-        
-        guard let pose = pose else { return }
-        
-        // Create pose layer
-        let poseLayer = CALayer()
-        poseLayer.name = "poseLayer"
-        poseLayer.frame = uiView.bounds
-        poseLayer.backgroundColor = UIColor.clear.cgColor
-        
-        // Add keypoints
-        for keypoint in pose.keypoints {
-            let keypointLayer = createKeypointLayer(for: keypoint, in: uiView.bounds)
-            poseLayer.addSublayer(keypointLayer)
-        }
-        
-        // Add skeleton lines
-        let skeletonLayer = createSkeletonLayer(for: pose, in: uiView.bounds)
-        poseLayer.addSublayer(skeletonLayer)
-        
-        uiView.layer.addSublayer(poseLayer)
-    }
-    
-    private func createKeypointLayer(for keypoint: PoseKeypoint, in bounds: CGRect) -> CALayer {
-        let layer = CAShapeLayer()
-        
-        // Calculate aspect ratio to properly scale coordinates
-        let videoAspectRatio = videoSize.width / videoSize.height
-        let containerAspectRatio = bounds.width / bounds.height
-        
-        var scaledWidth = bounds.width
-        var scaledHeight = bounds.height
-        var offsetX: CGFloat = 0
-        var offsetY: CGFloat = 0
-        
-        if videoAspectRatio > containerAspectRatio {
-            // Video is wider - fit to width
-            scaledHeight = bounds.width / videoAspectRatio
-            offsetY = (bounds.height - scaledHeight) / 2
-        } else {
-            // Video is taller - fit to height
-            scaledWidth = bounds.height * videoAspectRatio
-            offsetX = (bounds.width - scaledWidth) / 2
-        }
-        
-        // Convert normalized coordinates to scaled video coordinates
-        // Apply Y-flip to match Vision's bottom-left origin to UIKit's top-left origin
-        let flippedY = 1.0 - keypoint.position.y
-        let screenX = keypoint.position.x * scaledWidth + offsetX
-        let screenY = flippedY * scaledHeight + offsetY
-        
-        // Create circle path
-        let radius: CGFloat = 4
-        let path = UIBezierPath(arcCenter: CGPoint(x: screenX, y: screenY), 
-                               radius: radius, 
-                               startAngle: 0, 
-                               endAngle: 2 * .pi, 
-                               clockwise: true)
-        
-        layer.path = path.cgPath
-        layer.fillColor = keypointColor(for: keypoint).cgColor
-        layer.strokeColor = UIColor.white.cgColor
-        layer.lineWidth = 1
-        
-        return layer
-    }
-    
-    private func createSkeletonLayer(for pose: PoseDetectionResult, in bounds: CGRect) -> CAShapeLayer {
-        let layer = CAShapeLayer()
-        let path = UIBezierPath()
-        
-        // Define skeleton connections
-        let connections = [
-            ("leftShoulder", "rightShoulder"),
-            ("leftShoulder", "leftElbow"),
-            ("leftElbow", "leftWrist"),
-            ("rightShoulder", "rightElbow"),
-            ("rightElbow", "rightWrist"),
-            ("leftShoulder", "leftHip"),
-            ("rightShoulder", "rightHip"),
-            ("leftHip", "rightHip"),
-            ("leftHip", "leftKnee"),
-            ("leftKnee", "leftAnkle"),
-            ("rightHip", "rightKnee"),
-            ("rightKnee", "rightAnkle")
-        ]
-        
-        // Calculate aspect ratio to properly scale coordinates (same as keypoints)
-        let videoAspectRatio = videoSize.width / videoSize.height
-        let containerAspectRatio = bounds.width / bounds.height
-        
-        var scaledWidth = bounds.width
-        var scaledHeight = bounds.height
-        var offsetX: CGFloat = 0
-        var offsetY: CGFloat = 0
-        
-        if videoAspectRatio > containerAspectRatio {
-            // Video is wider - fit to width
-            scaledHeight = bounds.width / videoAspectRatio
-            offsetY = (bounds.height - scaledHeight) / 2
-        } else {
-            // Video is taller - fit to height
-            scaledWidth = bounds.height * videoAspectRatio
-            offsetX = (bounds.width - scaledWidth) / 2
-        }
-        
-        for (startName, endName) in connections {
-            if let startPoint = pose.keypoints.first(where: { $0.name == startName }),
-               let endPoint = pose.keypoints.first(where: { $0.name == endName }) {
-                
-                // Apply Y-flip to match Vision's bottom-left origin to UIKit's top-left origin
-                let startFlippedY = 1.0 - startPoint.position.y
-                let endFlippedY = 1.0 - endPoint.position.y
-                
-                let startX = startPoint.position.x * scaledWidth + offsetX
-                let startY = startFlippedY * scaledHeight + offsetY
-                let endX = endPoint.position.x * scaledWidth + offsetX
-                let endY = endFlippedY * scaledHeight + offsetY
-                
-                path.move(to: CGPoint(x: startX, y: startY))
-                path.addLine(to: CGPoint(x: endX, y: endY))
-            }
-        }
-        
-        layer.path = path.cgPath
-        layer.strokeColor = UIColor.blue.cgColor
-        layer.lineWidth = 2
-        layer.fillColor = UIColor.clear.cgColor
-        
-        return layer
-    }
-    
-    private func keypointColor(for keypoint: PoseKeypoint) -> UIColor {
-        // Color keypoints based on confidence
-        let confidence = keypoint.confidence
-        if confidence > 0.7 {
-            return UIColor.green
-        } else if confidence > 0.4 {
-            return UIColor.yellow
-        } else {
-            return UIColor.red
-        }
-    }
-}
 
 #Preview {
     VideoPlayerView(

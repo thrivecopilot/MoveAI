@@ -12,7 +12,7 @@ struct OnboardingFlowView: View {
     @Binding var hasHealthPermissions: Bool
 
     @State private var currentStep = 0
-    @State private var appleAuthManager = AppleAuthManager()
+    @EnvironmentObject private var appleAuthManager: AppleAuthManager
     @State private var healthManager = HealthManager()
 
     private let steps = ["Welcome", "Apple Sign In", "Health Permissions", "Personal Info"]
@@ -87,4 +87,5 @@ struct OnboardingFlowView: View {
         isSignedIn: .constant(false),
         hasHealthPermissions: .constant(false)
     )
+    .environmentObject(AppleAuthManager())
 }

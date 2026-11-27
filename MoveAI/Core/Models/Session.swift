@@ -72,6 +72,61 @@ struct Session: Identifiable, Codable {
     }
 }
 
+// MARK: - Codable (video path portability)
+//
+// The app container path changes on every app update and device restore, so
+// sessions must not persist absolute video URLs. Videos the app owns are
+// stored by file name and resolved against the current container on decode.
+// Non-owned URLs (bundle fixtures, previews) are stored as-is.
+extension Session {
+    private enum CodingKeys: String, CodingKey {
+        case id, movementType, technique, fightStance, timestamp
+        case analysisResult, poseData, notes, isRecordedLive
+        case videoFileName
+        case videoURL // legacy: absolute URL written by older builds
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(UUID.self, forKey: .id)
+        self.movementType = try container.decode(MovementType.self, forKey: .movementType)
+        self.technique = try container.decodeIfPresent(MuayThaiTechnique.self, forKey: .technique)
+        self.fightStance = try container.decodeIfPresent(FightStance.self, forKey: .fightStance)
+        self.timestamp = try container.decode(Date.self, forKey: .timestamp)
+        self.analysisResult = try container.decodeIfPresent(AnalysisResult.self, forKey: .analysisResult)
+        self.poseData = try container.decodeIfPresent([PoseDetectionResult].self, forKey: .poseData)
+        self.notes = try container.decodeIfPresent(String.self, forKey: .notes)
+        self.isRecordedLive = try container.decodeIfPresent(Bool.self, forKey: .isRecordedLive) ?? false
+        self.videoURL = try Self.decodeVideoURL(from: container)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(movementType, forKey: .movementType)
+        try container.encodeIfPresent(technique, forKey: .technique)
+        try container.encodeIfPresent(fightStance, forKey: .fightStance)
+        try container.encode(timestamp, forKey: .timestamp)
+        try container.encodeIfPresent(analysisResult, forKey: .analysisResult)
+        try container.encodeIfPresent(poseData, forKey: .poseData)
+        try container.encodeIfPresent(notes, forKey: .notes)
+        try container.encode(isRecordedLive, forKey: .isRecordedLive)
+        if VideoStorage.isOwned(videoURL) {
+            try container.encode(videoURL.lastPathComponent, forKey: .videoFileName)
+        } else {
+            try container.encode(videoURL, forKey: .videoURL)
+        }
+    }
+
+    private static func decodeVideoURL(from container: KeyedDecodingContainer<CodingKeys>) throws -> URL {
+        if let fileName = try container.decodeIfPresent(String.self, forKey: .videoFileName) {
+            return VideoStorage.videoURL(forFileName: fileName)
+        }
+        let legacyURL = try container.decode(URL.self, forKey: .videoURL)
+        return VideoStorage.resolveStoredURL(legacyURL)
+    }
+}
+
 // MARK: - Session Metadata (for index file)
 
 struct SessionMetadata: Codable {
@@ -83,7 +138,7 @@ struct SessionMetadata: Codable {
     let videoURL: URL
     let hasAnalysis: Bool
     let score: Double?
-    
+
     init(from session: Session) {
         self.id = session.id
         self.movementType = session.movementType
@@ -94,6 +149,45 @@ struct SessionMetadata: Codable {
         self.hasAnalysis = session.hasAnalysis
         self.score = session.score
     }
+
+    // Same video-path portability rules as Session (see extension below).
+    private enum CodingKeys: String, CodingKey {
+        case id, movementType, technique, fightStance, timestamp, hasAnalysis, score
+        case videoFileName
+        case videoURL // legacy: absolute URL written by older builds
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(UUID.self, forKey: .id)
+        self.movementType = try container.decode(MovementType.self, forKey: .movementType)
+        self.technique = try container.decodeIfPresent(MuayThaiTechnique.self, forKey: .technique)
+        self.fightStance = try container.decodeIfPresent(FightStance.self, forKey: .fightStance)
+        self.timestamp = try container.decode(Date.self, forKey: .timestamp)
+        self.hasAnalysis = try container.decode(Bool.self, forKey: .hasAnalysis)
+        self.score = try container.decodeIfPresent(Double.self, forKey: .score)
+        if let fileName = try container.decodeIfPresent(String.self, forKey: .videoFileName) {
+            self.videoURL = VideoStorage.videoURL(forFileName: fileName)
+        } else {
+            self.videoURL = VideoStorage.resolveStoredURL(try container.decode(URL.self, forKey: .videoURL))
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(movementType, forKey: .movementType)
+        try container.encodeIfPresent(technique, forKey: .technique)
+        try container.encodeIfPresent(fightStance, forKey: .fightStance)
+        try container.encode(timestamp, forKey: .timestamp)
+        try container.encode(hasAnalysis, forKey: .hasAnalysis)
+        try container.encodeIfPresent(score, forKey: .score)
+        if VideoStorage.isOwned(videoURL) {
+            try container.encode(videoURL.lastPathComponent, forKey: .videoFileName)
+        } else {
+            try container.encode(videoURL, forKey: .videoURL)
+        }
+    }
 }
 
 // MARK: - Session Manager
@@ -101,22 +195,39 @@ struct SessionMetadata: Codable {
 @MainActor
 class SessionManager: ObservableObject {
     @Published var sessions: [Session] = []
-    
+    /// User-visible description of the most recent storage failure. Saves and
+    /// deletes previously failed silently; the sessions UI presents this.
+    @Published var lastStorageError: String?
+
     private let userDefaults = UserDefaults.standard
     private let sessionsKey = "saved_sessions"
     private let migrationKey = "sessions_migrated_to_files"
-    
+
+    /// Pose sidecars hydrated on demand, keyed by session id. Intentionally not
+    /// @Published: hydration happens during view body evaluation.
+    private var poseDataCache: [UUID: [PoseDetectionResult]] = [:]
+
     private var sessionsDirectory: URL {
         let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         return documentsPath.appendingPathComponent("Sessions", isDirectory: true)
     }
-    
+
+    /// Pose data sidecars. Kept out of session files so launch stays fast, and
+    /// excluded from backup because poses are regenerable from the video.
+    private var posesDirectory: URL {
+        sessionsDirectory.appendingPathComponent("Poses", isDirectory: true)
+    }
+
     private var sessionsIndexURL: URL {
         return sessionsDirectory.appendingPathComponent("sessions_index.json")
     }
-    
+
     private func sessionFileURL(for sessionId: UUID) -> URL {
         return sessionsDirectory.appendingPathComponent("\(sessionId.uuidString).json")
+    }
+
+    private func poseFileURL(for sessionId: UUID) -> URL {
+        return posesDirectory.appendingPathComponent("\(sessionId.uuidString).json")
     }
     
     init() {
@@ -142,9 +253,68 @@ class SessionManager: ObservableObject {
     func deleteSession(_ session: Session) {
         sessions.removeAll { $0.id == session.id }
         deleteSessionFile(session.id)
+        deletePoseFile(session.id)
+        // Reclaim the video unless another session still references the same file.
+        let videoStillReferenced = sessions.contains { $0.videoURL == session.videoURL }
+        if !videoStillReferenced {
+            VideoStorage.deleteIfOwned(session.videoURL)
+        }
         updateSessionsIndex()
     }
+
+    /// Returns the session with pose data attached, loading the sidecar on first access.
+    func hydratedSession(_ session: Session) -> Session {
+        if let poseData = session.poseData, !poseData.isEmpty {
+            return session
+        }
+        if let cached = poseDataCache[session.id] {
+            return sessionByReplacingPoseData(session, poseData: cached)
+        }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        guard let data = try? Data(contentsOf: poseFileURL(for: session.id)),
+              let poseData = try? decoder.decode([PoseDetectionResult].self, from: data),
+              !poseData.isEmpty else {
+            return session
+        }
+        if poseDataCache.count > 4 {
+            poseDataCache.removeAll() // bound memory; sidecars reload cheaply
+        }
+        poseDataCache[session.id] = poseData
+        return sessionByReplacingPoseData(session, poseData: poseData)
+    }
+
+    /// Live copy of the session (by id) with pose data attached.
+    func currentSession(for session: Session) -> Session {
+        hydratedSession(sessions.first { $0.id == session.id } ?? session)
+    }
+
+    private func sessionByReplacingPoseData(_ session: Session, poseData: [PoseDetectionResult]?) -> Session {
+        Session(
+            id: session.id,
+            movementType: session.movementType,
+            technique: session.technique,
+            fightStance: session.fightStance,
+            videoURL: session.videoURL,
+            timestamp: session.timestamp,
+            analysisResult: session.analysisResult,
+            poseData: poseData,
+            notes: session.notes,
+            isRecordedLive: session.isRecordedLive
+        )
+    }
     
+    /// Remove every session, its owned video, and the index (account deletion).
+    func deleteAllData() {
+        for session in sessions {
+            deleteSessionFile(session.id)
+            deletePoseFile(session.id)
+            VideoStorage.deleteIfOwned(session.videoURL)
+        }
+        sessions = []
+        updateSessionsIndex()
+    }
+
     func sessionsForMovement(_ movementType: MovementType) -> [Session] {
         return sessions.filter { $0.movementType == movementType }
     }
@@ -159,35 +329,54 @@ class SessionManager: ObservableObject {
         let fileManager = FileManager.default
         do {
             try fileManager.createDirectory(at: sessionsDirectory, withIntermediateDirectories: true, attributes: nil)
+            var posesURL = posesDirectory
+            try fileManager.createDirectory(at: posesURL, withIntermediateDirectories: true, attributes: nil)
+            var resourceValues = URLResourceValues()
+            resourceValues.isExcludedFromBackup = true
+            try posesURL.setResourceValues(resourceValues)
         } catch {
-            print("❌ SessionManager: Failed to create sessions directory: \(error.localizedDescription)")
+            Log.storage.error("SessionManager: Failed to create sessions directory: \(error.localizedDescription)")
         }
     }
-    
+
     private func saveSession(_ session: Session) {
-        let fileURL = sessionFileURL(for: session.id)
         do {
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
-            let data = try encoder.encode(session)
-            try data.write(to: fileURL, options: [.atomic])
+            // Pose data goes to a sidecar so the session file stays small enough
+            // to load eagerly at launch; sidecars are hydrated on demand.
+            let data = try encoder.encode(sessionByReplacingPoseData(session, poseData: nil))
+            try data.write(to: sessionFileURL(for: session.id), options: [.atomic])
+            if let poseData = session.poseData, !poseData.isEmpty {
+                let poseBytes = try encoder.encode(poseData)
+                try poseBytes.write(to: poseFileURL(for: session.id), options: [.atomic])
+                poseDataCache[session.id] = poseData
+            }
         } catch {
-            print("❌ SessionManager: Failed to save session \(session.id): \(error.localizedDescription)")
+            Log.storage.error("SessionManager: Failed to save session \(session.id): \(error.localizedDescription)")
+            lastStorageError = "Your session couldn't be saved (\(error.localizedDescription)). Free up storage and try again."
         }
     }
-    
+
     private func loadSession(from fileURL: URL) -> Session? {
         do {
             let data = try Data(contentsOf: fileURL)
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
-            return try decoder.decode(Session.self, from: data)
+            let session = try decoder.decode(Session.self, from: data)
+            if let poseData = session.poseData, !poseData.isEmpty {
+                // Legacy file with inline pose data: split it so future launches
+                // don't pay the multi-MB decode, and keep memory lean now.
+                saveSession(session)
+                return sessionByReplacingPoseData(session, poseData: nil)
+            }
+            return session
         } catch {
-            print("❌ SessionManager: Failed to load session from \(fileURL.lastPathComponent): \(error.localizedDescription)")
+            Log.storage.error("SessionManager: Failed to load session from \(fileURL.lastPathComponent): \(error.localizedDescription)")
             return nil
         }
     }
-    
+
     private func deleteSessionFile(_ sessionId: UUID) {
         let fileURL = sessionFileURL(for: sessionId)
         let fileManager = FileManager.default
@@ -196,7 +385,15 @@ class SessionManager: ObservableObject {
                 try fileManager.removeItem(at: fileURL)
             }
         } catch {
-            print("❌ SessionManager: Failed to delete session file \(sessionId): \(error.localizedDescription)")
+            Log.storage.error("SessionManager: Failed to delete session file \(sessionId): \(error.localizedDescription)")
+        }
+    }
+
+    private func deletePoseFile(_ sessionId: UUID) {
+        poseDataCache[sessionId] = nil
+        let fileURL = poseFileURL(for: sessionId)
+        if FileManager.default.fileExists(atPath: fileURL.path) {
+            try? FileManager.default.removeItem(at: fileURL)
         }
     }
     
@@ -208,7 +405,7 @@ class SessionManager: ObservableObject {
             let data = try encoder.encode(metadata)
             try data.write(to: sessionsIndexURL, options: [.atomic])
         } catch {
-            print("❌ SessionManager: Failed to update sessions index: \(error.localizedDescription)")
+            Log.storage.error("SessionManager: Failed to update sessions index: \(error.localizedDescription)")
         }
     }
     
@@ -232,13 +429,13 @@ class SessionManager: ObservableObject {
                 if let session = loadSession(from: fileURL) {
                     loadedSessions.append(session)
                 } else {
-                    print("⚠️ SessionManager: Session file missing for \(meta.id), skipping")
+                    Log.storage.warning("SessionManager: Session file missing for \(meta.id), skipping")
                 }
             }
             
             sessions = loadedSessions
         } catch {
-            print("❌ SessionManager: Failed to load sessions index: \(error.localizedDescription)")
+            Log.storage.error("SessionManager: Failed to load sessions index: \(error.localizedDescription)")
             // Fallback: try loading from individual files
             loadSessionsFromFiles()
         }
@@ -254,6 +451,9 @@ class SessionManager: ObservableObject {
         for fileURL in files {
             if fileURL.lastPathComponent == "sessions_index.json" {
                 continue
+            }
+            if fileURL.hasDirectoryPath {
+                continue // Poses/ sidecar directory
             }
             if let session = loadSession(from: fileURL) {
                 loadedSessions.append(session)
@@ -293,7 +493,7 @@ class SessionManager: ObservableObject {
                 oldSessions = try decoder.decode([Session].self, from: data)
             }
             
-            print("🔄 SessionManager: Migrating \(oldSessions.count) sessions from UserDefaults to file storage")
+            Log.storage.info("SessionManager: Migrating \(oldSessions.count) sessions from UserDefaults to file storage")
             
             // Save each session to file
             for session in oldSessions {
@@ -310,9 +510,9 @@ class SessionManager: ObservableObject {
             // Mark migration as complete
             userDefaults.set(true, forKey: migrationKey)
             
-            print("✅ SessionManager: Migration completed successfully")
+            Log.storage.info("SessionManager: Migration completed successfully")
         } catch {
-            print("❌ SessionManager: Failed to migrate sessions from UserDefaults: \(error.localizedDescription)")
+            Log.storage.error("SessionManager: Failed to migrate sessions from UserDefaults: \(error.localizedDescription)")
             // Mark as migrated anyway to avoid retrying on every launch
             userDefaults.set(true, forKey: migrationKey)
         }

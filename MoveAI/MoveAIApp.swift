@@ -10,6 +10,8 @@ import SwiftUI
 @main
 struct MoveAIApp: App {
     init() {
+        CrashReportManager.shared.start()
+
         // Ensure deterministic UI tests by clearing onboarding-related defaults on launch.
         // Some Xcode test runners reuse the same simulator instance (no fresh clone),
         // which can otherwise cause onboarding to be skipped unexpectedly.

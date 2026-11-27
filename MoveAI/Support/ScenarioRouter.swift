@@ -32,6 +32,7 @@ enum UIScenario: String, CaseIterable {
     case poseOverlayNoPose = "PoseOverlay_noPose"
     case dataInputPrefilled = "DataInput_prefilled"
     case trendsSquatFocus = "Trends_squat_focus"
+    case muayThaiTechniqueSelection = "MuayThai_techniqueSelection"
 }
 
 struct ScenarioSettings {
@@ -162,7 +163,11 @@ private enum ScenarioViews {
         case .homeLoaded:
             return AnyView(MovementMasteryHomeView(sessionManager: sessionManager))
         case .profileLoaded:
-            return AnyView(ProfileView().environmentObject(sessionManager))
+            return AnyView(
+                ProfileView()
+                    .environmentObject(sessionManager)
+                    .environmentObject(AppleAuthManager())
+            )
         case .movementSelectionDefault:
             return AnyView(MovementSelectionView())
         case .onboardingWelcome:
@@ -198,6 +203,8 @@ private enum ScenarioViews {
             return AnyView(PersonalInfoStepView(onComplete: {}))
         case .trendsSquatFocus:
             return AnyView(TrendsView().environmentObject(sessionManager))
+        case .muayThaiTechniqueSelection:
+            return AnyView(MuayThaiTechniqueSelectionView { _, _ in })
         }
     }
 
@@ -270,6 +277,7 @@ private enum ScenarioFixtures {
         case .sessionHistoryLongText:
             return longTextSessions()
         case .movementSelectionDefault,
+             .muayThaiTechniqueSelection,
              .onboardingWelcome,
              .onboardingSignin,
              .onboardingHealth,
