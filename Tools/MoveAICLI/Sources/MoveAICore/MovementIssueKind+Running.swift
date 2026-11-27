@@ -1,0 +1,1 @@
+../../../../MoveAI/Core/Models/MovementIssueKind+Running.swift
