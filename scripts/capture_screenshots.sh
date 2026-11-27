@@ -156,6 +156,8 @@ log "Results will be saved to: $OUTPUT_DIR"
 log "xcresult bundle (temp): $RESULT_BUNDLE_TMP"
 
 set +e
+# Screenshot attachments are .deleteOnSuccess unless the test runner sees this flag.
+export TEST_RUNNER_MOVEAI_KEEP_UI_SCREENSHOTS=1
 xcodebuild test \
   -project "$PROJECT" \
   -scheme "$SCHEME" \

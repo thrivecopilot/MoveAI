@@ -86,6 +86,30 @@ public enum VideoProcessingHelpers {
         return Double(frameRate)
     }
     
+    // MARK: - Shape
+
+    /// Width / height of the video as it is displayed (after its rotation is
+    /// applied). The squat analyzer needs this to turn Vision's picture-relative
+    /// joint positions into true distances and angles; see `PoseNormalizer`.
+    public static func displayAspectRatio(naturalSize: CGSize, preferredTransform: CGAffineTransform) -> Double? {
+        guard naturalSize.width > 0, naturalSize.height > 0 else { return nil }
+        // A 90° or 270° rotation swaps width and height.
+        let isQuarterTurn = abs(preferredTransform.b) > abs(preferredTransform.a)
+        let width = isQuarterTurn ? naturalSize.height : naturalSize.width
+        let height = isQuarterTurn ? naturalSize.width : naturalSize.height
+        return Double(width) / Double(height)
+    }
+
+    /// Displayed width / height of the first video track, or nil if it can't be read.
+    public static func displayAspectRatio(of asset: AVAsset) async -> Double? {
+        guard let videoTrack = try? await asset.loadTracks(withMediaType: .video).first,
+              let naturalSize = try? await videoTrack.load(.naturalSize),
+              let preferredTransform = try? await videoTrack.load(.preferredTransform) else {
+            return nil
+        }
+        return displayAspectRatio(naturalSize: naturalSize, preferredTransform: preferredTransform)
+    }
+
     // MARK: - Orientation
 
     public static func visionOrientation(forPreferredTransform transform: CGAffineTransform) -> CGImagePropertyOrientation {

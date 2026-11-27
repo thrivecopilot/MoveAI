@@ -277,7 +277,7 @@ class VideoProcessor: ObservableObject {
                 var keypoints: [PoseKeypoint] = []
 
                 if let error = error {
-                    print("⚠️ VideoProcessor: Pose detection failed for frame \(index) - \(error.localizedDescription)")
+                    Log.video.warning("VideoProcessor: Pose detection failed for frame \(index) - \(error.localizedDescription)")
                 } else if let observations = request.results as? [VNHumanBodyPoseObservation],
                           let observation = observations.first {
                     // Extract keypoints
@@ -349,7 +349,7 @@ class VideoProcessor: ObservableObject {
 
                     try handler.perform([request])
                 } catch {
-                    print("❌ VideoProcessor: Failed to perform pose detection: \(error.localizedDescription)")
+                    Log.video.error("VideoProcessor: Failed to perform pose detection: \(error.localizedDescription)")
                     let emptyResult = PoseDetectionResult(keypoints: [], frameIndex: index)
                     continuation.resume(returning: emptyResult)
                 }

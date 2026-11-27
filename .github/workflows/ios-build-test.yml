@@ -1,0 +1,132 @@
+# Builds MoveAI for the iOS Simulator and runs the unit tests on a GitHub-hosted
+# Mac, so changes can be checked without a local Xcode.
+#
+# - No code signing: simulator builds don't need it.
+# - UI tests (MoveAIUITests) are not run here.
+# - Runs every test in MoveAITests and prints each result. The run fails only
+#   if a squat-related test doesn't pass (skips included), because some other
+#   tests need on-device pose extraction or local caches.
+# - Every non-Swift file under MoveAITests is copied flat into the test bundle,
+#   so two files with the same name anywhere in that folder (even in different
+#   subfolders) fail the build with "Multiple commands produce".
+#
+name: iOS build and test
+
+# Manual only (Actions tab > iOS build and test > Run workflow). Mac runner
+# minutes count 10x against the account's included Actions minutes.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      # Passed through to the test runner as MOVEAI_TEST_VIDEOS_DIR.
+      TEST_RUNNER_MOVEAI_TEST_VIDEOS_DIR: ${{ github.workspace }}/MoveAITests/TestVideos
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pick Xcode
+        run: |
+          # The project was created with Xcode 16.4 and targets iOS 18.5.
+          if [ -d /Applications/Xcode_16.4.app ]; then sudo xcode-select -s /Applications/Xcode_16.4.app; fi
+          xcodebuild -version
+
+      - name: Pick a simulator
+        id: sim
+        run: |
+          # Newest available iPhone simulator on iOS 18.5 or later.
+          UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import json, re, sys
+          best = None
+          for runtime, devices in json.load(sys.stdin)["devices"].items():
+              m = re.search(r"iOS-(\d+)-(\d+)", runtime)
+              if not m: continue
+              version = (int(m.group(1)), int(m.group(2)))
+              if version < (18, 5): continue
+              for d in devices:
+                  if d["name"].startswith("iPhone") and (best is None or version > best[0]):
+                      best = (version, d["udid"], d["name"])
+          if not best: sys.exit("No iPhone simulator on iOS 18.5 or later")
+          print(best[1]); print(f"{best[2]} (iOS {best[0][0]}.{best[0][1]})", file=sys.stderr)
+          ')
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+
+      - name: Build app and tests
+        id: build
+        run: |
+          set -o pipefail
+          xcodebuild build-for-testing \
+            -project MoveAI.xcodeproj -scheme MoveAI \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            | tee build.log | grep -E "error:|warning: .*deprecated|BUILD (SUCCEEDED|FAILED)|\*\* TEST BUILD" || true
+          grep -q "TEST BUILD SUCCEEDED" build.log
+
+      - name: Unit tests
+        id: tests
+        run: |
+          # Serial, so results stream in order and no simulator clones are booted.
+          set -o pipefail
+          xcodebuild test-without-building \
+            -project MoveAI.xcodeproj -scheme MoveAI \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath build \
+            -resultBundlePath results/unit.xcresult \
+            -parallel-testing-enabled NO \
+            -only-testing:MoveAITests \
+            > unit-tests.log 2>&1 || true
+          grep -E "\*\* TEST|error:" unit-tests.log | tail -5 || true
+
+      - name: Results by test
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          # Prints every test with its result. Fails the run only if a squat test
+          # did not pass (a skip counts as not passing: the new tests skip if
+          # their fixtures are missing). Other failures are listed for reference.
+          xcrun xcresulttool get test-results tests --path results/unit.xcresult > tests.json
+          python3 - <<'PY'
+          import json, sys
+          SQUAT = ("SquatCameraNormalizationTests", "SquatMechanicsSolverTests", "AnalysisSummaryBuilderTests",
+                   "FormFeedbackCodableTests", "VideoOrientationMappingTests")
+          rows = []
+          def walk(node, path):
+              kind = node.get("nodeType")
+              name = node.get("name", "")
+              if kind == "Test Case":
+                  rows.append((path[-1] if path else "?", name, node.get("result", "?")))
+              for child in node.get("children", []):
+                  walk(child, path + ([name] if kind == "Test Suite" else []))
+          for root in json.load(open("tests.json")).get("testNodes", []):
+              walk(root, [])
+          totals = {}
+          for suite, test, result in sorted(rows):
+              totals[result] = totals.get(result, 0) + 1
+              print(f"{result:8} {suite}.{test}")
+          print("\nTotals:", ", ".join(f"{k} {v}" for k, v in sorted(totals.items())))
+          bad = [(s, t, r) for s, t, r in rows if s in SQUAT and r != "Passed"]
+          ran = {s for s, _, _ in rows}
+          missing = [s for s in SQUAT if s not in ran]
+          if bad or missing:
+              print("\nSquat tests that did not pass:", bad, "missing classes:", missing)
+              sys.exit(1)
+          print("\nAll squat tests passed.")
+          PY
+
+      - name: Upload logs and results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-test-results
+          path: |
+            build.log
+            unit-tests.log
+            tests.json
+            results/
+          retention-days: 14

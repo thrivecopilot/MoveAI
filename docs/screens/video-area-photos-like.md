@@ -39,6 +39,9 @@
 
 ---
 
-## Open / TODO
+## Resolved: video width on device
 
-- **Video width on device**: Video rectangle still doesn't fill full screen horizontally like Photos; playbar extends further. Tried `.ignoresSafeArea(edges: .horizontal)` on GeometryReader and NavigationStack without effect. Consider explicit full-screen width (e.g. `UIScreen.main.bounds.width`) for the video container. See `tasks/todo.md`.
+- The video rectangle previously didn't fill the full screen width like Photos (playbar extended further). `.ignoresSafeArea(edges: .horizontal)` had no effect because horizontal safe-area insets are zero in portrait — the narrower proposal came from parent containers.
+- **Fix**: the video surface in `VideoReviewLayoutView` gets an explicit `DeviceInfo.screenWidth` frame, independent of what the parent proposes. The player clips its own content, so the surface may overflow a narrower parent harmlessly.
+- **Regression guard**: `assertVideoSurfaceFullBleed()` in `StructuralUITests` checks the layout probe (`videoMinX <= 0`, `videoMaxX >= containerWidth`) in medium/collapsed/expanded states.
+- Caveat: explicit screen width assumes full-screen presentation on iPhone; revisit if this screen is ever shown in a non-full-width container (iPad sheet, split view).

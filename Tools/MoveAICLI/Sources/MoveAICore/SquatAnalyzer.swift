@@ -1,0 +1,1 @@
+../../../../MoveAI/Core/Services/SquatAnalyzer.swift

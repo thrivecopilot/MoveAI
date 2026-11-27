@@ -183,11 +183,12 @@ struct HealthPermissionStepView: View {
             do {
                 let profile = try await healthService.fetchProfile()
                 await MainActor.run {
+                    // Stored profile units are metric (see ProfileUnits).
                     if profile.heightFeet > 0 {
-                        userHeight = Double(profile.heightFeet * 12 + profile.heightInches)
+                        userHeight = profile.heightInCm
                     }
                     if profile.weightLbs > 0 {
-                        userWeight = Double(profile.weightLbs)
+                        userWeight = profile.weightInKg
                     }
                     if profile.age > 0 {
                         userAge = profile.age
@@ -204,15 +205,11 @@ struct HealthPermissionStepView: View {
     }
 
     private func formatHeight(_ heightInCm: Double) -> String {
-        let totalInches = heightInCm / 2.54
-        let feet = Int(totalInches / 12)
-        let inches = Int(totalInches.truncatingRemainder(dividingBy: 12))
-        return "\(feet)'\(inches)\""
+        ProfileUnits.formatHeight(cm: heightInCm)
     }
 
     private func formatWeight(_ weightInKg: Double) -> String {
-        let pounds = weightInKg * 2.20462
-        return "\(Int(pounds)) lbs"
+        ProfileUnits.formatWeight(kg: weightInKg)
     }
 }
 

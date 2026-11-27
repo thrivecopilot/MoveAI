@@ -14,7 +14,14 @@ struct SquatAnalyzer {
     // MARK: - Main Analysis Method
     
     /// Analyze a full sequence of poses to generate comprehensive squat analysis
-    static func analyzeFullSequence(_ poseHistory: [PoseDetectionResult]) -> Result<SquatAnalysisResult, SquatAnalysisError> {
+    ///
+    /// `videoAspect` (video width / height, as displayed) turns on camera
+    /// normalization: poses are made isotropic, anchored to the feet and scaled to
+    /// the body (`PoseNormalizer`), the view is judged from torso width, and rep
+    /// candidates that are not squats are dropped (`SquatRepFilter`). The app
+    /// passes it. Without it the poses are analyzed in picture coordinates, as
+    /// before, which is what the cached regression fixtures were recorded with.
+    static func analyzeFullSequence(_ poseHistory: [PoseDetectionResult], videoAspect: Double? = nil) -> Result<SquatAnalysisResult, SquatAnalysisError> {
         // Check for empty pose history
         guard !poseHistory.isEmpty else {
             return .failure(.noPoseData)
@@ -42,13 +49,13 @@ struct SquatAnalyzer {
         }
         
         // Detect camera angle from pose data
-        let camera = detectCameraAngle(from: poseHistory)
-        let cameraAngle = camera.angle
+        var camera = detectCameraAngle(from: poseHistory)
+        let normalizeCamera = videoAspect != nil
         
         // Filter out frames with insufficient keypoints
         // Accept frames with (leftHip AND leftKnee) OR (rightHip AND rightKnee)
         var filteredFrames: [(originalIndex: Int, reason: String)] = []
-        let validPoses = poseHistory.enumerated().compactMap { (index, pose) -> PoseDetectionResult? in
+        let unnormalizedValidPoses = poseHistory.enumerated().compactMap { (index, pose) -> PoseDetectionResult? in
             if PoseAnalysisHelpers.hasSameSideHipAndKnee(pose, minConfidence: 0.3) {
                 return pose
             } else {
@@ -72,6 +79,17 @@ struct SquatAnalyzer {
             }
         }
         
+        // Camera normalization (see PoseNormalizer). The view is judged from the
+        // normalized poses, so it does not depend on how far away the camera is.
+        let validPoses: [PoseDetectionResult]
+        if let aspect = videoAspect {
+            validPoses = PoseNormalizer.normalize(unnormalizedValidPoses, aspect: aspect)
+            camera = PoseNormalizer.classifyView(validPoses)
+        } else {
+            validPoses = unnormalizedValidPoses
+        }
+        let cameraAngle = camera.angle
+
         // Debug: Log filtering results
         print("🔍 SquatAnalyzer: Total pose history: \(poseHistory.count) frames, Valid poses after filtering: \(validPoses.count) frames")
         if !filteredFrames.isEmpty {
@@ -169,7 +187,14 @@ struct SquatAnalyzer {
         
         // Detect reps (descent/ascent cycles)
         let minDepthThreshold = 0.10  // Minimum 10% change in normalized height to count as a rep
-        let reps = detectReps(validPoses, smoothedHeights: smoothedHeights, rawHeights: hipHeights, startHeight: startingHipHeight, minDepthThreshold: minDepthThreshold)
+        var reps = detectReps(validPoses, smoothedHeights: smoothedHeights, rawHeights: hipHeights, startHeight: startingHipHeight, minDepthThreshold: minDepthThreshold)
+        if normalizeCamera {
+            // Drop candidates that are not squats (walk-out, re-rack, shifting about).
+            reps = SquatRepFilter.keepSquatReps(reps, poses: validPoses, smoothedHeights: smoothedHeights)
+            guard !reps.isEmpty else {
+                return .failure(.noMovementPhasesDetected)
+            }
+        }
         
         // Detect phases (for backward compatibility, but now we have reps)
         let phases = detectPhases(validPoses)
@@ -358,7 +383,10 @@ struct SquatAnalyzer {
             reps: reps,
             depthMetrics: depthMetricsWithReps.isEmpty ? depthMetrics : depthMetricsWithReps,
             kneeMetrics: kneeMetricsWithReps.isEmpty ? kneeMetrics : kneeMetricsWithReps,
-            formDeviations: formDeviations
+            formDeviations: formDeviations,
+            // From the front, hip height against knee height can't be read reliably
+            // (the thighs point at the camera), so depth is not scored there.
+            judgeDepth: !(normalizeCamera && cameraAngle == .front)
         )
         
         // Generate feedback (using relative timestamps from start of recording)
@@ -387,7 +415,8 @@ struct SquatAnalyzer {
             worstDepth: worstDepth,
             worstKneeAngle: worstKneeAngle,
             overallScore: score,
-            feedback: feedback
+            feedback: feedback,
+            cameraAngle: cameraAngle
         )
         
         return .success(result)
@@ -1851,7 +1880,8 @@ struct SquatAnalyzer {
         reps: [SquatRep],
         depthMetrics: [DepthAnalysis],
         kneeMetrics: [KneeAnalysis],
-        formDeviations: [FormDeviationAnalyzer.FormDeviation] = []
+        formDeviations: [FormDeviationAnalyzer.FormDeviation] = [],
+        judgeDepth: Bool = true
     ) -> Double {
         guard !reps.isEmpty else {
             return 0.0
@@ -1872,8 +1902,10 @@ struct SquatAnalyzer {
             let repDepthMetrics = depthByRep[rep.repNumber] ?? []
             let repKneeMetrics = kneeByRep[rep.repNumber] ?? []
             
-            // Get worst metrics for this rep (or best available)
-            let repWorstDepth = repDepthMetrics.min { $0.depthPercentage < $1.depthPercentage }
+            // Score depth from the rep's deepest point. (This used to take the frame with
+            // the lowest depth percentage, i.e. standing, which cost every rep 30 points.)
+            let repDeepest = repDepthMetrics.first(where: { $0.isAtDepth })
+                ?? repDepthMetrics.max { $0.depthPercentage < $1.depthPercentage }
             let repWorstKnee = repKneeMetrics.min { $0.minAngle < $1.minAngle }
             
             // Penalize if rep is not full
@@ -1882,7 +1914,9 @@ struct SquatAnalyzer {
             }
             
             // Depth scoring (30% weight)
-            if let depth = repWorstDepth {
+            if !judgeDepth {
+                // Depth can't be judged from this view; neither reward nor penalise it.
+            } else if let depth = repDeepest {
                 if depth.isAtDepth {
                     // Full points for proper depth
                 } else if depth.depthPercentage > 80 {
@@ -2191,8 +2225,9 @@ struct SquatAnalyzer {
         var repDepthStatus: [Int: (isAtDepth: Bool, depthPercentage: Double)] = [:]
         for rep in reps {
             let repDepthMetrics = depthByRep[rep.repNumber] ?? []
-            // Find the deepest point (maximum depth percentage) for this rep
-            if let deepestPoint = repDepthMetrics.max(by: { $0.depthPercentage < $1.depthPercentage }) {
+            // Same rule as the score: a rep reached depth if any of its frames did.
+            if let deepestPoint = repDepthMetrics.first(where: { $0.isAtDepth })
+                ?? repDepthMetrics.max(by: { $0.depthPercentage < $1.depthPercentage }) {
                 repDepthStatus[rep.repNumber] = (deepestPoint.isAtDepth, deepestPoint.depthPercentage)
             }
         }
@@ -3003,6 +3038,9 @@ struct SquatAnalysisResult: Codable {
     let worstKneeAngle: KneeAnalysis?
     let overallScore: Double
     let feedback: [FormFeedback]
+    /// The view the analysis settled on. Optional so results saved before this
+    /// field existed still decode.
+    var cameraAngle: CameraAngle? = nil
 }
 
 struct SquatRep: Codable, Identifiable {

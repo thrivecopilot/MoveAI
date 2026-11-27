@@ -12,6 +12,9 @@ struct OverviewTabView: View {
 
     let analysisResult: AnalysisResult
     var isCompact: Bool = false
+    /// When set, the auto-detected technique row offers a Change action
+    /// (re-analyzes existing poses with an explicit technique).
+    var onChangeTechnique: (() -> Void)? = nil
 
     private static let nonActionableMuayThaiIssueKinds: Set<MovementIssueKind> = [
         .muayThaiCaptureQualityLimited,
@@ -89,12 +92,59 @@ struct OverviewTabView: View {
         ScrollView {
             VStack(spacing: 20) {
                 scoreAndSummaryRow
+                detectedTechniqueSection
                 detectionStatusSection
                 topFixesSection
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 16)
         }
+    }
+
+    /// Auto-detection is a guess; surface it (with confidence) and let the user
+    /// correct it instead of silently coaching the wrong technique.
+    private var detectedTechniqueSection: some View {
+        guard let detected = analysisResult.detectedTechnique else {
+            return AnyView(EmptyView())
+        }
+
+        let confidenceText: String? = analysisResult.detectionConfidence.map {
+            "\(Int(($0 * 100).rounded()))% confidence"
+        }
+
+        return AnyView(
+            HStack(alignment: .center, spacing: 8) {
+                Image(systemName: "wand.and.stars")
+                    .font(.subheadline)
+                    .foregroundColor(CoachTheme.Palette.accent)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Detected: \(detected.displayName)")
+                        .font(.subheadline.weight(.semibold))
+                    if let confidenceText {
+                        Text(confidenceText)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                Spacer(minLength: 0)
+                if let onChangeTechnique {
+                    Button("Change", action: onChangeTechnique)
+                        .font(.subheadline.weight(.semibold))
+                        .accessibilityIdentifier("WorkoutSummary.ChangeTechniqueButton")
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(CoachTheme.Palette.surfaceFill(for: colorScheme))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(CoachTheme.Palette.stroke(for: colorScheme), lineWidth: 1)
+            )
+            .accessibilityIdentifier("WorkoutSummary.DetectedTechniqueSection")
+        )
     }
 
     private var compactBody: some View {

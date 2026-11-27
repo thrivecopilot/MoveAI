@@ -16,7 +16,7 @@ class CameraService: NSObject, ObservableObject {
     @Published var recordingDuration: TimeInterval = 0
     @Published var hasPermission = false {
         didSet {
-            print("📷 CameraService: hasPermission changed from \(oldValue) to \(hasPermission)")
+            Log.video.debug("📷 CameraService: hasPermission changed from \(oldValue) to \(self.hasPermission)")
         }
     }
     
@@ -35,44 +35,44 @@ class CameraService: NSObject, ObservableObject {
     
     override init() {
         super.init()
-        print("📷 CameraService: Initializing CameraService")
-        print("📷 CameraService: Initial hasPermission: \(hasPermission)")
+        Log.video.debug("📷 CameraService: Initializing CameraService")
+        Log.video.debug("📷 CameraService: Initial hasPermission: \(self.hasPermission)")
         checkPermissions()
     }
     
     // MARK: - Permission Management
     
     func checkPermissions() {
-        print("📷 CameraService: Checking camera permissions...")
+        Log.video.debug("📷 CameraService: Checking camera permissions...")
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized:
-            print("✅ CameraService: Camera permission already granted")
+            Log.video.debug("✅ CameraService: Camera permission already granted")
             hasPermission = true
             // Note: setupCaptureSession() will be called by requestPermissionAndSetup()
         case .notDetermined:
-            print("❓ CameraService: Camera permission not determined, requesting...")
+            Log.video.debug("❓ CameraService: Camera permission not determined, requesting...")
             requestPermission()
         case .denied, .restricted:
-            print("❌ CameraService: Camera permission denied or restricted")
+            Log.video.error("CameraService: Camera permission denied or restricted")
             hasPermission = false
             errorMessage = "Camera access is required to record movements"
         @unknown default:
-            print("❌ CameraService: Unknown camera permission status")
+            Log.video.error("CameraService: Unknown camera permission status")
             hasPermission = false
         }
     }
     
     private func requestPermission() {
-        print("📷 CameraService: Requesting camera permission...")
+        Log.video.debug("📷 CameraService: Requesting camera permission...")
         AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
             DispatchQueue.main.async {
-                print("📷 CameraService: Permission request result: \(granted)")
+                Log.video.debug("📷 CameraService: Permission request result: \(granted)")
                 self?.hasPermission = granted
                 if granted {
-                    print("✅ CameraService: Permission granted, setting up capture session...")
+                    Log.video.debug("✅ CameraService: Permission granted, setting up capture session...")
                     self?.setupCaptureSession()
                 } else {
-                    print("❌ CameraService: Permission denied")
+                    Log.video.error("CameraService: Permission denied")
                     self?.errorMessage = "Camera access denied. Please enable in Settings."
                 }
             }
@@ -83,11 +83,11 @@ class CameraService: NSObject, ObservableObject {
     
     func setupCaptureSession() {
         guard hasPermission else { 
-            print("❌ CameraService: No permission to setup capture session")
+            Log.video.error("CameraService: No permission to setup capture session")
             return 
         }
         
-        print("📷 CameraService: Setting up capture session...")
+        Log.video.debug("📷 CameraService: Setting up capture session...")
         
         captureSession.beginConfiguration()
         
@@ -101,23 +101,23 @@ class CameraService: NSObject, ObservableObject {
               let videoInput = try? AVCaptureDeviceInput(device: videoDevice),
               captureSession.canAddInput(videoInput) else {
             errorMessage = "Failed to setup camera input"
-            print("❌ CameraService: Failed to setup camera input")
+            Log.video.error("CameraService: Failed to setup camera input")
             captureSession.commitConfiguration()
             return
         }
         
         self.videoInput = videoInput
         captureSession.addInput(videoInput)
-        print("✅ CameraService: Video input added for \(currentCameraPosition == .back ? "back" : "front") camera")
+        Log.video.debug("✅ CameraService: Video input added for \(self.currentCameraPosition == .back ? "back" : "front") camera")
         
         // Add video output for recording
         let movieOutput = AVCaptureMovieFileOutput()
         if captureSession.canAddOutput(movieOutput) {
             captureSession.addOutput(movieOutput)
             videoOutput = movieOutput
-            print("✅ CameraService: Video output added")
+            Log.video.debug("✅ CameraService: Video output added")
         } else {
-            print("❌ CameraService: Failed to add video output")
+            Log.video.error("CameraService: Failed to add video output")
         }
         
         // Add video data output for pose detection
@@ -128,9 +128,9 @@ class CameraService: NSObject, ObservableObject {
         if captureSession.canAddOutput(dataOutput) {
             captureSession.addOutput(dataOutput)
             videoDataOutput = dataOutput
-            print("✅ CameraService: Video data output added for pose detection")
+            Log.video.debug("✅ CameraService: Video data output added for pose detection")
         } else {
-            print("❌ CameraService: Failed to add video data output")
+            Log.video.error("CameraService: Failed to add video data output")
         }
         
         // Configure video output settings
@@ -141,7 +141,7 @@ class CameraService: NSObject, ObservableObject {
         }
         
         captureSession.commitConfiguration()
-        print("✅ CameraService: Capture session configured successfully")
+        Log.video.debug("✅ CameraService: Capture session configured successfully")
     }
     
     // MARK: - Recording Control
@@ -194,7 +194,7 @@ class CameraService: NSObject, ObservableObject {
         guard let videoOutput = videoDataOutput,
               let connection = videoOutput.connection(with: .video),
               let videoDevice = videoInput?.device else {
-            print("❌ CameraService: Cannot get video dimensions - no video output or device")
+            Log.video.error("CameraService: Cannot get video dimensions - no video output or device")
             return CGSize(width: 1920, height: 1080) // Default fallback
         }
         
@@ -202,19 +202,19 @@ class CameraService: NSObject, ObservableObject {
         let dimensions = CMVideoFormatDescriptionGetDimensions(formatDescription)
         let size = CGSize(width: Int(dimensions.width), height: Int(dimensions.height))
         
-        print("📷 CameraService: Video dimensions: \(size)")
+        Log.video.debug("📷 CameraService: Video dimensions: \(String(describing: size))")
         return size
     }
     
     // MARK: - Permission & Setup Management
     
     func requestPermissionAndSetup(completion: (() -> Void)? = nil) {
-        print("📷 CameraService: Requesting permission and setting up...")
+        Log.video.debug("📷 CameraService: Requesting permission and setting up...")
         checkPermissions()
         
         // If permission is already granted, set up the capture session
         if hasPermission {
-            print("📷 CameraService: Permission already granted, setting up capture session...")
+            Log.video.debug("📷 CameraService: Permission already granted, setting up capture session...")
             setupCaptureSession()
             completion?()
         }
@@ -224,27 +224,27 @@ class CameraService: NSObject, ObservableObject {
     
     func startSession() {
         guard !captureSession.isRunning else { 
-            print("📷 CameraService: Session already running")
+            Log.video.debug("📷 CameraService: Session already running")
             return 
         }
         
-        print("📷 CameraService: Starting capture session...")
+        Log.video.debug("📷 CameraService: Starting capture session...")
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             self?.captureSession.startRunning()
-            print("✅ CameraService: Capture session started")
+            Log.video.debug("✅ CameraService: Capture session started")
         }
     }
     
     func stopSession() {
         guard captureSession.isRunning else { 
-            print("📷 CameraService: Session already stopped")
+            Log.video.debug("📷 CameraService: Session already stopped")
             return 
         }
         
-        print("📷 CameraService: Stopping capture session...")
+        Log.video.debug("📷 CameraService: Stopping capture session...")
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             self?.captureSession.stopRunning()
-            print("✅ CameraService: Capture session stopped")
+            Log.video.debug("✅ CameraService: Capture session stopped")
         }
     }
     
@@ -253,13 +253,13 @@ class CameraService: NSObject, ObservableObject {
     func enablePoseDetection() {
         isPoseDetectionEnabled = true
         poseAnalysisService.reset()
-        print("✅ CameraService: Pose detection enabled")
+        Log.video.debug("✅ CameraService: Pose detection enabled")
     }
     
     func disablePoseDetection() {
         isPoseDetectionEnabled = false
         poseAnalysisService.reset()
-        print("📷 CameraService: Pose detection disabled")
+        Log.video.debug("📷 CameraService: Pose detection disabled")
     }
 }
 
@@ -280,17 +280,17 @@ extension CameraService: AVCaptureFileOutputRecordingDelegate {
 extension CameraService: AVCaptureVideoDataOutputSampleBufferDelegate {
     nonisolated func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { 
-            print("❌ CameraService: Failed to get pixel buffer from sample buffer")
+            Log.video.error("CameraService: Failed to get pixel buffer from sample buffer")
             return 
         }
         
         Task { @MainActor in
             // Only process frames when pose detection is enabled
             guard isPoseDetectionEnabled else { 
-                print("⚠️ CameraService: Pose detection disabled, skipping frame")
+                Log.video.warning("CameraService: Pose detection disabled, skipping frame")
                 return 
             }
-            print("📷 CameraService: Processing frame for pose detection - isPoseDetectionEnabled: \(isPoseDetectionEnabled)")
+            Log.video.debug("📷 CameraService: Processing frame for pose detection - isPoseDetectionEnabled: \(self.isPoseDetectionEnabled)")
             await poseAnalysisService.analyzeFrame(pixelBuffer)
         }
     }
@@ -312,12 +312,12 @@ extension CameraService: AVCaptureVideoDataOutputSampleBufferDelegate {
         guard let videoDevice = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: currentCameraPosition),
               let newVideoInput = try? AVCaptureDeviceInput(device: videoDevice),
               captureSession.canAddInput(newVideoInput) else {
-            print("❌ CameraService: Failed to flip camera")
+            Log.video.error("CameraService: Failed to flip camera")
             return
         }
         
         self.videoInput = newVideoInput
         captureSession.addInput(newVideoInput)
-        print("✅ CameraService: Camera flipped to \(currentCameraPosition == .back ? "back" : "front")")
+        Log.video.debug("✅ CameraService: Camera flipped to \(self.currentCameraPosition == .back ? "back" : "front")")
     }
 }

@@ -60,10 +60,37 @@ class AppleAuthManager: ObservableObject {
         keychain.delete(forKey: userIdentifierKey)
         keychain.delete(forKey: userEmailKey)
         keychain.delete(forKey: userFullNameKey)
-        
+
         // Reset state
         currentUser = nil
         isSignedIn = false
+    }
+
+    /// Sign out if the stored Apple ID credential has been revoked or no longer
+    /// exists. Apple requires apps using Sign in with Apple to handle revocation.
+    /// No-op when there is no stored credential (e.g. UI-test sessions that set
+    /// the onboarding flag without a real sign-in).
+    func validateCredentialState() async {
+        guard let identifier = keychain.load(forKey: userIdentifierKey),
+              !identifier.isEmpty else {
+            return
+        }
+
+        let provider = ASAuthorizationAppleIDProvider()
+        let state: ASAuthorizationAppleIDProvider.CredentialState = await withCheckedContinuation { continuation in
+            provider.getCredentialState(forUserID: identifier) { state, _ in
+                continuation.resume(returning: state)
+            }
+        }
+
+        switch state {
+        case .revoked, .notFound:
+            signOut()
+        case .authorized, .transferred:
+            break
+        @unknown default:
+            break
+        }
     }
     
     // MARK: - Private Methods

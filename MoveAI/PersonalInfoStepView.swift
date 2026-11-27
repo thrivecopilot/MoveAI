@@ -141,16 +141,18 @@ struct PersonalInfoStepView: View {
         .accessibilityElement(children: .contain)
         .onAppear {
             if userHeight > 0 {
-                let totalInches = userHeight / 2.54
-                heightFeet = Int(totalInches / 12)
-                heightInches = Int(totalInches.truncatingRemainder(dividingBy: 12))
+                // Round before splitting: truncation turns 177.8cm (69.99")
+                // into 5'9" and shrinks the stored height on every edit.
+                let totalInches = Int((userHeight / ProfileUnits.centimetersPerInch).rounded())
+                heightFeet = totalInches / 12
+                heightInches = totalInches % 12
             } else {
                 heightFeet = 5
                 heightInches = 8
             }
 
             if userWeight > 0 {
-                weightPounds = userWeight * 2.20462
+                weightPounds = (userWeight * ProfileUnits.poundsPerKilogram).rounded()
             } else {
                 weightPounds = 150
             }
@@ -176,11 +178,9 @@ struct PersonalInfoStepView: View {
 
     private func updateProfile() {
         let totalInches = Double(heightFeet * 12 + heightInches)
-        let heightInCm = totalInches * 2.54
-        let weightInKg = weightPounds * 0.453592
-
-        userHeight = heightInCm
-        userWeight = weightInKg
+        // Inverse of the onAppear conversions so values round-trip exactly.
+        userHeight = totalInches * ProfileUnits.centimetersPerInch
+        userWeight = weightPounds / ProfileUnits.poundsPerKilogram
         userAge = age
     }
 }

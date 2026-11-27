@@ -198,6 +198,19 @@ enum MuayThaiLabeledFixtureRunner {
 
                 print("⚠️ Cache provenance mismatch for \(fixture.id). Re-extracting.")
             } else {
+                // File mtimes churn with git checkouts and repo moves; the recorded
+                // content hash is the authoritative provenance. If it still matches,
+                // the cache is valid regardless of timestamps.
+                if try cacheProvenanceMatches(
+                    fixture: fixture,
+                    videoSHA256: context.videoSHA256,
+                    cacheURL: resolvedCacheURL,
+                    testVideosDir: testVideosDir
+                ) {
+                    print("ℹ️ Cache mtime older than video for \(fixture.id), but video hash matches recorded provenance. Using cached poses.")
+                    return cached
+                }
+
                 guard extractionEnabled else {
                     throw RunnerError.cacheUnavailable(
                         fixture.id,

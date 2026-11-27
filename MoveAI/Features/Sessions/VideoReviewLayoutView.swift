@@ -50,6 +50,7 @@ struct VideoReviewLayoutView: View {
     @State private var isEditingNotes = false
     @State private var isAnalyzing = false
     @State private var analysisErrorMessage: String?
+    @State private var showingTechniquePicker = false
     @State private var cueOverlay: CoachingCueOverlay?
     @State private var pausedCueTask: Task<Void, Never>?
     @State private var playbackBarHeight: CGFloat = 0
@@ -116,10 +117,14 @@ struct VideoReviewLayoutView: View {
                         .ignoresSafeArea()
                     
                     // Video fills the band edge-to-edge horizontally (Photos-like).
+                    // Explicit screen width: parent containers (nested NavigationStack /
+                    // pushed destination) can propose a narrower width on device, and
+                    // horizontal safe-area insets are zero in portrait, so
+                    // .ignoresSafeArea(edges: .horizontal) cannot recover the gap.
+                    // The player clips its own content, so no outer .clipped() is needed.
                     videoSection(constrainedHeight: totalHeight, cueTopPadding: topBarHeight + 12)
+                        .frame(width: DeviceInfo.screenWidth)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                        .clipped()
-                        .ignoresSafeArea(edges: .horizontal)
                         .background(
                             GeometryReader { proxy in
                                 Color.clear.preference(
@@ -165,7 +170,6 @@ struct VideoReviewLayoutView: View {
                 .accessibilityValue(probeValue)
                 .accessibilityElement(children: .contain)
             }
-            .ignoresSafeArea(edges: .horizontal)
             .safeAreaInset(edge: .top) {
                 topBar(topInset: 0)
             }
@@ -212,8 +216,13 @@ struct VideoReviewLayoutView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .navigationBar)
             .toolbar(.hidden, for: .tabBar)
+            .sheet(isPresented: $showingTechniquePicker) {
+                MuayThaiTechniqueSelectionView { technique, stance in
+                    showingTechniquePicker = false
+                    applyTechniqueChange(technique: technique, stance: stance)
+                }
+            }
         }
-        .ignoresSafeArea(edges: .horizontal)
         .onAppear {
             notes = session.notes ?? ""
             tabBarVisibility.isHidden = true
@@ -257,10 +266,11 @@ struct VideoReviewLayoutView: View {
     }
     
     private func videoSection(constrainedHeight: CGFloat, cueTopPadding: CGFloat) -> some View {
-        let current = sessionManager.sessions.first(where: { $0.id == session.id }) ?? session
+        // Hydrated copy: pose data lives in a sidecar file and is loaded on demand.
+        let current = sessionManager.currentSession(for: session)
         return VideoPlayerView(
             videoURL: session.videoURL,
-            poseData: session.poseData,
+            poseData: current.poseData,
             isRecordedLive: session.isRecordedLive,
             analysisResult: current.analysisResult,
             constrainedHeight: constrainedHeight,
@@ -377,7 +387,13 @@ struct VideoReviewLayoutView: View {
     @ViewBuilder
     private func overviewTabContent(using session: Session) -> some View {
         if let result = session.analysisResult {
-            OverviewTabView(analysisResult: result, isCompact: sheetState == .medium)
+            OverviewTabView(
+                analysisResult: result,
+                isCompact: sheetState == .medium,
+                onChangeTechnique: session.movementType == .muayThai
+                    ? { showingTechniquePicker = true }
+                    : nil
+            )
         } else if isAnalyzing {
             analysisLoadingView
         } else if analysisErrorMessage != nil {
@@ -484,16 +500,52 @@ struct VideoReviewLayoutView: View {
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 24)
             }
-            Button("Try Again") {
-                Task { await maybeStartAnalysis(force: true) }
+            if session.movementType == .muayThai {
+                // Auto-detect failures are deterministic: retrying the same poses
+                // fails identically. Picking the technique manually is the real
+                // recovery path.
+                Button("Choose Technique") {
+                    showingTechniquePicker = true
+                }
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("VideoReview.ChooseTechniqueButton")
+            } else {
+                Button("Try Again") {
+                    Task { await maybeStartAnalysis(force: true) }
+                }
+                .buttonStyle(.borderedProminent)
             }
-            .buttonStyle(.borderedProminent)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+
+    /// Re-analyze the existing poses with an explicitly chosen technique/stance
+    /// (recovery from failed or wrong auto-detection; no re-recording needed).
+    private func applyTechniqueChange(technique: MuayThaiTechnique?, stance: FightStance?) {
+        let current = sessionManager.sessions.first(where: { $0.id == session.id }) ?? session
+        let updated = Session(
+            id: current.id,
+            movementType: current.movementType,
+            technique: technique,
+            fightStance: stance,
+            videoURL: current.videoURL,
+            timestamp: current.timestamp,
+            analysisResult: nil,
+            poseData: current.poseData,
+            notes: current.notes,
+            isRecordedLive: current.isRecordedLive
+        )
+        sessionManager.updateSession(updated)
+        analysisErrorMessage = nil
+        reviewModel.setAnalysisResult(nil)
+        // Mark analyzing before the forced run so the result-change-triggered
+        // .task doesn't start a second concurrent analysis.
+        isAnalyzing = true
+        Task { await maybeStartAnalysis(force: true) }
+    }
     
     private func maybeStartAnalysis(force: Bool = false) async {
-        let current = sessionManager.sessions.first(where: { $0.id == session.id }) ?? session
+        let current = sessionManager.currentSession(for: session)
         guard current.analysisResult == nil else { return }
         guard let poseData = current.poseData, !poseData.isEmpty else { return }
         guard force || !isAnalyzing else { return }

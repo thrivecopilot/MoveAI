@@ -1,0 +1,1 @@
+../../../../MoveAI/Core/Utilities/SquatMechanicsConfig.swift

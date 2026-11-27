@@ -113,7 +113,11 @@ struct CameraCaptureView: View {
                     .padding()
                 }
                 .background(Color.black.opacity(0.3))
-                
+
+                if movementType == .muayThai, !cameraService.isRecording {
+                    captureTipBanner
+                }
+
                 Spacer()
                 
                 // Bottom controls
@@ -248,6 +252,26 @@ struct CameraCaptureView: View {
         }
     }
     
+    /// One-line filming guidance; camera angle is the biggest Muay Thai
+    /// detection-quality lever (see tasks/muay-thai-warning-flow-plan.md).
+    private var captureTipBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "viewfinder")
+                .font(.caption)
+            Text(technique?.captureTip ?? MuayThaiTechnique.autoDetectCaptureTip)
+                .font(.caption)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .foregroundColor(.white)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color.black.opacity(0.55))
+        .cornerRadius(12)
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .accessibilityIdentifier("Camera.CaptureTip")
+    }
+
     private func toggleRecording() {
         if cameraService.isRecording {
             stopRecording()
