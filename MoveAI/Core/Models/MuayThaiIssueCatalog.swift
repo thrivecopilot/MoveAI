@@ -320,6 +320,16 @@ enum MuayThaiIssueCatalog {
         entries(for: technique).filter { $0.detectionSupport == .blocked }
     }
 
+    /// Best detection support available across a technique's catalog entries.
+    /// Drives the coverage badge in the technique picker so users know how deep
+    /// the analysis goes before they record.
+    static func coverage(for technique: MuayThaiTechnique) -> MuayThaiDetectionSupport {
+        let supports = entries(for: technique).map(\.detectionSupport)
+        if supports.contains(.supported) { return .supported }
+        if supports.contains(.partial) { return .partial }
+        return .blocked
+    }
+
     private static func make(
         technique: MuayThaiTechnique,
         category: MuayThaiTechniqueCategory,

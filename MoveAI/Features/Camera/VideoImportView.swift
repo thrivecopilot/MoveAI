@@ -79,8 +79,18 @@ struct VideoImportView: View {
         }
     }
     
+    /// Movement tips, with the technique-specific filming angle first for Muay
+    /// Thai — camera angle is the biggest detection-quality lever.
+    private var captureTips: [String] {
+        var tips = VideoCaptureTips.tipsForMovement(movementType)
+        if movementType == .muayThai {
+            tips.insert(technique?.captureTip ?? MuayThaiTechnique.autoDetectCaptureTip, at: 0)
+        }
+        return tips
+    }
+
     // MARK: - Selection View
-    
+
     private var selectionView: some View {
         VStack(spacing: 32) {
             // Icon
@@ -106,7 +116,7 @@ struct VideoImportView: View {
                 Text("Tips for best results:")
                     .font(.headline)
                 
-                ForEach(VideoCaptureTips.tipsForMovement(movementType), id: \.self) { tip in
+                ForEach(captureTips, id: \.self) { tip in
                     HStack(alignment: .top, spacing: 8) {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundColor(.green)
@@ -203,20 +213,21 @@ struct VideoImportView: View {
             // Prefer file-based transfer for reliability on longer clips.
             // Fallback to Data if file transfer is unavailable.
             let tempURL = try await importedVideoURL(from: item)
-            
+
+            // The system can purge the temporary directory at any time, so the
+            // video must live in permanent storage before a session references it.
+            let videoURL = try VideoStorage.importToPermanentStorage(tempURL)
+
             // Process video
             let recording = try await videoProcessor.processVideo(
-                tempURL,
+                videoURL,
                 movementType: movementType,
                 technique: technique,
                 fightStance: fightStance
             ) { progress in
                 // Progress updates handled by VideoProcessor's @Published properties
             }
-            
-            // Clean up temp file (optional - might want to keep for analysis)
-            // try? FileManager.default.removeItem(at: tempURL)
-            
+
             // Create session and show analysis results
             await MainActor.run {
                 // Create a session from the processed video (uploaded, not live-recorded)

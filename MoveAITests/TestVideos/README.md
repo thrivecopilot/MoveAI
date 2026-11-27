@@ -21,6 +21,10 @@ These directories are created automatically when running tests and allow for fas
 - `muay_thai_labeled_fixtures.json` defines labeled Muay Thai regression fixtures.
 - `scripts/muay-thai-regression.sh extract` builds/refreshes cache once for all listed fixtures.
 - `scripts/muay-thai-regression.sh analyze` runs cache-only regression checks for fast detector iteration.
+- The committed device-extracted cache lives in `cache_device/` (no dot), so run
+  `bash scripts/muay-thai-regression.sh analyze cache_device` — the script's default subdir is `.cache_device`.
+- Cache freshness is content-hash based: if a video's mtime changes (git checkout, repo move) but its
+  SHA256 still matches the cache's `.meta.json`, the cache is used. Only a real content change staleness-fails.
 - `scripts/muay-thai-regression.sh extract-dual` builds separate cache sets for cross-platform parity checks:
   - macOS Vision cache: `.cache_macos`
   - iOS extraction cache: `.cache_ios`
